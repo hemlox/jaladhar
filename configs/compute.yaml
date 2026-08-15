@@ -1,0 +1,125 @@
+# JALADHAR — compute budget & worker pool.
+#
+# CLAUDE.md: "Compute is not fixed. Do not hardcode a worker count, a GPU
+# model, or a batch size anywhere — everything that touches compute is
+# parameterised from configs/compute.yaml. Adding, removing, or upgrading a
+# worker must be a config change, never a code change." This file is that
+# parameterisation. Every stage that estimates a compute budget (CLAUDE.md:
+# "cells x timesteps x scenarios -> GPU-hours against the configured pool")
+# must read this file, not embed a figure.
+#
+# Anchor is measured, not assumed: runs/bench_phase0/manifest.json, the ACC
+# kernel benchmark from Phase 0 Question A. Only that one row is a real
+# benchmark. Nothing else in this file is a measurement — see the "measured"
+# flags below and OPEN-ITEMS.md Question D's "honesty flags on this table".
+
+benchmark_manifest: "runs/bench_phase0/manifest.json"
+# Single source of truth for kernel cost. The figures immediately below are
+# copied from that file's git-SHA-stamped results[] entry for resolution_m
+# 10.0 for convenience (so a config consumer doesn't need to parse another
+# file's JSON just to read a number) — if the two ever disagree, the JSON
+# manifest is authoritative, not this copy.
+anchor:
+  resolution_m: 10.0
+  ms_per_timestep: 26.20322321978165 # results[1].ms_per_timestep, 10 m row
+  cells: 12017880 # results[1].cells (bbox cell count at 10 m, pre-Grid-snap;
+  # grid.py's actual snapped canonical grid is 3515x3421 =
+  # 12,024,815 cells (measured, runs/terrain_grid/manifest.json),
+  # ~0.058% larger — close enough that re-benchmarking is not
+  # warranted for a budget estimate, but a stage computing an
+  # exact number should use its own actual cell count, not this
+  # one, and only the measured ms/cell ratio from here)
+  peak_vram_mib: 988.916015625 # results[1].peak_vram_mib — untiled full-city
+  # forward solve at 10 m, 12% of the smallest
+  # configured device (see vram section below)
+  device: "NVIDIA GeForce RTX 4060 Laptop GPU"
+  torch: "2.6.0+cu124"
+  measured_date: "2026-08-14"
+  measured: true
+
+# Estimate any (cells, timesteps) cost by linear scaling from the anchor:
+#   estimated_ms = timesteps * cells * (anchor.ms_per_timestep / anchor.cells)
+# This is an approximation (kernel cost is not perfectly linear in cell count
+# at very small grids — memory-bound vs launch-overhead-bound regimes differ),
+# adequate for a go/no-go budget gate, not for a performance claim. A stage
+# needing a precise number should benchmark its actual grid shape rather than
+# scale this one.
+
+pool:
+  # Per CLAUDE.md and OPEN-ITEMS.md Question D ("buy nothing yet... single-
+  # worker default"): exactly one worker, the dev laptop, and it is the only
+  # row with measured: true. To add a worker: append a row below with a
+  # relative_throughput you have ACTUALLY BENCHMARKED on that device against
+  # this same anchor kernel (bench/acc_stencil.py) — never a guessed number.
+  # OPEN-ITEMS.md Question D is explicit that Colab T4/L4 throughput figures
+  # are "unmeasured scaling assumptions, not benchmarks" and must not be
+  # quoted as results; this file follows that by simply not listing them.
+  - name: dev_laptop
+    kind: local
+    count: 1
+    gpu: "NVIDIA GeForce RTX 4060 Laptop GPU"
+    driver: "550.163.01"
+    cuda: "12.4"
+    vram_total_mib: 8188 # CLAUDE.md Environment table (nvidia-smi/driver-reported)
+    vram_torch_visible_mib: 7933.125 # bench manifest total_vram_mib (torch's view;
+    # slightly less than the driver figure due to
+    # reserved/driver overhead — both are real
+    # measurements of the same card, from two
+    # different vantage points, recorded separately
+    # rather than silently picking one)
+    relative_throughput: 1.0 # the anchor itself
+    measured: true
+    measured_date: "2026-08-14"
+
+  # Example shape for a second worker (inert — not a real entry, do not read
+  # this as a config value; delete this comment block when a real worker is
+  # added):
+  # - name: colab_t4_free
+  #   kind: colab
+  #   count: 1
+  #   gpu: "NVIDIA T4"
+  #   vram_total_mib: <measured, not guessed>
+  #   relative_throughput: <bench/acc_stencil.py run on this device, / anchor>
+  #   measured: true
+  #   measured_date: "<date actually run>"
+
+vram:
+  # CLAUDE.md VRAM discipline: "the smallest configured device sets the
+  # limit. Autodetect available VRAM at startup and pick tile size from it."
+  # With pool size 1, the dev_laptop above IS the smallest configured device.
+  # OPEN-ITEMS.md Question B: the untiled full BBMP domain fits comfortably
+  # at every candidate resolution down to 5 m (peak 3955.7 MiB of 8188, 48%)
+  # — VRAM does NOT force tiling for forward simulation. What does: autograd
+  # through thousands of solver timesteps during calibration (Phase 3), and
+  # U-Net training on large rasters (Phase 5). Handle both by tiling those
+  # two stages specifically, not by shrinking the domain (CLAUDE.md).
+  autodetect_at_startup: true
+  safety_margin_fraction: 0.15 # headroom reserved below the smallest device's
+  # total before a stage is allowed to claim the rest;
+  # a policy choice, not a measurement — revise here.
+  untiled_forward_solve_ok: true # per Question B; re-check if a future worker
+  # has less VRAM than the current smallest (8188 MiB)
+
+budget:
+  # 1 "GPU-hour" here := 1 wall-clock hour on a relative_throughput = 1.0
+  # worker (the anchor above). With pool size 1 that is just 1 wall-clock
+  # hour on the dev laptop.
+  nightly_gpu_hours: 10.0
+  # This number is NOT a measurement. It is this session's numeric
+  # translation of OPEN-ITEMS.md Question D's qualitative recommendation —
+  # "buy nothing yet. Run the solver batch on the dev laptop overnight" —
+  # into an enforceable ceiling a stage can check against, because CLAUDE.md
+  # requires every expensive stage to "refuse to start and report" if it
+  # would exceed a configured budget, which requires *some* number to exist
+  # here. It has not been separately confirmed by the project owner beyond
+  # that qualitative recommendation. Revise this single line directly if the
+  # real constraint differs (a shorter/longer available overnight window, a
+  # second worker added, etc.) — no code change needed, by design.
+  action_on_exceed: "refuse_and_report" # CLAUDE.md §Compute: never silently
+  # truncate or downsample to fit.
+
+# Question C (how many training scenarios the surrogate needs) is explicitly
+# deferred to Phase 5 by OPEN-ITEMS.md — "do not pick a number here" — so no
+# scenario count appears in this file. A stage computing cells x timesteps x
+# scenarios supplies its own scenario count at call time; this file supplies
+# only the per-timestep cost anchor and the pool/budget it is checked against.

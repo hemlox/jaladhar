@@ -1,0 +1,346 @@
+# JALADHAR — domain configuration for Bengaluru (BBMP extent)
+#
+# Single source of truth for the terrain grid and DEM sourcing (Phase 1,
+# read-prompt-md-execute-phase-cached-anchor.md). CLAUDE.md: config-driven,
+# no hardcoded paths/extents/parameters in code — every module under
+# src/jaladhar/terrain/ reads this file rather than embedding a literal.
+#
+# Facts recorded here are traceable to OPEN-ITEMS.md (Phase 0 findings) or to
+# PROMPT.md §6.1 (the spec's own stated defaults). Nothing here is invented:
+# where a downstream module needs a value neither document supplies (e.g.
+# drain capacity — Bengaluru's stormwater network is not open data, §14.2),
+# the field is left null/empty rather than filled with a plausible-looking
+# number. See the comment on each such field.
+
+crs: "EPSG:32643" # UTM 43N — OPEN-ITEMS.md Question A
+resolution_m: 10.0 # OPEN-ITEMS.md Question A: resolved floor; 20/30 m breach
+# the street-level claim (PROMPT.md §14.1), 5 m costs 4x
+# wall clock for detail the source DEM cannot support.
+
+boundary:
+  # 2023 final ward union. OPEN-ITEMS.md Question A measured 225 features,
+  # union area 717.0 km^2, bbox 35,139 x 34,199 m. grid.py asserts the feature
+  # count before unioning — a wrong layer/driver can silently return a subset
+  # with no exception (this is exactly how Phase 0 caught osmnx geocoding
+  # "BBMP" itself returning the HQ building instead of the boundary: check
+  # the count/area, don't trust a successful read).
+  path: "data/raw/boundary/bbmp_wards_2023_final.kml"
+  expected_feature_count: 225
+  expected_area_km2: 717.0
+  area_tolerance_km2: 1.0 # cross-check band (~0.14%), not a hard equality —
+  # a real union of this file measures 716.955 km^2;
+  # this tolerance exists to catch a wrong file/layer/
+  # CRS, not to be tuned away if it ever complains.
+
+dem:
+  # Buffer beyond the domain bbox before flow accumulation. Plan
+  # (read-prompt-md-execute-phase-cached-anchor.md, fetch.py section):
+  # "flow accumulation and breaching need margin beyond the domain edge, or
+  # edge cells get wrong upstream areas" (invariant 10). MUST be an exact
+  # multiple of resolution_m so the buffered grid stays on the same lattice
+  # as the canonical Grid (Grid.buffered() asserts this).
+  buffer_m: 500.0
+
+  resampling: "bilinear"
+  # nearest-neighbour terraces a 30 m surface into a blocky 10 m one and
+  # corrupts slope/flow-accumulation; cubic overshoots and can manufacture
+  # spurious pits right before conditioning.py breaches depressions.
+  # Bilinear is the standard choice for continuous elevation resampling.
+
+  nodata_value: -9999.0 # matches FABDEM's own convention; comfortably clear
+  # of Bengaluru's real elevation range (~880-940 m).
+
+  # Source order = fallback order, and this list is the ONLY place source
+  # priority is decided — fetch.py must never hardcode a source name. The
+  # first entry whose tiles all download successfully wins; dem_is_dtm and
+  # dem_licence in fetch.py's manifest are copied verbatim from the winning
+  # entry below, never hardcoded.
+  #
+  # FABDEM-vs-GLO30-primary was explicitly adjudicated by the user at the
+  # start of Phase 1 (2026-08-15), not silently reversed from Phase 0's
+  # GLO-30 recommendation. OPEN-ITEMS.md item 2 originally recommended
+  # GLO-30 specifically to dodge FABDEM's CC BY-NC-SA licence — but GLO-30
+  # is a Digital SURFACE model (buildings/tree canopy baked into its
+  # elevation; see the is_dtm comment on the glo30 entry below), which
+  # creates a real conditioning-step hazard §6.1's licence-driven Phase 0
+  # recommendation didn't weigh. Put to the user directly with the licence
+  # tradeoff stated in the question; FABDEM-primary was the explicit choice.
+  # Full reasoning: OPEN-ITEMS.md item 2's 2026-08-15 addendum. Reverting to
+  # GLO-30-primary, if the team decides the licence risk should win instead,
+  # is a one-line reorder of this list — no code change (that reversibility
+  # is the entire point of keeping this config-driven rather than a
+  # constant in fetch.py).
+  sources:
+    - name: fabdem
+      is_dtm: true # bare-earth: buildings & tree canopy ML-removed from GLO-30
+      licence: "CC BY-NC-SA 4.0 (Attribution-NonCommercial-ShareAlike)"
+      licence_note: >-
+        Confirmed 2026-08-15 directly from the mirror's own license.txt
+        (Creative Commons Attribution-NonCommercial-ShareAlike 4.0
+        International, full legal text on file) — this matches OPEN-ITEMS.md
+        item 2's finding, now corroborated from a third, more direct source
+        than the two secondary sources item 2 originally relied on (Bristol's
+        own data.bris.ac.uk was and remains unreachable, http 000/ECONNRESET
+        across 4 Phase 0 attempts and one 302-to-nowhere retried this
+        session). Non-commercial AND ShareAlike: a derived product would have
+        to redistribute under the same licence, and commercial/municipal use
+        is foreclosed. This is a real constraint on this repo's outputs
+        whenever this source wins, not a footnote.
+      native_resolution_m: 30.0 # 1 arcsecond; the 30 -> 10 m step is an
+      # upsample the source cannot itself resolve — the
+      # fine 10 m structure comes from vector burning in
+      # conditioning.py (out of this session's scope),
+      # never from interpolating the DEM itself.
+      access: "https_direct"
+      source_repo: "links-ads/fabdem-v12 STAC mirror (HuggingFace); GeoTIFFs served from the linked links-ads/fabdem bucket"
+      tiles:
+        - id: "N12E077"
+          url: "https://huggingface.co/buckets/links-ads/fabdem/resolve/tiles/N10E070-N20E080_FABDEM_V1-2/N12E077_FABDEM_V1-2.tif"
+        - id: "N13E077"
+          url: "https://huggingface.co/buckets/links-ads/fabdem/resolve/tiles/N10E070-N20E080_FABDEM_V1-2/N13E077_FABDEM_V1-2.tif"
+
+    - name: glo30
+      is_dtm: false # Digital SURFACE model — buildings & tree canopy are IN
+      # the elevation values (filenames literally say
+      # "Copernicus_DSM_COG..."). Burning building footprints
+      # up on top of this would double-count every building's
+      # height. conditioning.py (out of scope this session)
+      # MUST branch on dem_is_dtm, never assume DTM.
+      licence: "Copernicus DEM licence (ESA, open, attribution required)"
+      native_resolution_m: 30.0
+      access: "https_direct_anonymous_s3"
+      source_repo: "copernicus-dem-30m.s3.amazonaws.com (anonymous, no credentials)"
+      tiles:
+        - id: "Copernicus_DSM_COG_10_N12_00_E077_00_DEM"
+          url: "https://copernicus-dem-30m.s3.amazonaws.com/Copernicus_DSM_COG_10_N12_00_E077_00_DEM/Copernicus_DSM_COG_10_N12_00_E077_00_DEM.tif"
+        - id: "Copernicus_DSM_COG_10_N13_00_E077_00_DEM"
+          url: "https://copernicus-dem-30m.s3.amazonaws.com/Copernicus_DSM_COG_10_N13_00_E077_00_DEM/Copernicus_DSM_COG_10_N13_00_E077_00_DEM.tif"
+
+  # Sanity band for the mosaicked/reprojected result — CLAUDE.md invariant 3:
+  # catches wrong tile, wrong units, failed reprojection, WITHOUT false-firing
+  # on real relief (717 km^2 plus buffer spans valley floors to ridgelines;
+  # Open-Meteo independently reports 910 m model elevation at the city
+  # centre, data/raw/forcing/open-meteo_forecast_bengaluru_2026-08-14.json).
+  expected_median_elevation_m: [880.0, 940.0]
+
+# ---------------------------------------------------------------------------
+# Everything below is consumed by modules the Phase 1 plan schedules AFTER
+# this session's scope (roads.py, buildings.py, roughness.py, drains.py,
+# conditioning.py, derived.py, build.py — none exist yet in this repo as of
+# this commit; only grid.py and fetch.py were built this session). Recorded
+# now, per CLAUDE.md's config-driven rule and the plan's own description of
+# this file's contents, so the config stays the single source of truth
+# rather than being invented piecemeal inside each module later. Values are
+# the literal defaults/ranges PROMPT.md §6.1 and the plan already state —
+# nothing below is a new number this session introduced.
+# ---------------------------------------------------------------------------
+
+roads:
+  # ONE OSM fetch produces both the burn geometry (conditioning.py, out of
+  # this session's scope) and the road_segment_id raster + lookup table
+  # (this session) — querying twice risks the two ID sets silently
+  # diverging (plan, roads.py section, invariant 11).
+  #
+  # Drivable network only — this feeds §12's per-road-segment flood status
+  # ("closure", "routing around flooded segments"), a vehicle-navigability
+  # concern, not every pedestrian path. Excludes footway/path/steps/cycleway/
+  # pedestrian/bridleway/corridor (not vehicle-routable) and
+  # proposed/construction/abandoned/disused (not real infrastructure yet/
+  # still).
+  highway_types:
+    - motorway
+    - motorway_link
+    - trunk
+    - trunk_link
+    - primary
+    - primary_link
+    - secondary
+    - secondary_link
+    - tertiary
+    - tertiary_link
+    - unclassified
+    - residential
+    - living_street
+    - service
+    - track
+  overpass_timeout_s: 180 # generous — Phase 0 saw a 504 on a broad regex
+  # admin-boundary query; a highway=* fetch over
+  # 717 km^2 is a different (larger-result,
+  # simpler-filter) shape of query, so this is
+  # precautionary, not a response to an observed
+  # timeout on THIS query.
+
+conditioning:
+  # PROMPT.md §6.1: roads burned down "~0.15-0.3 m below surrounding grade".
+  # A range, not a point — conditioning.py must pick and log the operating
+  # point (Phase 3 may calibrate it), never silently default to one end.
+  road_burn_depth_m: [0.15, 0.3]
+  road_burn_depth_operating_point_m: 0.2 # picked, not defaulted to a range
+  # endpoint; Phase 3 may calibrate.
+
+  # Set 2026-08-15 (roughness.py/drains.py session), resolving the null this
+  # section carried through Foundation. PROMPT.md/OPEN-ITEMS.md specify only
+  # a QUALITATIVE requirement — "deeper channels" than roads (§6.1 item 3) —
+  # never a number, and no source in this repo measures Bengaluru's actual
+  # rajakaluve channel depths (§14.2: the drain network is not open data,
+  # full stop — that is true of depth as much as of capacity or extent).
+  # This range is therefore explicitly a CONDITIONING PARAMETER, not a
+  # measurement: deep enough to satisfy "deeper than the 0.15-0.3 m road
+  # burn" by a clear margin regardless of which endpoint of either range
+  # Phase 3 calibration lands on, uniform across every mapped
+  # waterway=drain|ditch|stream feature because OSM's tag carries no size
+  # information to differentiate a roadside ditch from a major channel.
+  # Same status as drains.py's baseline_capacity_by_landuse_mm_per_hr and
+  # buildings.porosity_conveyance_factor: a documented, arbitrary starting
+  # point for gradient-descent calibration, not an invented "fact".
+  drain_burn_depth_m: [1.0, 2.0]
+  drain_burn_depth_operating_point_m: 1.5
+
+buildings:
+  treatment: "blockage" # PROMPT.md §6.1 default; "porosity" is the alternative,
+  # also required behind this same flag per the spec.
+  blockage_height_m: 3.0 # plan's stated default ("~3 m", configs section)
+  porosity_conveyance_factor: 0.3 # "porosity" treatment: fraction of a
+  # building cell's storage/conveyance retained (1.0 = no
+  # effect, 0.0 = fully blocked). No source specifies a
+  # number for this — PROMPT.md only names the TWO
+  # treatments and asks that both exist behind a config
+  # flag, not what "reduce" quantitatively means. Treat
+  # this as a Phase 3 calibration target like Manning's n,
+  # not a measured constant; 0.3 is a documented, arbitrary
+  # starting point (regain most of a cell's conveyance, not
+  # none — the qualitative point of "porosity" vs
+  # "blockage" is that it is NOT full blocking).
+
+  # Microsoft Global ML Building Footprints (ODbL). OPEN-ITEMS.md /
+  # read-prompt-md-execute-phase-cached-anchor.md verified this session:
+  # quadkey 123303312 is the SINGLE zoom-9 tile covering the entire BBMP
+  # extent (~88 MB gzipped). The index lists every country's tiles; we
+  # filter to Location=India and this one quadkey — never load the
+  # national-scale index's data rows fully into memory (CLAUDE.md,
+  # host RAM is the binding constraint on this machine).
+  microsoft_footprints:
+    index_url: "https://minedbuildings.z5.web.core.windows.net/global-buildings/dataset-links.csv"
+    location: "India"
+    quadkey: "123303312"
+  dedup_predicate: "intersects" # an MS footprint whose geometry intersects
+  # any OSM building footprint is dropped (OSM
+  # preferred where both exist — typically better
+  # attributed in Bengaluru's core); kept only to
+  # fill gaps OSM doesn't cover (mainly peri-urban
+  # fringe), never to duplicate a building OSM
+  # already has.
+
+roughness:
+  # Manning's n, PROMPT.md §6.1 — a TUNABLE VECTOR (Phase 3 calibrates by
+  # gradient descent through the solver), never a literal inside roughness.py.
+  # Ranges as given in the spec; roughness.py picks and logs an operating
+  # point per class until Phase 3 calibration runs.
+  manning_n:
+    roads_paved: [0.013, 0.02]
+    dense_urban: [0.05, 0.15]
+    vegetated_open: [0.03, 0.08]
+    water: [0.02, 0.03]
+    unclassified_default: 0.035 # must be explicit and logged (invariant 6) —
+    # an unclassified cell silently defaulting to
+    # n=0 blows up the ACC friction term.
+
+  # Operating point picked from each range above (Phase 3 calibrates from
+  # here; roughness.py must pick and log ONE value per class, per the plan,
+  # never leave a range where the solver needs a scalar). Midpoint of each
+  # range except roads_paved (biased toward the smooth end — Bengaluru's
+  # arterial network is mostly asphalt, not gravel).
+  operating_point:
+    roads_paved: 0.016
+    dense_urban: 0.10
+    vegetated_open: 0.055
+    water: 0.025
+
+  # road_polygon derivation: roughness.py runs its OWN highway=* query
+  # (independent of roads.py — the plan lists these four modules as
+  # parallelisable siblings with no dependency between them) and buffers
+  # centrelines by an assumed half-width per class to approximate paved
+  # SURFACE AREA from LINE geometry (OSM road data is overwhelmingly lines,
+  # not area polygons). Same highway_types list as roads.roads: (referenced,
+  # not duplicated in code) for tag-selection consistency between the two
+  # independent queries.
+  road_buffer_halfwidth_m:
+    motorway: 15.0
+    trunk: 12.0
+    primary: 9.0
+    secondary: 7.0
+    tertiary: 5.5
+    residential: 4.0
+    service: 3.0
+    default: 3.5 # any highway_types entry not listed above
+  overpass_timeout_s: 180
+
+  # OSM landuse/natural/leisure tag -> Manning class. Config-driven per
+  # CLAUDE.md (no hardcoded tag lists in roughness.py). A tag combination not
+  # listed here, or a cell no landuse polygon covers at all, gets
+  # unclassified_default above.
+  landuse_classes:
+    dense_urban:
+      landuse: [residential, commercial, retail, industrial, construction]
+    vegetated_open:
+      landuse: [forest, grass, meadow, farmland, farmyard, recreation_ground, cemetery]
+      natural: [wood, grassland, scrub, heath]
+      leisure: [park, garden, golf_course]
+    water:
+      natural: [water, wetland]
+      landuse: [reservoir, basin]
+      waterway: [riverbank]
+
+drains:
+  # Bengaluru's stormwater drain network is NOT open data (PROMPT.md §14.2 —
+  # the largest single source of error, and a data-availability problem, not
+  # a modelling one). Everything below is an EXPLICIT, DOCUMENTED, ARBITRARY
+  # starting point for Phase 3 gradient-descent calibration against observed
+  # flooding — NOT a measurement, and not even an informed estimate, because
+  # no source in this repo establishes real per-land-use differences in
+  # Bengaluru's actual (unmapped) drain capacity. PROMPT.md §6.1 item 5 itself
+  # calls this "a per-cell removal rate capped by an ASSUMED capacity" —
+  # setting a documented starting assumption for an openly-a-model parameter
+  # is what the spec asks for; it is not the same thing as CLAUDE.md rule 1's
+  # prohibition on fabricating data/observations and presenting them as real.
+  #
+  # Deliberately UNIFORM across land-use classes, not differentiated — we
+  # have no sourced basis to say residential drains better or worse than
+  # commercial, so pretending otherwise with different-looking numbers would
+  # imply false precision. The one piece of REAL information this prior does
+  # encode is distance to an actual mapped waterway=drain|ditch|stream
+  # feature (real OSM geometry, not invented) via distance_decay below.
+  baseline_capacity_by_landuse_mm_per_hr:
+    roads_paved: 10.0
+    dense_urban: 10.0
+    vegetated_open: 10.0
+    water: 10.0
+    unclassified_default: 10.0
+  assumed_uncalibrated: true # drains.py must copy this into its manifest —
+  # a reader of the output raster alone must not be
+  # able to mistake this for a measurement.
+
+  # Exponential falloff: capacity_at_cell = baseline * exp(-distance_m / decay_m).
+  # A cell ON a mapped drain gets full baseline capacity; capacity decays with
+  # distance from the nearest one. decay_m is likewise an arbitrary starting
+  # scale (roughly "a couple of city blocks"), not a measured infiltration/
+  # conveyance length — Phase 3 calibrates it same as baseline_capacity.
+  distance_decay:
+    functional_form: "exponential"
+    decay_m: 200.0
+  waterway_tags: [drain, ditch, stream] # PROMPT.md §6.1: "the primary
+  # rajakaluve channels"
+  overpass_timeout_s: 180
+
+paths:
+  raw_dem_dir: "data/raw/dem" # cached, never-re-download source tiles
+  interim_dem_dir: "data/interim/dem" # mosaicked/reprojected DEM, pre-conditioning
+  raw_osm_dir: "data/raw/osm" # cached Overpass responses (roads/buildings/
+  # landuse/waterways), never re-fetched if present
+  raw_microsoft_dir: "data/raw/microsoft_buildings" # cached MS quadkey CSV
+  interim_terrain_dir: "data/interim/terrain" # per-layer vector/raster outputs
+  # from roads.py/buildings.py/roughness.py/
+  # drains.py, pre-conditioning and pre-stack-
+  # assembly (build.py, out of scope)
+  processed_dir: "data/processed" # final aligned stack (build.py, out of scope)
+  qc_dir: "runs/terrain_qc" # per-layer QC figures (build.py, out of scope)

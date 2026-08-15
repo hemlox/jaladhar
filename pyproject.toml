@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "jaladhar"
+version = "0.1.0"
+description = "Bengaluru urban flood digital twin — physics solver + neural surrogate"
+requires-python = ">=3.11"
+
+# Makes `python -m jaladhar.terrain.build` (and every other module CLI) work
+# without PYTHONPATH=src. Every working invocation before this needed that
+# env var set manually — the acceptance command in PROMPT.md §6.1 as written
+# would fail on a fresh checkout without it.
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.black]
+line-length = 100
+target-version = ["py311"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+# B008 flags function calls in argument defaults. `typer.Option(...)` in a
+# signature default IS the Typer idiom -- CLAUDE.md requires a typer CLI entry
+# on every module, so this rule is a false positive across the whole project.
+ignore = ["B008"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

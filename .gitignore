@@ -1,0 +1,49 @@
+# Credentials — MUST stay first and MUST never be committed.
+# Written before `git init` so no secret ever enters history.
+.env
+.env.*
+!.env.example
+*.netrc
+.netrc
+
+# Data — downloaded artefacts, never versioned. Provenance lives in manifests.
+# .gitkeep exceptions preserve the directory shape across a clone.
+data/
+!data/**/.gitkeep
+
+# Run outputs, manifests, benchmark results
+runs/
+!runs/**/.gitkeep
+
+# osmnx / other library caches — e.g. Nominatim geocoding responses. Two such
+# files (cache/2966de5e1dc4ec2d9f16bbece46ca2dd220b8adc.json,
+# cache/d154b52deb11c5619aa160b3c463cde3180e2630.json) were committed by
+# accident in Phase 0 (OPEN-ITEMS.md carry-over #2) and have been
+# git rm --cached; this prevents a recurrence.
+cache/
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# Build artefacts (LISFLOOD-FP cross-validation build, Phase 0 item 7)
+build/
+vendor/
+*.so
+*.o
+
+# Frontend
+node_modules/
+dist/
+
+# OS / editor
+.DS_Store
+*.swp
+.idea/
+.vscode/
