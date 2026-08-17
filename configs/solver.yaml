@@ -1,0 +1,175 @@
+# JALADHAR — Phase 2 solver config (Bates et al. 2010 local-inertial / "ACC").
+#
+# Every numeric parameter the solver touches lives here, never in code
+# (CLAUDE.md §Style, and invariant 13's Phase 1 precedent). Terrain paths,
+# CRS, resolution and buffer are NOT duplicated here — they are read from the
+# domain config below, so there is exactly one definition of the grid.
+
+domain_config: "configs/domain_bengaluru.yaml"
+compute_config: "configs/compute.yaml"
+
+physics:
+  gravity_m_s2: 9.81
+
+  # Depth below which a FACE conducts no flow. This is the classic urban-
+  # pluvial wet/dry threshold; PROMPT.md §7 names ~1 mm and it is also what
+  # keeps the h^(7/3) friction denominator away from zero.
+  depth_threshold_m: 0.001
+
+  # hf is clamped to this before ANY division, so hf^(7/3) can never be zero
+  # or produce inf/NaN in either the value or the gradient. Must be > 0 and
+  # <= depth_threshold_m. See acc.py's "clamp before divide" note — a NaN in
+  # a torch.where dead branch still poisons .backward().
+  hf_floor_m: 0.001
+
+wetdry:
+  # "hard"  — the published Bates et al. gate. Ships as default.
+  # "ramp"  — smoothstep over [depth_threshold_m, depth_threshold_m +
+  #           ramp_width_m]. A deliberate DEVIATION from the published
+  #           scheme, implemented from day one so choosing it is a config
+  #           flip rather than a rewrite.
+  #
+  # Both modes are implemented as a per-FACE weight multiplying the face
+  # flux. That is not an implementation convenience — it is what makes mass
+  # conservation exact under both (invariant 23): a face weight is symmetric,
+  # so what leaves cell i is exactly what enters cell j.
+  mode: "hard"
+
+  # FIXED CONSTANT. Explicitly NOT a calibration parameter, and invariant 25
+  # asserts its absence from the Phase 3 parameter vector. Rationale: widening
+  # the ramp smears the wet/dry front, which raises flood-extent CSI without
+  # improving the physics — the cheapest available way for an optimiser to
+  # game its own metric. Left free, it would be found and exploited.
+  ramp_width_m: 0.001
+
+timestep:
+  # dt = cfl_alpha * dx / sqrt(g * h_max)
+  #
+  # ⚠ THIS IS THE SELECTION TARGET, NOT THE COURANT NUMBER THE SOLVER RUNS AT.
+  # dt is chosen from h at step START; depth grows within the step (mostly by
+  # flow concentration, only ~7% by rain), so the REALIZED Courant runs ~20%
+  # higher — measured 0.853 against this 0.700 on a 900 s probe. Real stability
+  # margin below the CFL limit of 1.0 is therefore ~15%, not the ~30% this
+  # number suggests at a glance. See invariant 10 and docs/phase2-writeup.md
+  # incident 3.
+  cfl_alpha: 0.7
+  cfl_ceiling: 0.85 # Step rejection ceiling; set by mechanical rule (<1% rejections: 0.563% measured)
+  min_dt_s: 0.01 # floor; hitting it is reported, never silently accepted
+  max_dt_s: 10.0
+
+  # Record-then-replay: a no_grad pass records the schedule, the
+  # differentiable pass replays it FIXED. Buys a fixed graph, deterministic
+  # checkpoint segmentation, and an exact finite-difference gradcheck.
+  mode: "record_replay"
+
+  # Phase 3: how often to re-record the schedule during calibration.
+  rerecord_every: 25
+
+  # If a replayed dt violates the Courant limit, RE-RECORD AND RETRY that
+  # iteration — never halt. A hard halt would kill an overnight calibration
+  # run over a fully recoverable condition. Contrast mass.action_on_breach:
+  # a stale schedule is recoverable, a mass breach means the scheme is broken.
+  action_on_stale: "rerecord_and_retry"
+
+buildings:
+  # Floor on the per-face conveyance factor read from
+  # building_conveyance_factor.tif. Keeps a face from fully sealing and keeps
+  # dL/dC finite — Phase 3 tunes C and could otherwise drive it to zero.
+  # Invariant 17 requires gradients to stay finite AT this floor, not merely
+  # away from it.
+  min_conveyance_factor: 0.05
+
+  # Cell factors -> face factor. "harmonic" = conveyances in series along the
+  # flow path (water traverses half of each cell). Also smooth, where "min"
+  # has a subgradient kink — physics and differentiability agree here.
+  face_combination: "harmonic" # harmonic | min
+
+sinks:
+  # Applied AFTER the flux update, in this FIXED order: drain, then
+  # infiltration. Order is stated because with two sinks competing for the
+  # same water an unstated order makes the cap a function of evaluation
+  # order rather than of physics (invariant 14).
+  order: ["drain", "infiltration"]
+
+  drain:
+    enabled: true
+    # Per-cell capacity comes from drain_capacity.tif — the Phase 1 PRIOR,
+    # assumed_uncalibrated=true, a documented Phase 3 calibration target and
+    # never a measurement. See drains.py's module docstring.
+    source: "data/processed/drain_capacity.tif"
+    units: "mm_per_hr"
+
+  infiltration:
+    # ARBITRARY, UNCALIBRATED starting point, same status as the drain prior.
+    # Dense urban Bengaluru is largely impervious; this is a Phase 3
+    # calibration target, not a measurement. Set to 0.0 to disable entirely.
+    enabled: true
+    uniform_rate_mm_per_hr: 0.0
+    assumed_uncalibrated: true
+
+boundaries:
+  # "free"   — normal-depth (uniform-flow) outfall: q_out = (1/n)*h^(5/3)*sqrt(S),
+  #            S from the local bed slope. Water genuinely leaves the domain.
+  #            This is the LISFLOOD-FP "FREE" precedent.
+  # "closed" — reflective, no flux. Used by invariants that need a sealed
+  #            domain (e.g. #7's rain-only mass check) and as the mutation
+  #            that reddens invariant 15b.
+  mode: "free"
+  min_bed_slope: 1.0e-4 # clamps S before sqrt; d/dS sqrt(S) -> inf at S=0
+
+mass:
+  # Runtime diagnostic, not a test-only check. float64 accumulators.
+  check_every_steps: 100
+
+  # PROVISIONAL — deliberately NOT yet labelled measured.
+  #
+  # Measured so far: 6.2e-8 relative on the full 12,024,815-cell domain, but
+  # over only 46 STEPS (a 300 s probe). Float32 accumulation grows with step
+  # count, and the 6 h acceptance run is ~3,300 steps — roughly 70x more — so
+  # that figure does NOT transfer. An earlier edit set the alarm to 1.0e-5 from
+  # it and would have halted the acceptance run mid-flight via
+  # action_on_breach: a measurement taken at the wrong scale is not a
+  # measurement of the thing being bounded.
+  #
+  # This value is therefore a safe provisional ceiling (still 10x tighter than
+  # PROMPT.md §7's 1% acceptance floor), to be replaced by the realized
+  # residual of the full-length run.
+  relative_tolerance: 1.0e-3
+  relative_tolerance_is_measured: false
+  measured_residual_46_steps: 6.2e-8
+  pending: "set from the realized residual of the full 6 h run"
+
+  # A mass breach means the SCHEME is broken; continuing would produce a run
+  # that looks valid. Halt and dump. (Contrast timestep.action_on_stale.)
+  action_on_breach: "halt_and_dump"
+
+storm:
+  # SYNTHETIC DESIGN STORM for solver testing — PROMPT.md §7's acceptance
+  # explicitly requires "a synthetic 110 mm / 2 h storm". This is NOT observed
+  # data and is never reported as such. Real forcing stays blocked until the
+  # KSNDMC cumulative-vs-incremental question is settled (OPEN-ITEMS.md 1a).
+  kind: "uniform_design_storm"
+  total_mm: 110.0
+  duration_s: 7200.0
+  simulation_duration_s: 21600.0 # 6 h: 2 h of rain + 4 h of drainage
+
+compute_estimate:
+  # h_max band for the pre-run budget gate. Re-derived from the REALIZED
+  # acceptance run (max depth 23.86 m); the previous single assumption of
+  # 3.0 m under-predicted steps by 2.6x (16,739 vs 44,049 actual), i.e. in the
+  # UNSAFE direction for a gate whose purpose is refusing over-budget work.
+  # The gate evaluates the deepest end (smallest dt, most steps).
+  h_max_band_m: [1.0, 30.0]
+  derived_from: "runs/solver/manifest.json realized max_depth_m 23.857"
+
+output:
+  write_every_s: 900.0 # depth raster cadence (15 simulated minutes)
+  dir: "data/processed/solver"
+  runs_dir: "runs/solver"
+
+device:
+  # "auto" resolves to cuda when available. Tile size for the differentiable
+  # path is derived from measured VRAM at startup, per CLAUDE.md's VRAM
+  # discipline — never hardcoded.
+  prefer: "auto"
+  differentiable_tile: 512

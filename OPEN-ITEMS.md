@@ -1,8 +1,8 @@
-# OPEN-ITEMS.md — JALADHAR Phase 0
+# OPEN-ITEMS.md — JALADHAR
 
 External unknowns and open design questions. Every entry carries a **verdict**, the **evidence** behind it, and its **impact on the architecture**.
 
-Status as of **2026-08-14**. Environment verified the same day (see `CLAUDE.md`).
+Items **1–9** and design questions **A–D** are the Phase 0 gate, opened **2026-08-14** and amended since — item 2's decision was reversed 2026-08-15, item 6 completed, item 8's EULA accepted; read each item's own date, not this header. Items **E–U** are the terrain and solver open items carried out of Phases 1 and 2, added **2026-08-17**; they are the single source of truth for what is open, and `docs/CONTEXT-HANDOVER.md` §8 points here rather than duplicating them.
 
 **Verdict key:** RESOLVED · PARTIAL · BLOCKED · METHOD ONLY
 
@@ -14,13 +14,15 @@ Status as of **2026-08-14**. Environment verified the same day (see `CLAUDE.md`)
 
 **Answer: PROCEED WITH A NAMED DEGRADATION.**
 
-Terrain, validation labels, and observed flood extent are all secured with real, downloadable, correctly-licensed data. **The one genuine gap is item 1b — historical gauge rainfall for the September 2022 event.** No public programmatic route to it exists; every date parameter the live API accepts is silently ignored.
+Terrain, validation labels, and observed flood extent are all secured with real, downloadable data. **The one genuine gap in the *data* is item 1b — historical gauge rainfall for the September 2022 event.** No public programmatic route to it exists; every date parameter the live API accepts is silently ignored.
+
+**The terrain licence is a second, separate exposure, and it is not clean.** Since the 2026-08-15 reversal FABDEM is primary and won at build time, so every downstream raster is a CC BY-NC-SA ShareAlike derivative. Item 2 carries an unexecuted precondition of its own — *"re-verify against the primary source before any public claim"* — because `data.bris.ac.uk` refused four fetches and the licence is corroborated only from secondary sources. This is tracked as item **2** and appears in the actions list below; it was previously stated here as "correctly-licensed", which the same table's terrain row contradicts.
 
 Per the reframed gate in `PROMPT.md` §5, the fallback is being invoked and its cost stated rather than waved through:
 
 | Precondition | Satisfied by | Status |
 |---|---|---|
-| **Usable terrain** | Copernicus GLO-30 (open) — FABDEM available but non-commercial (item 2) | ✅ secured |
+| **Usable terrain** | **FABDEM primary** — decision reversed 2026-08-15, see item 2. GLO-30 is the configured fallback and did not fire. | ✅ secured, **licence exposure live** |
 | **Sept 2022 event forcing** | **GPM IMERG, downloaded and verified to capture the event** — gauge records unavailable (item 1b) | ⚠️ **degraded but confirmed working** |
 | **Validation labels** | 385 pre-geolocated BBMP flood points (item 5) + Sentinel-1 pair on disk (item 6) | ✅ secured, two independent sources |
 
@@ -119,6 +121,15 @@ Consequences:
 2. **Wait for our own capture to produce an event.** Continuous logging began 2026-08-14 (item 1a) during monsoon season. Any significant flooding in Bengaluru during the capture window yields a validation event at **full 266-gauge, 15-minute resolution** — better than the September 2022 archive would have been, and with no dependence on this item at all.
 
 Route 2 costs nothing and is already running. Route 1 is still worth sending, because it is the only thing that recovers the *specific* September 2022 event and because it de-risks the endpoint vanishing.
+
+**DECISION 2026-08-16 — KSNDMC is optional, not a dependency. This item no longer blocks any forcing code.**
+
+Write the forcing layer against a clean internal interface — `(timestamp, cell, mm in interval)` — with **Open-Meteo as the working adapter** for both nowcast and forecast, and IMERG for historical. A KSNDMC adapter is then a day's work if access ever lands. Two consequences worth stating:
+
+- The cumulative-vs-incremental question (item 1a) was previously described as blocking all forcing code. Under this design it is answered **empirically from the first data sample**, not by asking KSNDMC, and it blocks only the KSNDMC adapter rather than the forcing layer.
+- Keep the adapter slot and mention KSNDMC TRG ingestion in the pitch. It reads well in a government hackathon and is honest either way.
+
+Bhuvan was abandoned earlier (dead URLs, no useful store) — items 3 and 4.
 
 ---
 
@@ -293,6 +304,14 @@ A textbook Bengaluru evening convective storm. The fallback is **demonstrated**,
 
 Also worth requesting the official inputs from `fcerm.evidence@environment-agency.gov.uk` — same low-cost, high-value ask as item 1b, and it would upgrade path 3 from "reconstructed" to genuine.
 
+**Re-verified 2026-08-15 at the start of Phase 2** (independently, against realized state rather than the page's own descriptions). Confirms the PARTIAL verdict and adds three specifics:
+
+- The single ZIP attachment (`LIT_8570_a3d694.zip`, 7.97 MB), which the page presents as a data package, was **downloaded and extracted: it contains exactly two files, `SC120002 report.pdf` and `SC120002 summary.pdf`.** No input data. Previously inferred; now verified by extraction.
+- The attachment the page labels as the ~93-page **"Test specifications" is a different study entirely** — `scho0305bixo-e-e.pdf` is *W5-105/TR1, Benchmarking of hydraulic **river** modelling software packages*, the older 1D programme. Verified from its title page. This is why "definitions obtainable" rests on the results report plus third-party write-ups and not on an official 2D spec document — there isn't one on that page.
+- **NEW route to real inputs for Test 5:** Zenodo record [`4066824`](https://zenodo.org/records/4066824) (LISFLOOD-FP 8.0) publishes *"configuration files and simulation result data"* for EA **Test 4** (`ea4.zip`, 16.8 MB) and **Test 5** (`ea5.zip`, 73.7 MB; `ea5-first-hour.zip`, 10.4 MB), ESRI ASCII, per Néelz & Pender's specification. If the configs bundle the DEM, this yields genuine inputs for Test 5 **and** an independent published result to compare against — worth checking when Phase 2 reaches its validation ladder. Tests 1, 2 and 8A are not in that record.
+
+**Test 8A remains the gap.** It is the test closest to our own problem (rainfall applied directly to an urban surface), and no public source for its DEM/rainfall inputs was found. Phase 2's plan therefore does not rest on it: the analytical ladder plus ANUGA carry solver correctness, exactly as this item already concluded.
+
 ---
 
 ## Open design questions
@@ -406,30 +425,329 @@ Deliberate consequences:
 
 ---
 
+## Phase 1–2 open items — terrain and solver
+
+Carried out of the Phase 1 terrain rebuild and the Phase 2 acceptance run (2026-08-16, 39.93 min, commit `78610c2`). Lettering continues the design-question series. These postdate the Phase 0 gate above and none of them affect its verdict.
+
+**Two of these — H and I — block the conditioning redesign. No retain/breach threshold may be set until both land.**
+
+---
+
+### E — Did D4 sealing cause the extreme depths? — **RESOLVED (hypothesis falsified)**
+
+**Predicted:** max depth drops substantially from 23.86 m once D4 traps reach zero. **Realized: 23.22 m, a 2.7% drop.** D4 traps are at zero and 6,769 cells still exceed 10 m. The hypothesis is dead.
+
+Where the water actually is:
+
+| Metric | Value | Base rate | Enrichment |
+|---|---|---|---|
+| >5 m cells directly on a D8 breach cut | 8,096 / 10,422 = **77.68%** | 3.875% | **20.05×** |
+| >5 m cells within 1 cell of a D8 cut | 10,422 / 10,422 = **100.00%** | 17.524% | 5.71× |
+
+**The water was never in the D4 traps — it is in the canyons `breach_depressions` carved.** The D4 traps were spatially coincident with the deep water because the D8 pass manufactured them in the same places; causation was attributed to the correlated symptom. This is the confounding failure the standing rules now watch for, and it cost a full rebuild cycle.
+
+**The D4 work was still necessary and is not reverted.** A 4-connected solver genuinely cannot drain a D4-sealed cell, and step count fell 44,049 → 39,051. It was not the depth mechanism.
+
+**Evidence:** `runs/solver/manifest.json`, `docs/phase2-diagnostics.md` §1, `docs/d4-audit.md`.
+**Impact:** the depth defect is a conditioning problem — item F.
+
+---
+
+### F — `breach_depressions` is carving out Bengaluru's tank cascade — **OPEN, highest priority**
+
+Depression inventory on the pre-breach 10 m DEM: **27,609 closed depressions, 28,889,503.6 m³ storage, 489,032 cells (48.90 km², 3.84% of the domain).**
+
+The top 50 hold **21,618,287 m³ = 74.83%** of all depression storage, and **33 of the 50 intersect mapped OSM water.** By name: Yele Mallappa Shetty (#1), Varthur (#2), Madiwala (#3), Bellandur (#4), Agara (#14), Ulsoor (#19), Hebbal (#20), Lalbagh (#22), Kaikondrahalli (#24), Saul Kere (#41), Yelahanka (#42), Sankey Tank (#44), Yeshwanthpur (#48), Bhattarahalli (#50).
+
+That is the tank cascade, ranked correctly by size, reproduced unprompted from elevation alone. It is simultaneously **(a)** a strong end-to-end validity check on the whole terrain pipeline and **(b)** proof that standard hydrological conditioning destroys the dominant flood-attenuation mechanism in the city.
+
+**Why this is a class of artifact, not a bug.** `breach_depressions` exists to make a DEM monotonically descending, because D8 flow-routing cannot traverse a depression. A 2D shallow-water solver has no such requirement — it fills a basin, the basin spills over its lowest rim, and water continues downstream. That is correct physics executed by the solver, not something conditioning must pre-arrange. Depression removal here is not merely unnecessary, it is destructive. The pre-patch D4 traps and the post-patch trenches are the same defect wearing different clothes: water trapped in sealed basins, then water trapped in the trenches dug to unseal them.
+
+Retained, the lakes give lake-appropriate depths: Bellandur is 1.91 M m³ over 19,171 cells = **1.0 m mean, 1.08 m max**; Varthur 1.30 m mean, 3.91 m max. Not 23 m.
+
+**What the solver needs is far weaker than monotone descent:** every cell has a D4-traversable route to the domain boundary or to a registered storage basin, and every registered basin can spill over its rim via D4 moves. That is achievable with centimetre-scale modifications — for a cell whose only descending neighbour is diagonal, the required cut is bounded by the local diagonal drop, 0.015 m at the argmax inspected.
+
+**Consequence that did not exist while every basin was being trenched out — antecedent basin state is now first-order.** Retained storage is 28.89 M m³ against **140,021,560 m³ of rain actually delivered in the acceptance run** (`runs/solver/manifest.json` mass balance) = **20.6%**. The solver starts everything dry, so a dry Bellandur absorbs 1.91 M m³ that in reality is already occupied. Across the register that is up to a fifth of the storm silently removed before any flooding occurs. **This must be decided before the retain/breach change lands**, or the first post-fix run is interpreted against a wrong baseline. Note that item I complicates the obvious fix: if the DEM already renders tank floors at water surface, some of that antecedent volume is baked in and would be double-counted by initialising the basins wet.
+
+*(Where a design proposal quotes 21.84% against a 132.3 M m³ "110 mm / 2 h design storm", that denominator is not traceable to any run in `runs/`. Use the measured 140.02 M m³ or state the design storm explicitly.)*
+
+**Verdict: redesign required. Thresholds are NOT set — blocked on items H and I.**
+
+---
+
+### G — Excavation is extraordinarily concentrated — **RESOLVED (measured); feeds F**
+
+Across **465,927** canonical D8 cut cells, **20,802,918 m³** buffered excavation (20,223,054 m³ canonical):
+
+| | P50 | P90 | P95 | P99 | P99.9 | Max |
+|---|---|---|---|---|---|---|
+| D8 cut depth | **6.6 cm** | 0.65 m | 1.57 m | **10.08 m** | **19.80 m** | **22.94 m** |
+
+P50 at 6.6 cm is correct noise-breaching. The tail is not.
+
+- **Top 1 connected trench network: 10,176,564 m³ = 48.92% of all domain excavation.** Top 5 = 55.18%, top 10 = 57.67%, top 50 = 64.13%.
+- Total excavation is **71.97% of all depression storage in the domain** — the breach pass dug out nearly three-quarters of the city's depression volume.
+
+The single largest component is almost certainly the Bellandur–Varthur–Dakshina Pinakini line carved out in one incision.
+
+**Why this is usable as an invariant rather than a parameter:** removing a depression costs a cut equal to its own depth, so the cut-depth distribution *is* the storage distribution seen from the other side. A cut deeper than the retain threshold is then not a tuning failure but proof the classifier put a real basin in the wrong bucket — surfaced as a test failure. Any replacement scheme must record the full cut and fill distributions, and the largest connected excavation component, as first-class outputs.
+
+**Evidence:** `docs/phase2-diagnostics.md` §3, `runs/terrain_conditioning/manifest.json`.
+
+---
+
+### H — How many D4 pits did the D8 pass actually create? — **BLOCKED on a measurement**
+
+Three mutually incompatible pairs are in circulation for the same quantity:
+
+| Figure | What it actually measures | Provenance |
+|---|---|---|
+| 228,227 / 347,083 = **65.8%** | **adjacency** to a D8 cut cell | `runs/terrain_conditioning/manifest.json` → `d4_cardinal_breach.d4_breach_adjacency_split.adjacent_to_d8_breach`. **Verified present.** The field name says adjacency; the manifest never claimed causation. |
+| 347,083 − 290,267 = 56,816 = **16.4%** | **net increase** | 290,267 is **not** in any manifest — verified absent. Its own provenance is unrecorded. |
+| 195,368 / 296,912 = **65.8%** | unstated | Appears only in the 2026-08-16 conditioning design response. **Neither number occurs anywhere in this repo** — verified absent from the conditioning manifest. |
+
+**Adjacency is not causation**, and net increase understates gross creation if the D8 pass also destroyed pre-existing pits — which it certainly did, since it resolved 125,374 D8 depressions. The two 65.8% figures agreeing is a coincidence of ratios, not corroboration: they have different numerators and different denominators.
+
+**The resolving measurement is a set difference, not a count difference.** Label D4-pit status per cell on the pre-breach conditioned DEM and on the post-D8 DEM, then report:
+
+- **(a) pits present post-D8 but absent pre-breach — gross created.** Only this supports "D8 artifact."
+- **(b) present pre-breach but absent post-D8 — destroyed.**
+- **(c) present in both — survivors.**
+
+**This is a read-only job against artifacts already on disk — no terrain rebuild, no GPU.** `data/interim/terrain/dem_conditioned_prebreach.tif` and `dem_conditioned_postbreach.tif` were both written inside the conditioning run's 11.45 s window at SHA `be1a192`, the same run that reported 347,083, so the set difference is directly comparable to the manifest figure. Correspondence verified by mtime against `wall_clock_sec`.
+
+**Until (a) lands, no conditioning-redesign threshold may be set,** and the deferral in item J may not rest on pit accounting.
+
+---
+
+### I — Does FABDEM render the large tanks as flat plateaus? — **OPEN; blocks the classifier's geometry criteria**
+
+`dem_source = "fabdem"`, `dem_is_dtm = true` (`runs/terrain_dem/manifest.json`). FABDEM is an ML product that strips buildings and canopy; DTMs of that kind commonly render water bodies as **flat plateaus at the water surface** rather than as bathymetric holes. If Bengaluru's tanks are flat rather than concave, the retained "storage" is the volume between a plateau and its rim, not the lake's capacity.
+
+**The fill ratio V/(A·D) says the confounder is live.** Derived here from the `docs/phase2-diagnostics.md` §2 top-50 table with A = cells × 100 m²:
+
+| Group | n | median V/(A·D) |
+|---|---|---|
+| Shallow, D ≤ 1.5 m | 11 | **0.915** |
+| Deep, D ≥ 5.0 m | 22 | **0.441** |
+
+Spearman ρ(depth, fill) = **−0.424**. A concave bowl is ~0.3–0.5; a flat floor inside a steep rim approaches 1.0. **All six basins with fill ≥ 0.90 are shallow (0.35–1.08 m), large (26.8–191.7 ha), and mapped water** — ranks 4 Bellandur, 7 Kodi, 19 Ulsoor, 20 Hebbal, 23 Hoodi, 42 Yelahanka. That is the flat-plateau signature exactly where it would appear if the DTM were rendering water surface. Bellandur at 191.7 ha with a 1.08 m maximum and fill 0.922 is not bathymetry.
+
+**Two consequences, both of which hold thresholds:**
+
+1. **The proposed fill-ratio cut `r_min` is inert as a genuine-vs-artifact discriminator, and inverted where it does act.** Across the classification it is supposed to separate, water-evidenced median is **0.469** against no-water median **0.445** — a statistic that does not vary with the thing it is meant to detect. Worse, the stated rule ("a real basin is concave; interpolation noise is flat with a spike") makes high fill an artifact signature, which would classify the six most clearly genuine tanks in the city as artifacts.
+2. **Retained storage for the big tanks is a rim-volume, not a capacity**, so item F's 20.6% is a floor of unknown tightness, and initialising basins wet would double-count whatever the plateau already encodes.
+
+**The discriminating observable is within-basin floor σ_z** — the same statistic `response.md` computed for the 17 quarry candidates (0.14–1.88 m) and did not compute for the tanks. A true bathymetric bowl has floor σ_z rising with depth; a rendered plateau has floor σ_z near zero regardless of rim height. **Measure it for the top 50 before any geometry threshold is set.**
+
+---
+
+### J — D4 building-midpoint fix — **DEFERRED (justification replaced)**
+
+D4 cardinal breach lowered 332,080 cells (mean 0.7871 m, max 25.04 m): building 46,261 / waterway 17,756 / road 121,611 / plain 146,452 — sums exactly. Lowering on building cells clusters tightly at the +3.0 m burn height (P10 2.679, P50 2.955, P90 3.136), so the pass removes the burn rather than excavating below grade. Residual height above the lowest non-building cardinal neighbour: **P10 7.5 mm, P50 26.5 cm, P90 87.4 cm** — roughly two-thirds below 0.5 m, hydraulically transparent in any flood worth simulating, on the order of 30,000 ten-metre-wide gaps concentrated along the carved drainage network rather than randomly placed.
+
+**The original deferral reasoning — "65.8% of D4 pits were D8 artifacts, so the problem plausibly dissolves" — is withdrawn.** Item H shows the pit accounting is unreconciled, and pit count was the wrong variable regardless.
+
+**The deferral stands on cut depth instead.** The damage is driven by how deep the cut was, not by whether a pit existed: the 25.04 m lowering happened because D8 carved a 22.94 m trench past that cell. With cut depth at P99 = 10.08 m, P99.9 = 19.80 m and one connected trench holding 48.92% of all excavation (item G), removing the deep cuts removes the mechanism that forces deep staircases **however the pit accounting in item H resolves**. That is a claim about the mechanism rather than about a correlation, and it survives H either way.
+
+Re-measure after the conditioning rebuild. The design note in `docs/walkthrough.md` §1 stands: the real fix is class-aware midpoint selection — a diagonal has two candidate midpoints, prefer the non-building one — plus accepting genuinely sealed courtyards as legitimate pits.
+
+---
+
+### K — Courant overshoot — **RESOLVED (mechanism); fix pending, do before Phase 4**
+
+Δt is selected so Courant = α exactly at start-of-step depth, therefore
+
+```
+Courant_realized = α · √(h_end / h_start)        ← exact, verified
+```
+
+Peak was step **16**, t = 160 s, Δt = 10.0 s, h_start = 0.049949 m → h_end = 0.087951 m:
+`0.700 × √(0.087951/0.049949) = 0.700 × 1.3270 = 0.9289` — reproduces the observed maximum exactly.
+
+The overshoot is large only where depth grows fast *relative to itself*, i.e. at storm onset from a dry bed.
+
+**Magnitude, measured after the acceptance run** — and it inverts the reading originally drawn from the counts:
+
+| Setting-cell depth | Steps | Share | Max realized Courant | P50 exceedance |
+|---|---|---|---|---|
+| h < 0.5 m | 47 | 0.41% | **0.9289** | 3.8e-2 |
+| 0.5 ≤ h < 5 m | 1,334 | 11.70% | 0.8822 | 5.0e-4 |
+| 5 ≤ h < 15 m | 3,617 | 31.71% | 0.7005 | 8.8e-5 |
+| h ≥ 15 m | 6,408 | 56.18% | 0.7219 | 7.0e-6 |
+
+**`docs/phase2-diagnostics.md` §1 states the finding "the overshoot is overwhelmingly (99.59%) situated in deep water". By count that is true; by magnitude the opposite is true** — deep-water exceedances are 1e-5-scale noise, and every consequential overshoot is in shallow water at storm onset. The count was reported where a magnitude was required. The diagnostics file is retained unedited as the historical record; this entry is the correction.
+
+**Fix:** two-line rejection in the recording pass — compute h_new, check realized Courant, if it exceeds the ceiling halve Δt and redo. Record-then-replay makes this free; the replayed schedule just has smaller steps where needed and the differentiable graph stays fixed.
+
+At 0.929 there is 7% of margin to instability. Not a correctness problem now — the run completed with mass rel-residual 4.105e-05 — but Phase 4 runs hundreds of storms, and an instability in scenario 237 of 500 silently poisons the surrogate training set.
+
+---
+
+### L — Non-negativity tolerance is global, not per-cell — **OPEN (unresolved critique of committed code)**
+
+Committed at `20dc1d6`. The tolerance is scale-derived from the **global domain h_max**. At h_max = 23.9 m that gives tol = **1.14e-5 m**, so a cell at h = 0.001 m may reach **−1.1e-5 m — 1% of its own depth, ~10⁵× its local ULP — and pass.**
+
+Round-off in `h_new = h_old − Σflux·dt/A` is bounded by the **local** intermediate magnitudes, not by the domain maximum. The tolerance must therefore be per-cell:
+
+```
+tol_i = 4·eps·max( h_old_i , Σ|flux_i|·dt/A )
+```
+
+**Why the existing justification does not hold.** The validating example (−2.38e-7 at h = 2.95 m) is a case where the local and global scales coincide, so it never exercised the mixed regime the guard exists to police. The assertion was right and the observable was right; only the domain it ran over could not fail. That is **V7**, and it is the reason this is filed as open rather than closed.
+
+---
+
+### M — `track_cell_sinks` should be deleted, not defaulted — **OPEN (unresolved critique of committed code)**
+
+Committed at `20dc1d6`. The flag makes the per-cell sink minimum optional, justified by a measured **+2.64%** overhead.
+
+**That measurement does not support the flag.** The CPU row of the same benchmark shows the "fast" path running *slower* than the tracked path — which means the harness cannot resolve a difference of that size, so +2.64% is noise, not a cost. Syncs are fixed-cost (~10–50 µs); at 12.7 M cells with ~30–50 ms steps the true overhead is **~0.1%**.
+
+**What the flag disables is the detector that caught the negative-drain bug** — `torch.minimum(drain_cap*dt, h_new)` with `h_new < 0` creates water while `mass_created_by_clamping` stays 0.0 and the mass residual still balances. That failure is invisible in every other diagnostic the solver emits.
+
+**Phase 4 would generate the entire surrogate training set with it off.** A silent water-creating clamp in an unknown subset of 500 scenarios is exactly the poisoning mode described in item K.
+
+**Verdict: delete the flag, keep the detector unconditional.** Re-benchmark on GPU only, at full domain, if a cost claim is wanted at all.
+
+---
+
+### V — Conditioning verification is vacuous where it matters — **OPEN, blocks accepting item F**
+
+The redesign itself is sound and the destructive artifact is gone. What cannot be accepted is the evidence offered for it.
+
+**1. Part E is not an acceptance run.** `scripts/benchmark_part_e.py:48` runs `n_steps=100`; all four runs completed in ~7 s. A 6 h storm is ~39,051 steps, so this is **0.26% of duration** — the tank cascade has not filled or spilled, which is the entire mechanism under test. The recorded baselines are unreachable at that scope: Run 1 on the *old* DEM returns P99 0.0620 m against a recorded 0.989823 m, and outfall 1.46e-3 against a recorded 61.5%. All three "SURVIVED" hypotheses are untested, and the shortfall was not declared as a deviation. Textbook V7.
+
+**2. Invariant A passes by construction.** `conditioning.py:426-430` does `residual_pits = d4_pits_mask & ~retained_basin_mask` then `basin_class_buf[residual_pits] = CLASS_UNCERTAIN` — unresolved pits are relabelled *into* the register, so "pits outside R = 0" cannot fail. **41,792** residuals were absorbed this way (the report says 48,196; the manifest says 41,792 — unreconciled). Honest statement: 100,482 D4 pits remain, of which 41,792 are unresolved failures reclassified as basins. Separate the classes so the invariant can redden.
+
+**3. Invariant C passes by clipping.** `max_cut_m = 0.4998779` and `max_fill_m = 0.2500000` sit exactly on their caps, so "≤ cap" is guaranteed by the clamp. More telling: **mean_cut = 0.1486 m** against the ~0.015 m local-diagonal-drop scale the 0.50 m bound was justified from — 10× larger. By the design's own logic a cut approaching cut_max signals misclassification, and the *mean* is a third of the cap.
+
+**4. The cascade check — the one V3-compliant external validation — was asserted, not measured.** `retained_basins.csv` has **no name column**; "Madiwala / Agara / Bellandur / Varthur" were assigned in prose. The derived order is Madiwala → Agara, against the documented Agara → Madiwala. And basin `85584`, labelled Agara, is **2,315 cells = 23 ha**, where Agara Lake is ~1.4 km². "Yelahanka / YMS" conflates two different lakes into one node. The check failed and was reported as verified.
+
+**5. Filling became the primary operation.** 169,351 filled cells against 111,703 cut (**60% fill**), adding **1.21 M m³** of new terrain where the old pipeline added none. The spec ordered carve-first, fill-as-fallback. Not flagged.
+
+**6. Two-thirds of the register is UNCERTAIN** — 17,700 of 26,090 objects, though only 10.5% of storage. The sensitivity run that bounds it is also 100 steps.
+
+**7. Housekeeping:** `n_pits_post_d8_breach = 63715` persists in the manifest although whitebox is no longer called anywhere; the field name now misleads. And the headline excavation result (−92.0%) is absent from the report — I computed it from `n_cells_cut × mean_cut_m × 100`.
+
+---
+
+### N — `checkpointing.py` segmentation — **NOT IMPLEMENTED; gates the differentiable calibration path**
+
+Single-level checkpointing is designed — peak = 2√(N·S·I), optimal L\* = √(N·S/I), N_max = B²/(4·S·I) — and **not built**. Without it a 512² differentiable run caps at B/I = **124 steps** against the ~9,665 a 6 h storm needs. Blocks skipped invariants inv17 (×2) and inv19.
+
+**This is the next real build item after the conditioning fix (item F).** Phase 3 calibration cannot start without it.
+
+---
+
+### O — 22 of 51 solver invariants are skipped, and every one is the full-domain or full-duration variant — **OPEN**
+
+Full inventory with per-test reasons in `docs/d4-audit.md` §6B. The whole suite verifies on small tiles and short runs — **V7 gone systemic**, not an isolated instance. The 23.86 m defect was a full-domain phenomenon that no tile test could have reached, which is the concrete demonstration that the gap matters.
+
+**Run them once, against the DEM we intend to keep** — i.e. after item F's rebuild, not before, so the run is not spent on a DEM that is about to be replaced.
+
+`tests/test_manifest_provenance.py` carries 4 further skips labelled DEBT. Items 1 and 3 of those should be closeable now against the successful acceptance run at `78610c2`, which wrote a real SHA and a 72,376 B binary sidecar instead of a 2.33 MiB inline schedule.
+
+---
+
+### P — `tiling.py` — **NOT BUILT**
+
+Design question B established that VRAM does not force tiling for forward simulation (988.9 MiB of 8188 at 10 m full city). Tiling is still required for the **calibration backward pass** and for surrogate training. Not on the critical path until Phase 3. Formerly open items #20 and #27.
+
+---
+
+### Q — ANUGA cross-validation and the analytical ladder — **NOT BUILT**
+
+Items 7 and 9 concluded that solver correctness rests on ANUGA plus analytical solutions (Ritter, Stoker, Thacker, MacDonald), with LISFLOOD-FP unavailable and the EA Test 8A inputs unobtainable. **That ladder is designed and not yet built.** Formerly open items #22 and #28.
+
+Analytical cases need no external files and should come first — they are the only correctness evidence that cannot be blocked by a download.
+
+---
+
+### R — Grid refinement study and per-class gradient counts — **NOT BUILT**
+
+Formerly open items #21 and #24. Grid refinement is a Phase 8 resolution-sensitivity study per design question A; per-class gradient counts support the conveyance calibration. Neither is load-bearing now.
+
+---
+
+### S — Phase 3 validation against September 2022 — **NOT STARTED; the binding constraint is not rainfall**
+
+IMERG credentials, EULA and all 672 granules are done (item 8). **The binding constraint is observed flood extents, not forcing.** Validation rests on the BBMP point set (item 5) and the Sentinel-1 pair (item 6); the NRSC inundation layer that would have been the third was dropped with Bhuvan (item 4).
+
+Note the timing subtlety recorded in item 8: the SAR scene is 06:10 IST on 5 Sept, hours *before* that day's evening peak, so it images flooding accumulated 30 Aug – 4 Sept and must be compared against modelled state at that instant, not against the event maximum.
+
+---
+
+### T — Are P99 = 0.99 m and P99.9 = 3.92 m too deep? — **OPEN; Phase 3 settles it**
+
+Canonical depth percentiles from the acceptance run: P50 0.000000 m (dry), P90 0.000997 m, P99 0.989823 m, P99.9 3.920597 m, max 23.223906 m.
+
+**12 km² above a metre is more than real Bengaluru events produce.** The canyon story (items E, F, G) explains the extreme tail; whether it also explains P99 is open. Boundary outfall at **61.5% of rainfall** is a corroborating canyon symptom — water is leaving the domain far too efficiently. Drains take 7.5%, below the 12.8% the capacity raster allows, which is consistent with most of the domain being dry.
+
+Re-measure after item F's rebuild before drawing any conclusion; Phase 3 is what actually settles it.
+
+---
+
+### U — Rotate the sudo password — **OPEN (security)**
+
+The password appeared in an early Claude Code transcript. Not project-blocking; still needs doing.
+
+---
+
 ## Summary
 
 | # | Item | Verdict |
 |---|---|---|
-| 1a | KSNDMC live API | ✅ RESOLVED — 266 gauges @ 15 min |
+| 1a | KSNDMC live API | ✅ RESOLVED — 266 gauges @ 15 min. **`RAIN` is CUMULATIVE (proven 2026-08-18)** over 477 captures: monotone rise through the 16 Aug storm, invariant after rain stops, all decreases at the 08:30–09:00 IST rain-day reset (not midnight) |
 | 1b | KSNDMC historical Sept 2022 | ⛔ **BLOCKED** — the one real gap |
-| 2 | FABDEM licence | ✅ RESOLVED — CC BY-NC-SA, use GLO-30 instead |
+| 2 | FABDEM licence | 🟡 **PARTIAL** — CC BY-NC-SA, but corroborated from secondary sources only; `data.bris.ac.uk` refused four fetches. **Decision reversed 2026-08-15: FABDEM is primary and won at build time; the non-commercial exposure is live, not dodged.** Re-verification against the primary source is outstanding |
 | 3 | CartoDEM / Bhuvan | ⏭ SKIPPED by decision — GLO-30 suffices |
 | 4 | NRSC Sept 2022 inundation | ⏭ SKIPPED by decision — validation drops to 2 label sets |
 | 5 | BBMP flood-prone list | ✅ RESOLVED — 385 pre-geolocated points |
 | 6 | Sentinel-1 Sept 2022 | ✅ **RESOLVED — both scenes downloaded, cover full BBMP** |
 | 7 | LISFLOOD-FP build | ⛔ BLOCKED — vendored CUB vs CUDA 12.4; **use ANUGA instead** |
-| 8 | Rainfall forecast source | 🟡 PARTIAL — Open-Meteo works; IMERG needs 1 EULA click; IMD/DWR unverified |
+| 8 | Rainfall forecast source | 🟡 PARTIAL — Open-Meteo works; **IMERG EULA accepted 2026-08-15, 672/672 granules on disk and verified**; IMD/DWR unverified |
 | 9 | UK EA benchmark | 🟡 PARTIAL — definitions yes, input data no; not load-bearing |
 | A | Grid resolution | ✅ RESOLVED — **10 m** |
 | B | Tiling | ✅ RESOLVED — **untiled**; VRAM is not the constraint |
 | C | Training scenario count | 📋 METHOD ONLY — Phase 5 |
 | D | Compute pool | ✅ **Buy nothing** — overnight on the dev laptop |
+| E | D4 sealing as the depth cause | ✅ RESOLVED — **falsified**, 2.7% drop against a substantial one predicted |
+| F | Conditioning carves the tank cascade | 🟡 **IMPLEMENTED 2026-08-18, VERIFICATION REJECTED** — whitebox breach is gone, excavation 20.8 → **1.66 M m³ (−92.0%)**, max cut 22.94 → 0.4999 m, building cells carved 0, `connectivity: D4` asserted at the seam (V8 discharged). But three of seven invariants cannot fail as written, and Part E ran **100 steps (0.26% of duration)** against a 6 h storm. See item **V** |
+| G | Excavation concentration | ✅ RESOLVED (measured) — one trench = 48.92% of all excavation |
+| H | D4 pit-creation figure | ✅ **RESOLVED 2026-08-18** — set difference on a validated post-D8/pre-D4 intermediate: **131,415 gross created**, 74,599 destroyed, 215,668 survivors. Post-D8 total 347,083 reproduced the manifest exactly. All three circulating pairs are wrong for the purpose |
+| I | FABDEM renders tanks as plateaus? | 🟡 **FALSIFIED (single discriminator)** — fill ratios 0.20–0.60, not >0.90. floor σ_z proved **mathematically degenerate** and cannot discriminate. Bellandur 1.08 m vs 1.78 m max depth still unreconciled |
+| J | D4 building midpoints | ⏸ DEFERRED — justification replaced; re-measure after the rebuild |
+| K | Courant overshoot | ✅ **RESOLVED + FIXED** — step rejection landed; `cfl_ceiling` 0.85 by measured rule (0.563% rejections vs 84.9% at 0.70) |
+| L | Non-negativity tolerance | ✅ **FIXED** — per-cell `4·eps·max(h_old, Σ|flux|·dt/A)`, mixed-regime test red-then-green |
+| M | `track_cell_sinks` flag | ✅ **DELETED** — per-cell sink minimum now always computes |
+| N | `checkpointing.py` segmentation | ✅ **BUILT AND VERIFIED** — 9,665 steps at 512² (78× the 124 wall), peak 2,288.9 MiB vs 2,321.1 predicted, K*=25 vs 24.98 predicted, gradcheck True, exponent 0.482≈√N. **Phase 3 calibration unblocked** |
+| O | Skipped invariants | 🟡 PARTIAL — inv17 and inv19 closed by N; **22 remain**, all full-domain/full-duration. Run once, against the DEM we keep (after F) |
+| P | `tiling.py` | ⬜ NOT BUILT — needed for the backward pass, not the critical path |
+| Q | ANUGA + analytical ladder | 🟡 PARTIAL — ladder built (Ritter/Stoker/Thacker/MacDonald). Thacker 1.38 mm at Fr 0.028. **Convergence orders invalid**: `max_dt_s` pinned dt on coarse grids. ANUGA still not built |
+| R | Grid refinement, per-class gradient counts | ⬜ NOT BUILT — not load-bearing |
+| S | Phase 3 validation vs Sept 2022 | ⬜ NOT STARTED — binding constraint is flood extents, not rainfall |
+| T | P99 / P99.9 too deep? | 🟡 **REFRAMED** — P99 and P99.9 are timestep-converged (1.8% / 3.3% across an 8× α range). **Max depth is not** — it moves 18% with α and 31% with `cfl_ceiling`, non-monotonically. Report P99, never max. Phase 3 still settles the physics |
+| V | Conditioning verification vacuous | 🔴 **OPEN** — Part E ran 100 steps; invariants A, C pass by construction; cascade check asserted not measured |
+| U | Rotate the sudo password | 🔴 OPEN (security) |
 
-**Highest-value next actions, in order:**
-1. **One EULA click** — `https://urs.earthdata.nasa.gov/approve_app?client_id=e2WVk8Pw6weeLUKZYOxvTQ`. This is the last thing standing between us and the September 2022 event forcing that the gate's degradation rests on. Thirty seconds, and it unblocks 480 granules.
-2. **Leave the KSNDMC capture running.** Already live; costs nothing; may close the named degradation outright by catching a real event at full gauge resolution.
-3. **Resolve cumulative-vs-incremental on the first rainy window** (item 1a) — must be settled before any forcing code is written, or rainfall will be inflated by a large factor.
-4. Send the KSNDMC data request (item 1b) — the only route to the *specific* September 2022 event, and a hedge against the undocumented endpoint vanishing.
-5. Verify IMD nowcast access (item 8) — the 0–3 h radar band is the highest-value forecast upgrade.
+**Rows N–U were missing from this table until 2026-08-17.** They had full sections below and no summary row, so the summary understated what is open as 13 items against an actual 21 — including **N**, which its own section calls the next real build item. Anything added as a section gets a row here in the same edit.
+
+**Highest-value next actions, in order** — ordered by information value per unit cost. **Rewritten 2026-08-18: items H, I, K, L, M, N and 1a all closed overnight, and F is no longer held.**
+
+1. **Conditioning redesign and terrain rebuild (item F).** Now unblocked — both gating measurements landed. What they constrain:
+   - The D8 pass creates **131,415** D4 pits gross (37.9% of the 347,083 post-D8 total), not the 65.8% adjacency figure. Removing the deep cuts removes about **two-fifths** of D4 pits, not two-thirds — the deferral in item J must be re-argued on cut depth, which it already is.
+   - Retained basins hold **real bathymetric storage** (item I): fill ratios 0.20–0.60, so DEM depression volume is capacity, not freeboard.
+   - Classification **cannot rest on geometry**. Both candidate discriminators are dead: the depth/√area aspect ratio misclassifies 4 of 7 OSM-confirmed quarries and puts a lake inside the quarry cluster, and floor σ_z is mathematically degenerate. Use OSM + Sentinel-1 + BBMP, geometry only as a tie-breaker.
+   - Intersect OSM water with a **30–50 m buffer, not 0 m** — DEM-derived boundaries sit 1–3 pixels off hand-drawn OSM vectors (Kannuru Lake is 27.84 m out).
+   - Use a **≥4-cell (400 m²) minimum** for the object inventory; it reconciles to 26,090 objects / 29.83 M m³.
+2. **Decide antecedent basin state before the rebuild lands**, or the first post-fix run is scored against a wrong baseline. Item I falsified the plateau, so occupied storage is **not** baked into the terrain and starting dry genuinely removes up to ~21.8% of the storm. Sentinel-1 permanent-water masks are on disk at three thresholds.
+3. **Fix the analytical convergence study (item Q).** `runs/analytical_ladder/run_benchmarks.py` holds `max_dt_s` fixed while dx refines, pinning dt identically on the two coarsest grids, so the reported orders measure nothing. Scale `max_dt_s` with dx and re-run. Small, and it is the only thing standing between us and a real correctness claim.
+4. **Run the 22 remaining full-domain invariants (item O)** — once, after F's rebuild, against the DEM we intend to keep.
+5. **Re-verify the FABDEM licence (item 2).** Bristol has now timed out on five attempts. Still item 2's own precondition for any public claim, and FABDEM is primary.
+6. **Phase 3 validation (item S).** Forcing and scoring both exist now and the IMERG path is validated end to end (39.15 mm against a recorded 39.2 mm). The binding constraint remains observed flood extents.
+7. **ANUGA cross-validation (item Q)** and **`tiling.py` (item P)** — P is now the next real build item after F, since N is done and calibration is tiled by design.
+8. **Leave the KSNDMC capture running.** It has already paid for itself by settling item 1a.
+9. Send the KSNDMC data request (item 1b); verify IMD nowcast access (item 8).
 
 *Deliberately not on this list:* buying Colab Pro (D says the numbers don't justify it yet), chasing the EA input files (item 9 is no longer load-bearing now that ANUGA and analytical cases carry correctness), and Bhuvan (items 3/4, skipped by decision).

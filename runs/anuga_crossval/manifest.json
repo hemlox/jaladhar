@@ -1,0 +1,172 @@
+{
+  "stage": "anuga_cross_validation_benchmarks",
+  "kind": "cross_validation",
+  "status": "completed",
+  "git_sha": "f15d305ec8580ba54950278eaff4fe807cc1914f",
+  "created_at_utc": "2026-08-17T06:46:02.283457+00:00",
+  "cases": [
+    "ritter",
+    "stoker",
+    "thacker",
+    "macdonald",
+    "froude_sweep"
+  ],
+  "completed_at_utc": "2026-08-17T06:46:05.867110+00:00",
+  "elapsed_wall_s": 3.5852131843566895,
+  "mapping_method": "1D linear interpolation of ANUGA unstructured triangle centroid values onto ACC Cartesian grid cell centers (x_acc). Evaluated at identical coordinate points.",
+  "benchmarks": [
+    {
+      "case_name": "Ritter (1892)",
+      "froude": 55.525183850475486,
+      "regime": "High-Froude (advection-dominated)",
+      "dx_m": 2.5,
+      "l1_analytical_vs_acc": 0.032786788671977374,
+      "l2_analytical_vs_acc": 0.09929554865946995,
+      "l1_analytical_vs_anuga": 0.0061462299231471495,
+      "l2_analytical_vs_anuga": 0.016599161918287517,
+      "l1_acc_vs_anuga": 0.03191828581691454,
+      "l2_acc_vs_anuga": 0.09504812721065889,
+      "notes": "ANUGA matches analytical (<0.007m); ACC-vs-ANUGA gap measures advection omission."
+    },
+    {
+      "case_name": "Stoker (1957)",
+      "froude": 1.1775073424717197,
+      "regime": "High-Froude (shock-forming bore)",
+      "dx_m": 2.5,
+      "l1_analytical_vs_acc": 0.02725399671361107,
+      "l2_analytical_vs_acc": 0.08505814051617215,
+      "l1_analytical_vs_anuga": 0.004440776639627374,
+      "l2_analytical_vs_anuga": 0.015763779503938452,
+      "l1_acc_vs_anuga": 0.027071585667543106,
+      "l2_acc_vs_anuga": 0.08302146015544157,
+      "notes": "ANUGA matches analytical shock (<0.005m); ACC-vs-ANUGA gap isolates shock dissipation."
+    },
+    {
+      "case_name": "Thacker (1981)",
+      "froude": 0.0282842712474619,
+      "regime": "Low-Froude (Fr=0.028, du/dx=0)",
+      "dx_m": 10.0,
+      "l1_analytical_vs_acc": 0.0013861845249367824,
+      "l2_analytical_vs_acc": 0.0016421642559394357,
+      "l1_analytical_vs_anuga": 6.539724914937578e-05,
+      "l2_analytical_vs_anuga": 7.748207850593201e-05,
+      "l1_acc_vs_anuga": 0.0013779299322279148,
+      "l2_acc_vs_anuga": 0.0016249790070792616,
+      "notes": "Both ACC and ANUGA match analytical to sub-millimetre/millimetre precision."
+    },
+    {
+      "case_name": "MacDonald (1997)",
+      "froude": 0.373909084389436,
+      "regime": "Low-Froude (Fr=0.32, non-uniform dh/dx)",
+      "dx_m": 10.0,
+      "l1_analytical_vs_acc": 0.05938686653971673,
+      "l2_analytical_vs_acc": 0.07041271108577093,
+      "l1_analytical_vs_anuga": 0.009724164250215352,
+      "l2_analytical_vs_anuga": 0.017600080291973803,
+      "l1_acc_vs_anuga": 0.06911103078993208,
+      "l2_acc_vs_anuga": 0.07982976596574068,
+      "notes": "ANUGA matches SWE analytical (<0.01m); ACC has ~0.06m error from O(Fr^2) advection omission."
+    }
+  ],
+  "froude_sweep": [
+    {
+      "h1_ratio": 0.95,
+      "froude": 0.025646052597480994,
+      "l1_acc_vs_anuga_m": 0.0007095336031428548,
+      "l2_acc_vs_anuga_m": 0.002036665083206791,
+      "mean_rel_diff": 0.0007277853741362108,
+      "l1_acc_vs_exact_m": 0.0007570753991603702,
+      "l1_anuga_vs_exact_m": 0.00031189266892905215
+    },
+    {
+      "h1_ratio": 0.8,
+      "froude": 0.11152860803158508,
+      "l1_acc_vs_anuga_m": 0.0034425683882683606,
+      "l2_acc_vs_anuga_m": 0.009989167549419281,
+      "mean_rel_diff": 0.0038141474226556426,
+      "l1_acc_vs_exact_m": 0.0030597821554113544,
+      "l1_anuga_vs_exact_m": 0.0010461785938312943
+    },
+    {
+      "h1_ratio": 0.6,
+      "froude": 0.25501567696744576,
+      "l1_acc_vs_anuga_m": 0.00879464809239441,
+      "l2_acc_vs_anuga_m": 0.025376807260689523,
+      "mean_rel_diff": 0.010866859404168986,
+      "l1_acc_vs_exact_m": 0.007961437537326218,
+      "l1_anuga_vs_exact_m": 0.0018001504804931693
+    },
+    {
+      "h1_ratio": 0.4,
+      "froude": 0.45685228471587486,
+      "l1_acc_vs_anuga_m": 0.015489997512848245,
+      "l2_acc_vs_anuga_m": 0.045266969342306444,
+      "mean_rel_diff": 0.02165684620671789,
+      "l1_acc_vs_exact_m": 0.01495915317694459,
+      "l1_anuga_vs_exact_m": 0.0024706864477967217
+    },
+    {
+      "h1_ratio": 0.3,
+      "froude": 0.6006225358605991,
+      "l1_acc_vs_anuga_m": 0.01913720011494216,
+      "l2_acc_vs_anuga_m": 0.0567678213061274,
+      "mean_rel_diff": 0.028961141023843485,
+      "l1_acc_vs_exact_m": 0.0192615086125728,
+      "l1_anuga_vs_exact_m": 0.003126843544858377
+    },
+    {
+      "h1_ratio": 0.2,
+      "froude": 0.8064228160417685,
+      "l1_acc_vs_anuga_m": 0.023059005231776765,
+      "l2_acc_vs_anuga_m": 0.06952313994023494,
+      "mean_rel_diff": 0.038615127695055505,
+      "l1_acc_vs_exact_m": 0.022964648176623775,
+      "l1_anuga_vs_exact_m": 0.003558089643283767
+    },
+    {
+      "h1_ratio": 0.15,
+      "froude": 0.9566120655948163,
+      "l1_acc_vs_anuga_m": 0.02502939121032992,
+      "l2_acc_vs_anuga_m": 0.07617616474853771,
+      "mean_rel_diff": 0.045085847645196866,
+      "l1_acc_vs_exact_m": 0.024799800820863804,
+      "l1_anuga_vs_exact_m": 0.0038188897106912105
+    },
+    {
+      "h1_ratio": 0.1,
+      "froude": 1.1775073424717197,
+      "l1_acc_vs_anuga_m": 0.027071585667543106,
+      "l2_acc_vs_anuga_m": 0.08302146015544157,
+      "mean_rel_diff": 0.054994197904579024,
+      "l1_acc_vs_exact_m": 0.02725399671361107,
+      "l1_anuga_vs_exact_m": 0.004440776639627374
+    },
+    {
+      "h1_ratio": 0.05,
+      "froude": 1.5916122600597533,
+      "l1_acc_vs_anuga_m": 0.029996456761269753,
+      "l2_acc_vs_anuga_m": 0.09043493867139785,
+      "mean_rel_diff": 0.08798989319360481,
+      "l1_acc_vs_exact_m": 0.029867487731530928,
+      "l1_anuga_vs_exact_m": 0.005885326594886678
+    },
+    {
+      "h1_ratio": 0.02,
+      "froude": 2.240558003448819,
+      "l1_acc_vs_anuga_m": 0.03170978849096219,
+      "l2_acc_vs_anuga_m": 0.09459913779040938,
+      "mean_rel_diff": 0.08833356165080256,
+      "l1_acc_vs_exact_m": 0.03346944229229291,
+      "l1_anuga_vs_exact_m": 0.005800860775689157
+    },
+    {
+      "h1_ratio": 0.005,
+      "froude": 3.5385443812005652,
+      "l1_acc_vs_anuga_m": 0.03180218362257596,
+      "l2_acc_vs_anuga_m": 0.09496978737057876,
+      "mean_rel_diff": 0.10249358568883933,
+      "l1_acc_vs_exact_m": 0.03355983680635858,
+      "l1_anuga_vs_exact_m": 0.006964373886453312
+    }
+  ]
+}

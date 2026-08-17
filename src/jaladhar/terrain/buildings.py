@@ -196,33 +196,37 @@ def dedup_ms_against_osm(
 
 
 def build_buildings(cfg: dict[str, Any], repo_root: Path = REPO) -> dict[str, Any]:
-    """Fetch OSM+Microsoft buildings, dedup, rasterize mask + height-delta."""
+    """Fetch OSM + MS buildings over the buffered domain, dedup, rasterize mask + height-delta."""
     grid, grid_diag = build_grid(cfg, repo_root)
+    buffer_m = float(cfg["dem"]["buffer_m"])
+    buffered_grid = grid.buffered(buffer_m)
+    buf_cells = round(buffer_m / grid.resolution)
     b_cfg = cfg["buildings"]
 
-    boundary_wgs84 = load_boundary(cfg, repo_root)
-    boundary_valid = boundary_wgs84.copy()
-    boundary_valid["geometry"] = boundary_valid.make_valid()
-    union_wgs84 = boundary_valid.union_all()
-    query_box = box(*union_wgs84.bounds)
+    # Compute bounding box of the BUFFERED domain in WGS84
+    buffered_box_proj = box(*buffered_grid.bounds)
+    buffered_box_wgs84 = (
+        gpd.GeoSeries([buffered_box_proj], crs=grid.crs).to_crs("EPSG:4326").iloc[0]
+    )
+    query_box = box(*buffered_box_wgs84.bounds)
 
     osm_gdf = fetch_osm_buildings(query_box)
-    osm_gdf = gpd.clip(osm_gdf, union_wgs84)
+    osm_gdf = gpd.clip(osm_gdf, buffered_box_wgs84)
     osm_gdf = osm_gdf[~osm_gdf.geometry.is_empty & osm_gdf.geometry.notna()]
     if osm_gdf.empty:
-        raise BuildingFetchError("zero OSM buildings survived clipping to the BBMP polygon")
+        raise BuildingFetchError("zero OSM buildings survived clipping to the buffered domain")
     n_osm = len(osm_gdf)
 
     ms_url = resolve_ms_tile_url(cfg, repo_root)
     quadkey = b_cfg["microsoft_footprints"]["quadkey"]
     ms_dest = repo_root / cfg["paths"]["raw_microsoft_dir"] / f"quadkey_{quadkey}.geojsonl.gz"
     status, size = download_file(ms_url, ms_dest, timeout=600)
-    ms_rows, n_lines, n_bbox_survivors = stream_ms_footprints_in_polygon(ms_dest, union_wgs84)
+    ms_rows, n_lines, n_bbox_survivors = stream_ms_footprints_in_polygon(ms_dest, buffered_box_wgs84)
     if not ms_rows:
         raise BuildingFetchError(
             f"streamed {n_lines} lines from the Microsoft quadkey file ({ms_dest}, "
             f"{size} bytes, download status={status}) but zero footprints intersected "
-            "the BBMP polygon — suspect a coordinate order or quadkey mismatch"
+            "the buffered domain — suspect a coordinate order or quadkey mismatch"
         )
     ms_gdf = gpd.GeoDataFrame(ms_rows, crs="EPSG:4326")
     n_ms_in_polygon = len(ms_gdf)
@@ -236,25 +240,28 @@ def build_buildings(cfg: dict[str, Any], repo_root: Path = REPO) -> dict[str, An
     combined = pd.concat([osm_gdf, ms_gdf_kept], ignore_index=True)
     combined = gpd.GeoDataFrame(combined, crs="EPSG:4326").to_crs(grid.crs)
 
-    mask = rasterize(
+    # Rasterize on the BUFFERED grid
+    mask_buffered = rasterize(
         [(geom, 1) for geom in combined.geometry],
-        out_shape=(grid.height, grid.width),
-        transform=grid.transform,
+        out_shape=(buffered_grid.height, buffered_grid.width),
+        transform=buffered_grid.transform,
         fill=0,
-        all_touched=False,  # a building footprint is an AREA — centroid-style
-        # "is this cell inside the polygon" rasterization is
-        # the correct semantics here, unlike roads.py's line
-        # burn where all_touched=True is required for
-        # connectivity. all_touched=True on a dense polygon
-        # layer would systematically overstate footprint area
-        # by roughly a half-cell border on every building.
+        all_touched=False,
         dtype="uint8",
     )
     treatment = b_cfg["treatment"]
     blockage_height_m = float(b_cfg["blockage_height_m"])
-    height_delta = np.where(mask == 1, np.float32(blockage_height_m), np.float32(0.0)).astype(
-        np.float32
-    )
+    height_delta_buffered = np.where(
+        mask_buffered == 1, np.float32(blockage_height_m), np.float32(0.0)
+    ).astype(np.float32)
+
+    # Crop to the canonical grid
+    mask_canonical = mask_buffered[
+        buf_cells : buf_cells + grid.height, buf_cells : buf_cells + grid.width
+    ]
+    height_delta_canonical = height_delta_buffered[
+        buf_cells : buf_cells + grid.height, buf_cells : buf_cells + grid.width
+    ]
 
     interim_dir = repo_root / cfg["paths"]["interim_terrain_dir"]
     interim_dir.mkdir(parents=True, exist_ok=True)
@@ -262,19 +269,31 @@ def build_buildings(cfg: dict[str, Any], repo_root: Path = REPO) -> dict[str, An
     vector_path = interim_dir / "buildings.gpkg"
     combined.to_file(vector_path, driver="GPKG")
 
+    # Write buffered rasters
+    buffered_mask_path = interim_dir / "building_mask_buffered.tif"
+    with rasterio.open(buffered_mask_path, "w", **buffered_grid.profile(dtype="uint8", nodata=0)) as dst:
+        dst.write(mask_buffered, 1)
+
+    buffered_delta_path = interim_dir / "building_height_delta_buffered.tif"
+    with rasterio.open(buffered_delta_path, "w", **buffered_grid.profile(dtype="float32", nodata=0.0)) as dst:
+        dst.write(height_delta_buffered, 1)
+
+    # Write canonical rasters
     mask_path = interim_dir / "building_mask.tif"
     with rasterio.open(mask_path, "w", **grid.profile(dtype="uint8", nodata=0)) as dst:
-        dst.write(mask, 1)
+        dst.write(mask_canonical, 1)
 
     delta_path = interim_dir / "building_height_delta.tif"
     with rasterio.open(delta_path, "w", **grid.profile(dtype="float32", nodata=0.0)) as dst:
-        dst.write(height_delta, 1)
+        dst.write(height_delta_canonical, 1)
 
-    n_building_cells = int(mask.sum())
+    n_building_cells_canonical = int(mask_canonical.sum())
+    n_building_cells_buffered = int(mask_buffered.sum())
 
     return {
         "grid_diagnostics": grid_diag,
         "canonical_grid": grid.to_manifest_dict(),
+        "buffered_grid": buffered_grid.to_manifest_dict(),
         "treatment": treatment,
         "blockage_height_m": blockage_height_m,
         "porosity_conveyance_factor": float(b_cfg["porosity_conveyance_factor"]),
@@ -286,16 +305,19 @@ def build_buildings(cfg: dict[str, Any], repo_root: Path = REPO) -> dict[str, An
             "download_bytes": size,
             "n_lines_streamed": n_lines,
             "n_bbox_survivors": n_bbox_survivors,
-            "n_intersecting_bbmp_polygon": n_ms_in_polygon,
+            "n_intersecting_buffered_domain": n_ms_in_polygon,
             "n_dropped_as_duplicate_of_osm": n_ms_dropped_dup,
             "n_kept_gap_fill": n_ms_kept,
         },
         "n_buildings_total": len(combined),
-        "n_building_cells": n_building_cells,
-        "building_cell_fraction": n_building_cells / (grid.width * grid.height),
+        "n_building_cells": n_building_cells_canonical,
+        "n_building_cells_buffered": n_building_cells_buffered,
+        "building_cell_fraction": n_building_cells_canonical / (grid.width * grid.height),
         "vector_path": str(vector_path.relative_to(repo_root)),
         "mask_path": str(mask_path.relative_to(repo_root)),
+        "buffered_mask_path": str(buffered_mask_path.relative_to(repo_root)),
         "height_delta_path": str(delta_path.relative_to(repo_root)),
+        "buffered_height_delta_path": str(buffered_delta_path.relative_to(repo_root)),
     }
 
 

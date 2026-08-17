@@ -123,45 +123,44 @@ def _baseline_value(by_landuse: dict[str, float]) -> float:
 
 
 def build_drains(cfg: dict[str, Any], repo_root: Path = REPO) -> dict[str, Any]:
-    """Fetch waterways, compute distance-to-nearest, write the capacity prior raster."""
+    """Fetch waterways over the buffered domain, compute distance-to-nearest, write capacity rasters."""
     grid, grid_diag = build_grid(cfg, repo_root)
+    buffer_m = float(cfg["dem"]["buffer_m"])
+    buffered_grid = grid.buffered(buffer_m)
+    buf_cells = round(buffer_m / grid.resolution)
     d_cfg = cfg["drains"]
 
-    boundary_wgs84 = load_boundary(cfg, repo_root)
-    boundary_valid = boundary_wgs84.copy()
-    boundary_valid["geometry"] = boundary_valid.make_valid()
-    union_wgs84 = boundary_valid.union_all()
-    query_box = box(*union_wgs84.bounds)
+    # Compute bounding box of the BUFFERED domain in WGS84
+    buffered_box_proj = box(*buffered_grid.bounds)
+    buffered_box_wgs84 = (
+        gpd.GeoSeries([buffered_box_proj], crs=grid.crs).to_crs("EPSG:4326").iloc[0]
+    )
+    query_box = box(*buffered_box_wgs84.bounds)
 
     gdf_proj = fetch_waterways(
-        query_box, union_wgs84, d_cfg["waterway_tags"], grid.crs, d_cfg["overpass_timeout_s"]
+        query_box, buffered_box_wgs84, d_cfg["waterway_tags"], grid.crs, d_cfg["overpass_timeout_s"]
     )
     n_features = len(gdf_proj)
 
-    drain_mask = rasterize(
+    # Rasterize on the BUFFERED grid
+    drain_mask_buffered = rasterize(
         [(geom, 1) for geom in gdf_proj.geometry],
-        out_shape=(grid.height, grid.width),
-        transform=grid.transform,
+        out_shape=(buffered_grid.height, buffered_grid.width),
+        transform=buffered_grid.transform,
         fill=0,
         all_touched=True,  # a line feature — same connectivity reasoning as roads.py
         dtype="uint8",
     )
-    n_drain_cells = int(drain_mask.sum())
-    if n_drain_cells == 0:
+    n_drain_cells_buffered = int(drain_mask_buffered.sum())
+    if n_drain_cells_buffered == 0:
         raise DrainFetchError(
             f"{n_features} waterway features fetched, but the rasterized mask has zero "
             "drain cells — suspect a rasterize/CRS mismatch"
         )
 
-    # distance_transform_edt measures distance to the nearest ZERO in a binary
-    # array (in pixel units by default); pass `sampling` so it returns metres
-    # directly, and invert the mask since drain cells are our "target" (True
-    # == not-yet-a-drain, per EDT's own semantics of measuring away from
-    # False/target pixels — see scipy docs: distances are to the nearest
-    # background (0) pixel of the INPUT, so we feed it the drain mask's
-    # logical inverse to measure distance TO drain cells, not away from them).
-    distance_m = distance_transform_edt(
-        drain_mask == 0, sampling=(grid.resolution, grid.resolution)
+    # distance_transform_edt on the BUFFERED grid
+    distance_m_buffered = distance_transform_edt(
+        drain_mask_buffered == 0, sampling=(grid.resolution, grid.resolution)
     ).astype(np.float32)
 
     baseline = _baseline_value(d_cfg["baseline_capacity_by_landuse_mm_per_hr"])
@@ -172,7 +171,16 @@ def build_drains(cfg: dict[str, Any], repo_root: Path = REPO) -> dict[str, Any]:
             f"{d_cfg['distance_decay']['functional_form']!r} not implemented "
             "(only 'exponential' is)"
         )
-    capacity = (baseline * np.exp(-distance_m / decay_m)).astype(np.float32)
+    capacity_buffered = (baseline * np.exp(-distance_m_buffered / decay_m)).astype(np.float32)
+
+    # Crop to canonical grid
+    distance_m_canonical = distance_m_buffered[
+        buf_cells : buf_cells + grid.height, buf_cells : buf_cells + grid.width
+    ]
+    capacity_canonical = capacity_buffered[
+        buf_cells : buf_cells + grid.height, buf_cells : buf_cells + grid.width
+    ]
+    n_drain_cells_canonical = int((drain_mask_buffered[buf_cells : buf_cells + grid.height, buf_cells : buf_cells + grid.width] == 1).sum())
 
     interim_dir = repo_root / cfg["paths"]["interim_terrain_dir"]
     interim_dir.mkdir(parents=True, exist_ok=True)
@@ -185,29 +193,45 @@ def build_drains(cfg: dict[str, Any], repo_root: Path = REPO) -> dict[str, Any]:
         gdf_out["name"] = gdf_out["name"].astype(str)
     gdf_out.to_file(waterways_path, driver="GPKG")
 
+    # Write buffered rasters
+    buffered_dist_path = interim_dir / "distance_to_drain_buffered.tif"
+    with rasterio.open(buffered_dist_path, "w", **buffered_grid.profile(dtype="float32", nodata=None)) as dst:
+        dst.write(distance_m_buffered, 1)
+
+    buffered_capacity_path = interim_dir / "drain_capacity_buffered.tif"
+    with rasterio.open(buffered_capacity_path, "w", **buffered_grid.profile(dtype="float32", nodata=None)) as dst:
+        dst.write(capacity_buffered, 1)
+
+    # Write canonical rasters
     dist_path = interim_dir / "distance_to_drain.tif"
     with rasterio.open(dist_path, "w", **grid.profile(dtype="float32", nodata=None)) as dst:
-        dst.write(distance_m, 1)
+        dst.write(distance_m_canonical, 1)
 
     capacity_path = interim_dir / "drain_capacity.tif"
     with rasterio.open(capacity_path, "w", **grid.profile(dtype="float32", nodata=None)) as dst:
-        dst.write(capacity, 1)
+        dst.write(capacity_canonical, 1)
 
     return {
         "grid_diagnostics": grid_diag,
         "canonical_grid": grid.to_manifest_dict(),
+        "buffered_grid": buffered_grid.to_manifest_dict(),
         "waterway_tags": d_cfg["waterway_tags"],
         "n_features": n_features,
-        "n_drain_cells": n_drain_cells,
+        "n_drain_cells": n_drain_cells_canonical,
+        "n_drain_cells_buffered": n_drain_cells_buffered,
         "assumed_uncalibrated": bool(d_cfg["assumed_uncalibrated"]),
         "baseline_capacity_mm_per_hr": baseline,
         "distance_decay_m": decay_m,
-        "distance_m_min": float(distance_m.min()),
-        "distance_m_max": float(distance_m.max()),
-        "distance_m_mean": float(distance_m.mean()),
-        "capacity_min_mm_per_hr": float(capacity.min()),
-        "capacity_max_mm_per_hr": float(capacity.max()),
+        "distance_m_min": float(distance_m_canonical.min()),
+        "distance_m_max": float(distance_m_canonical.max()),
+        "distance_m_mean": float(distance_m_canonical.mean()),
+        "capacity_min_mm_per_hr": float(capacity_canonical.min()),
+        "capacity_max_mm_per_hr": float(capacity_canonical.max()),
         "waterways_vector_path": str(waterways_path.relative_to(repo_root)),
+        "distance_path": str(dist_path.relative_to(repo_root)),
+        "buffered_distance_path": str(buffered_dist_path.relative_to(repo_root)),
+        "capacity_path": str(capacity_path.relative_to(repo_root)),
+        "buffered_capacity_path": str(buffered_capacity_path.relative_to(repo_root)),
         "distance_to_drain_path": str(dist_path.relative_to(repo_root)),
         "drain_capacity_path": str(capacity_path.relative_to(repo_root)),
     }

@@ -35,3 +35,6 @@ ignore = ["B008"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "slow: analytical cases that integrate to steady state (minutes, not seconds)",
+]

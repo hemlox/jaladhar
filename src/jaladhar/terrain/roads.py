@@ -135,36 +135,50 @@ def rasterize_segment_ids(gdf_proj: gpd.GeoDataFrame, grid: Grid) -> np.ndarray:
 
 
 def build_roads(cfg: dict[str, Any], repo_root: Path = REPO) -> dict[str, Any]:
-    """Fetch, ID, and rasterize the drivable road network. Returns manifest fields."""
+    """Fetch, ID, and rasterize the drivable road network over the buffered domain. Returns manifest fields."""
     grid, grid_diag = build_grid(cfg, repo_root)
+    buffer_m = float(cfg["dem"]["buffer_m"])
+    buffered_grid = grid.buffered(buffer_m)
+    buf_cells = round(buffer_m / grid.resolution)
     r_cfg = cfg["roads"]
 
-    boundary_wgs84 = load_boundary(cfg, repo_root)
-    boundary_valid = boundary_wgs84.copy()
-    boundary_valid["geometry"] = boundary_valid.make_valid()
-    union_wgs84 = boundary_valid.union_all()
-    # Query the BOUNDING BOX (cheap, simple for Overpass to evaluate — a
-    # multi-hundred-vertex ward-union polygon in the query itself risks the
-    # kind of slow/504 Overpass response Phase 0 saw on a different broad
-    # query), then clip results to the true ward-union polygon afterward.
-    query_box = box(*union_wgs84.bounds)
+    # Compute bounding box of the BUFFERED domain in WGS84
+    buffered_box_proj = box(*buffered_grid.bounds)
+    buffered_box_wgs84 = (
+        gpd.GeoSeries([buffered_box_proj], crs=grid.crs).to_crs("EPSG:4326").iloc[0]
+    )
+    query_box = box(*buffered_box_wgs84.bounds)
 
     gdf = fetch_osm_roads(query_box, r_cfg["highway_types"], r_cfg["overpass_timeout_s"])
     n_fetched = len(gdf)
 
-    gdf = gpd.clip(gdf, union_wgs84)
+    gdf = gpd.clip(gdf, buffered_box_wgs84)
     gdf = gdf[~gdf.geometry.is_empty & gdf.geometry.notna()]
     if gdf.empty:
         raise RoadFetchError(
             f"{n_fetched} highway features fetched in the bbox, but zero survived "
-            "clipping to the true BBMP polygon — suspect a bbox/polygon CRS mismatch"
+            "clipping to the buffered domain — suspect a bbox/polygon CRS mismatch"
         )
     n_clipped = len(gdf)
 
     gdf = assign_segment_ids(gdf)
     gdf_proj = gdf.to_crs(grid.crs)
 
-    id_raster = rasterize_segment_ids(gdf_proj, grid)
+    # Rasterize on the BUFFERED grid
+    id_raster_buffered = rasterize_segment_ids(gdf_proj, buffered_grid)
+    buffered_grid.assert_aligned(
+        {
+            "transform": buffered_grid.transform,
+            "width": buffered_grid.width,
+            "height": buffered_grid.height,
+            "crs": buffered_grid.crs,
+        }
+    )
+
+    # Crop to the canonical grid
+    id_raster_canonical = id_raster_buffered[
+        buf_cells : buf_cells + grid.height, buf_cells : buf_cells + grid.width
+    ]
     grid.assert_aligned(
         {"transform": grid.transform, "width": grid.width, "height": grid.height, "crs": grid.crs}
     )
@@ -182,19 +196,28 @@ def build_roads(cfg: dict[str, Any], repo_root: Path = REPO) -> dict[str, Any]:
     lookup_cols = [c for c in ["segment_id", "osm_id", "highway", "name"] if c in gdf_out.columns]
     gdf_out[lookup_cols].to_csv(lookup_path, index=False)
 
+    # Write buffered raster
+    buffered_raster_path = interim_dir / "road_segment_id_buffered.tif"
+    buffered_profile = buffered_grid.profile(dtype="int32", nodata=0, compress="deflate")
+    with rasterio.open(buffered_raster_path, "w", **buffered_profile) as dst:
+        dst.write(id_raster_buffered, 1)
+
+    # Write canonical raster
     raster_path = interim_dir / "road_segment_id.tif"
     profile = grid.profile(dtype="int32", nodata=0, compress="deflate")
     with rasterio.open(raster_path, "w", **profile) as dst:
-        dst.write(id_raster, 1)
+        dst.write(id_raster_canonical, 1)
 
-    n_ids = int(id_raster.max())
-    n_unique_raster_ids = len(np.unique(id_raster)) - (1 if 0 in id_raster else 0)
+    n_ids = int(id_raster_buffered.max())
+    n_unique_raster_ids = len(np.unique(id_raster_canonical)) - (1 if 0 in id_raster_canonical else 0)
+    n_unique_buffered_ids = len(np.unique(id_raster_buffered)) - (1 if 0 in id_raster_buffered else 0)
     ids_are_unique = gdf_out["segment_id"].is_unique
     osm_ids_are_unique = gdf_out["osm_id"].is_unique
 
     return {
         "grid_diagnostics": grid_diag,
         "canonical_grid": grid.to_manifest_dict(),
+        "buffered_grid": buffered_grid.to_manifest_dict(),
         "highway_types": r_cfg["highway_types"],
         "n_features_fetched_bbox": n_fetched,
         "n_features_after_clip": n_clipped,
@@ -203,9 +226,11 @@ def build_roads(cfg: dict[str, Any], repo_root: Path = REPO) -> dict[str, Any]:
         "segment_ids_unique": bool(ids_are_unique),
         "osm_ids_unique": bool(osm_ids_are_unique),
         "n_unique_ids_in_raster": n_unique_raster_ids,
+        "n_unique_ids_in_buffered_raster": n_unique_buffered_ids,
         "vector_path": str(vector_path.relative_to(repo_root)),
         "lookup_path": str(lookup_path.relative_to(repo_root)),
         "raster_path": str(raster_path.relative_to(repo_root)),
+        "buffered_raster_path": str(buffered_raster_path.relative_to(repo_root)),
     }
 
 

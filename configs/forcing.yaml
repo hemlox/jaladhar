@@ -1,0 +1,60 @@
+# JALADHAR — Rainfall Forcing Configuration
+#
+# Configuration for Phase 3 rainfall forcing adapters.
+# Modes: historical (GPM IMERG), nowcast (KSNDMC), forecast (Open-Meteo).
+# Rule: Modes are mutually exclusive and NEVER blended.
+
+# Reference to domain configuration for canonical grid lattice and boundary
+domain_config: "configs/domain_bengaluru.yaml"
+
+# Selected forcing mode: must be exactly one of "historical", "nowcast", "forecast"
+mode: "historical"
+
+# -----------------------------------------------------------------------------
+# Historical Mode: GPM IMERG (v07 Final run half-hourly granules)
+# -----------------------------------------------------------------------------
+historical:
+  source: "gpm_imerg"
+  granules_dir: "data/raw/imerg/2022-08-28_2022-09-10"
+  event_window:
+    start_time: "2022-08-28T00:00:00Z"
+    end_time: "2022-09-10T23:30:00Z"
+  sept5_validation_window:
+    start_time: "2022-09-05T00:00:00Z"
+    end_time: "2022-09-05T23:30:00Z"
+  time_step_minutes: 30
+  native_resolution_deg: 0.1
+  units: "mm/hr"  # converted to incremental mm per 30-min interval in adapter
+
+# -----------------------------------------------------------------------------
+# Nowcast Mode: KSNDMC Live / Captured Gauge Telemetry
+# -----------------------------------------------------------------------------
+nowcast:
+  source: "ksndmc_live"
+  live_dir: "data/raw/ksndmc/live"
+  stations_kml: "data/raw/ksndmc/stations/rain_gauges.kml"
+  bengaluru_bbox: [77.0, 12.3, 78.0, 13.6]  # [min_lon, min_lat, max_lon, max_lat]
+  time_step_minutes: 15
+  accumulation_semantics: "cumulative"
+  interpolation: "nearest"  # spatial interpolation method: nearest / idw
+
+# -----------------------------------------------------------------------------
+# Forecast Mode: Open-Meteo Public NWP API
+# -----------------------------------------------------------------------------
+forecast:
+  source: "open_meteo"
+  endpoint: "https://api.open-meteo.com/v1/forecast"
+  latitude: 12.9716
+  longitude: 77.5946
+  forecast_days: 3
+  hourly_variables:
+    - "precipitation"
+    - "precipitation_probability"
+  timezone: "Asia/Kolkata"
+  time_step_minutes: 60
+
+# -----------------------------------------------------------------------------
+# Output & Manifest Settings
+# -----------------------------------------------------------------------------
+output:
+  runs_dir: "runs/forcing"

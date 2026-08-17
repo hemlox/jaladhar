@@ -147,20 +147,26 @@ def fetch_landuse_class(
 
 
 def build_roughness(cfg: dict[str, Any], repo_root: Path = REPO) -> dict[str, Any]:
-    """Fetch road+landuse polygons, rasterize Manning's n by class priority."""
+    """Fetch road+landuse polygons over the buffered domain, rasterize Manning's n by class priority."""
     grid, grid_diag = build_grid(cfg, repo_root)
+    buffer_m = float(cfg["dem"]["buffer_m"])
+    buffered_grid = grid.buffered(buffer_m)
+    buf_cells = round(buffer_m / grid.resolution)
     ro_cfg = cfg["roughness"]
     roads_cfg = cfg["roads"]
 
-    boundary_wgs84 = load_boundary(cfg, repo_root)
-    boundary_valid = boundary_wgs84.copy()
-    boundary_valid["geometry"] = boundary_valid.make_valid()
-    union_wgs84 = boundary_valid.union_all()
-    query_box = box(*union_wgs84.bounds)
+    # Compute bounding box of the BUFFERED domain in WGS84
+    buffered_box_proj = box(*buffered_grid.bounds)
+    buffered_box_wgs84 = (
+        gpd.GeoSeries([buffered_box_proj], crs=grid.crs).to_crs("EPSG:4326").iloc[0]
+    )
+    query_box = box(*buffered_box_wgs84.bounds)
 
     operating_point = ro_cfg["operating_point"]
     unclassified_default = float(ro_cfg["manning_n"]["unclassified_default"])
-    n_raster = np.full((grid.height, grid.width), unclassified_default, dtype=np.float32)
+    n_raster_buffered = np.full(
+        (buffered_grid.height, buffered_grid.width), unclassified_default, dtype=np.float32
+    )
 
     class_cell_counts: dict[str, int] = {}
     class_feature_counts: dict[str, int] = {}
@@ -170,7 +176,7 @@ def build_roughness(cfg: dict[str, Any], repo_root: Path = REPO) -> dict[str, An
         if cls == "roads_paved":
             gdf_proj = fetch_road_polygons(
                 query_box,
-                union_wgs84,
+                buffered_box_wgs84,
                 roads_cfg["highway_types"],
                 ro_cfg["road_buffer_halfwidth_m"],
                 grid.crs,
@@ -179,7 +185,7 @@ def build_roughness(cfg: dict[str, Any], repo_root: Path = REPO) -> dict[str, An
         else:
             tag_filter = ro_cfg["landuse_classes"][cls]
             gdf_proj = fetch_landuse_class(
-                query_box, union_wgs84, tag_filter, grid.crs, ro_cfg["overpass_timeout_s"]
+                query_box, buffered_box_wgs84, tag_filter, grid.crs, ro_cfg["overpass_timeout_s"]
             )
             if gdf_proj is None:
                 classes_with_zero_features.append(cls)
@@ -191,13 +197,13 @@ def build_roughness(cfg: dict[str, Any], repo_root: Path = REPO) -> dict[str, An
         value = np.float32(operating_point[cls])
         class_mask = rasterize(
             [(geom, 1) for geom in gdf_proj.geometry],
-            out_shape=(grid.height, grid.width),
-            transform=grid.transform,
+            out_shape=(buffered_grid.height, buffered_grid.width),
+            transform=buffered_grid.transform,
             fill=0,
             all_touched=False,
             dtype="uint8",
         )
-        n_raster = np.where(class_mask == 1, value, n_raster)
+        n_raster_buffered = np.where(class_mask == 1, value, n_raster_buffered)
         class_cell_counts[cls] = int(class_mask.sum())
 
     if len(classes_with_zero_features) == len(CLASS_PRIORITY) - 1:  # only roads_paved survived
@@ -207,24 +213,37 @@ def build_roughness(cfg: dict[str, Any], repo_root: Path = REPO) -> dict[str, An
             "of dense_urban/vegetated_open/water"
         )
 
-    n_min, n_max = float(n_raster.min()), float(n_raster.max())
+    n_min, n_max = float(n_raster_buffered.min()), float(n_raster_buffered.max())
     if n_min <= 0.0:
         raise RoughnessFetchError(
             f"Manning's n raster contains a value <= 0 (min={n_min}) — this would blow up "
             "the ACC scheme's friction term; refusing to write it"
         )
 
+    # Crop to canonical grid
+    n_raster_canonical = n_raster_buffered[
+        buf_cells : buf_cells + grid.height, buf_cells : buf_cells + grid.width
+    ]
+
     interim_dir = repo_root / cfg["paths"]["interim_terrain_dir"]
     interim_dir.mkdir(parents=True, exist_ok=True)
+
+    # Write buffered raster
+    buffered_raster_path = interim_dir / "manning_n_buffered.tif"
+    with rasterio.open(buffered_raster_path, "w", **buffered_grid.profile(dtype="float32", nodata=None)) as dst:
+        dst.write(n_raster_buffered, 1)
+
+    # Write canonical raster
     raster_path = interim_dir / "manning_n.tif"
     with rasterio.open(raster_path, "w", **grid.profile(dtype="float32", nodata=None)) as dst:
-        dst.write(n_raster, 1)
+        dst.write(n_raster_canonical, 1)
 
-    unclassified_cells = int((n_raster == np.float32(unclassified_default)).sum())
+    unclassified_cells = int((n_raster_canonical == np.float32(unclassified_default)).sum())
 
     return {
         "grid_diagnostics": grid_diag,
         "canonical_grid": grid.to_manifest_dict(),
+        "buffered_grid": buffered_grid.to_manifest_dict(),
         "class_priority_low_to_high": CLASS_PRIORITY,
         "operating_point": operating_point,
         "unclassified_default": unclassified_default,

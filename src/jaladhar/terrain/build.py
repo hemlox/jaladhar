@@ -51,6 +51,7 @@ import typer
 
 from jaladhar.terrain.buildings import BuildingFetchError, build_buildings
 from jaladhar.terrain.conditioning import ConditioningError, build_conditioning
+from jaladhar.terrain.depressions import DepressionError, build_depressions
 from jaladhar.terrain.derived import DerivedLayerError, build_derived
 from jaladhar.terrain.drains import DrainFetchError, build_drains
 from jaladhar.terrain.fetch import DEMSourceError, fetch_dem
@@ -84,30 +85,45 @@ STACK_LAYERS: list[tuple[str, str, str]] = [
     ("data/interim/terrain/dem_conditioned_postbreach.tif", "elevation.tif", "crop"),
     ("data/interim/terrain/building_mask.tif", "building_mask.tif", "copy"),
     ("data/interim/terrain/building_height_delta.tif", "building_height_delta.tif", "copy"),
-    # D4: computed on the buffered grid alongside elevation (same conditioning.py
-    # call, same lattice) — crop, not copy, matching elevation's own mode.
-    (
-        "data/interim/terrain/building_conveyance_factor.tif",
-        "building_conveyance_factor.tif",
-        "crop",
-    ),
+    ("data/interim/terrain/building_conveyance_factor.tif", "building_conveyance_factor.tif", "crop"),
     ("data/interim/terrain/manning_n.tif", "manning_n.tif", "copy"),
     ("data/interim/terrain/drain_capacity.tif", "drain_capacity.tif", "copy"),
     ("data/interim/terrain/distance_to_drain.tif", "distance_to_drain.tif", "copy"),
     ("data/interim/terrain/road_segment_id.tif", "road_segment_id.tif", "copy"),
     ("data/interim/terrain/slope.tif", "slope.tif", "copy"),
     ("data/interim/terrain/flow_accumulation.tif", "flow_accumulation.tif", "copy"),
+    ("data/interim/terrain/basin_class.tif", "basin_class.tif", "copy"),
+]
+
+# All layers genuinely constructed over the buffered extent (3521 x 3615)
+BUFFERED_STACK_LAYERS: list[tuple[str, str, str]] = [
+    ("data/interim/terrain/dem_conditioned_postbreach.tif", "elevation.tif", "copy"),
+    ("data/interim/terrain/building_mask_buffered.tif", "building_mask.tif", "copy"),
+    ("data/interim/terrain/building_height_delta_buffered.tif", "building_height_delta.tif", "copy"),
+    ("data/interim/terrain/building_conveyance_factor.tif", "building_conveyance_factor.tif", "copy"),
+    ("data/interim/terrain/manning_n_buffered.tif", "manning_n.tif", "copy"),
+    ("data/interim/terrain/drain_capacity_buffered.tif", "drain_capacity.tif", "copy"),
+    ("data/interim/terrain/distance_to_drain_buffered.tif", "distance_to_drain.tif", "copy"),
+    ("data/interim/terrain/road_segment_id_buffered.tif", "road_segment_id.tif", "copy"),
+    ("data/interim/terrain/slope_buffered.tif", "slope.tif", "copy"),
+    ("data/interim/terrain/flow_accumulation_buffered.tif", "flow_accumulation.tif", "copy"),
+    ("data/interim/terrain/basin_class_buffered.tif", "basin_class.tif", "copy"),
 ]
 
 
 def assemble_stack(cfg: dict[str, Any], grid: Grid, repo_root: Path) -> dict[str, Any]:
-    """Copy/crop every interim layer into `data/processed/`, verifying alignment."""
+    """Copy/crop every interim layer into `data/processed/` and `data/processed/buffered/`, verifying alignment."""
     buffer_m = float(cfg["dem"]["buffer_m"])
+    buffered_grid = grid.buffered(buffer_m)
     buf_cells = round(buffer_m / grid.resolution)
+
     processed_dir = repo_root / cfg["paths"]["processed_dir"]
     processed_dir.mkdir(parents=True, exist_ok=True)
+    buffered_dir = processed_dir / "buffered"
+    buffered_dir.mkdir(parents=True, exist_ok=True)
 
-    layer_reports: list[dict[str, Any]] = []
+    # 1. Assemble Canonical Stack
+    canonical_reports: list[dict[str, Any]] = []
     for src_rel, dst_name, mode in STACK_LAYERS:
         src_path = repo_root / src_rel
         if not src_path.exists():
@@ -134,7 +150,7 @@ def assemble_stack(cfg: dict[str, Any], grid: Grid, repo_root: Path) -> dict[str
             interior_nan = bool(np.isnan(arr).any())
             n_nodata = int((arr == nodata).sum()) if nodata is not None else 0
 
-        layer_reports.append(
+        canonical_reports.append(
             {
                 "name": dst_name,
                 "source": src_rel,
@@ -147,7 +163,43 @@ def assemble_stack(cfg: dict[str, Any], grid: Grid, repo_root: Path) -> dict[str
             }
         )
 
-    return {"processed_dir": str(processed_dir.relative_to(repo_root)), "layers": layer_reports}
+    # 2. Assemble Buffered Stack (Genuinely constructed over buffered extent, never padded)
+    buffered_reports: list[dict[str, Any]] = []
+    for src_rel, dst_name, mode in BUFFERED_STACK_LAYERS:
+        src_path = repo_root / src_rel
+        if not src_path.exists():
+            raise BuildError(f"missing buffered stage output: {src_path} (dst would be {dst_name})")
+        dst_path = buffered_dir / dst_name
+
+        shutil.copy2(src_path, dst_path)
+
+        with rasterio.open(dst_path) as check:
+            buffered_grid.assert_aligned(check)  # verify alignment against buffered grid
+            arr = check.read(1)
+            nodata = check.nodata
+            interior_nan = bool(np.isnan(arr).any())
+            n_nodata = int((arr == nodata).sum()) if nodata is not None else 0
+
+        buffered_reports.append(
+            {
+                "name": dst_name,
+                "source": src_rel,
+                "construction": "built_over_buffered_extent",
+                "dtype": str(arr.dtype),
+                "contains_nan": interior_nan,
+                "n_nodata_cells": n_nodata,
+                "min": float(np.nanmin(arr)),
+                "max": float(np.nanmax(arr)),
+            }
+        )
+
+    return {
+        "processed_dir": str(processed_dir.relative_to(repo_root)),
+        "buffered_dir": str(buffered_dir.relative_to(repo_root)),
+        "construction_mode": "built_over_buffered_extent_no_padding",
+        "layers": canonical_reports,
+        "buffered_layers": buffered_reports,
+    }
 
 
 def write_qc_figures(cfg: dict[str, Any], repo_root: Path) -> list[str]:
@@ -267,6 +319,15 @@ def run_all_stages(cfg: dict[str, Any], config_path: Path, repo_root: Path) -> N
         config_path,
         repo_root,
         repo_root / "runs" / "terrain_drains",
+    )
+    typer.echo("=== depressions ===")
+    run_stage(
+        "phase1_terrain_depressions",
+        build_depressions,
+        cfg,
+        config_path,
+        repo_root,
+        repo_root / "runs" / "terrain_depressions",
     )
     typer.echo("=== conditioning ===")
     run_stage(
