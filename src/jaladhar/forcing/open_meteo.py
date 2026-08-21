@@ -29,7 +29,7 @@ from src.jaladhar.forcing.interface import (
     RainfallEvent,
     RainfallInterval,
 )
-from src.jaladhar.terrain.grid import Grid, build_grid
+from src.jaladhar.terrain.grid import build_grid
 
 app = typer.Typer(add_completion=False)
 REPO = Path(__file__).resolve().parents[3]
@@ -249,13 +249,13 @@ def main(
         )
         manifest_path.write_text(json.dumps(manifest, indent=2))
 
-        typer.echo(f"Open-Meteo Forecast Adapter Execution Summary:")
+        typer.echo("Open-Meteo Forecast Adapter Execution Summary:")
         typer.echo(f"  Forecast intervals: {event.num_intervals} (hours)")
         typer.echo(f"  Duration: {event.total_duration_hours:.1f} hours")
         typer.echo(f"  Areal-Mean Total Depth: {event.areal_mean_total_mm:.2f} mm")
         typer.echo(f"  Peak Hourly Rate: {event.peak_hourly_rate_mm_hr:.2f} mm/hr")
         typer.echo(f"  Total Domain Forecast Volume: {event.total_volume_m3:,.1f} m^3")
-        typer.echo(f"  Mass balance check: PASS")
+        typer.echo("  Mass balance check: PASS")
         typer.echo(f"\nWrote manifest to {manifest_path}")
 
     except Exception as e:

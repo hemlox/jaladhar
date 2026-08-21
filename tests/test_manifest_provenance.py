@@ -35,6 +35,19 @@ RUNS = REPO / "runs"
 # exemption — a manifest here is one that cannot be traced to a commit, and the
 # note says exactly what closes it. The list must only ever shrink.
 GRANDFATHERED: dict[str, str] = {
+    "analytical_ladder/manifest.json": (
+        "records a commit that is absent from this repository. CLOSED BY: a clean-state rerun "
+        "through the shared provenance lifecycle; never by replacing the historical SHA."
+    ),
+    "anuga_crossval/manifest.json": (
+        "records a commit that is absent from this repository. CLOSED BY: a clean-state rerun "
+        "through the shared provenance lifecycle; never by replacing the historical SHA."
+    ),
+    "depression_inventory/manifest.json": (
+        "records a commit that is absent from this repository and its producing script is unavailable. "
+        "CLOSED BY: restoring a traceable producer and rerunning from a clean commit, or deleting the "
+        "artifact once a traceable replacement supersedes it."
+    ),
     "solver_probe/manifest.json": (
         "1 h probe, same pre-fix code path with git_sha: None. CLOSED BY: deletion once the "
         "re-run acceptance supersedes it; retained meanwhile because its mass "

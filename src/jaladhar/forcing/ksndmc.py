@@ -12,7 +12,6 @@ GEOLOCATION INTEGRITY (binding rule):
 from __future__ import annotations
 
 import json
-import os
 import re
 import subprocess
 import time
@@ -35,7 +34,7 @@ from src.jaladhar.forcing.interface import (
     RainfallEvent,
     RainfallInterval,
 )
-from src.jaladhar.terrain.grid import Grid, build_grid
+from src.jaladhar.terrain.grid import build_grid
 
 app = typer.Typer(add_completion=False)
 REPO = Path(__file__).resolve().parents[3]
@@ -343,14 +342,14 @@ def main(
         )
         manifest_path.write_text(json.dumps(manifest, indent=2))
 
-        typer.echo(f"KSNDMC Nowcast Adapter Execution Summary:")
+        typer.echo("KSNDMC Nowcast Adapter Execution Summary:")
         typer.echo(f"  Capture intervals processed: {event.num_intervals} (15-min)")
         typer.echo(f"  Duration: {event.total_duration_hours:.1f} hours")
         typer.echo(f"  Geolocated active gauges: {event.distinct_native_cells}")
         typer.echo(f"  Areal-Mean Total Depth: {event.areal_mean_total_mm:.2f} mm")
         typer.echo(f"  Peak Hourly Rate: {event.peak_hourly_rate_mm_hr:.2f} mm/hr")
         typer.echo(f"  Total Domain Volume: {event.total_volume_m3:,.1f} m^3")
-        typer.echo(f"  Mass balance check: PASS")
+        typer.echo("  Mass balance check: PASS")
         typer.echo(f"\nWrote manifest to {manifest_path}")
 
     except Exception as e:

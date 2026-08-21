@@ -64,7 +64,7 @@ class MassBudget:
         self,
         h: torch.Tensor,
         diagnostics: dict[str, torch.Tensor | float],
-        rain_rate_m_s: float,
+        rain_rate_m_s: float | torch.Tensor,
         dt: float,
         n_cells: int,
     ) -> None:
@@ -97,7 +97,10 @@ class MassBudget:
                 )
 
             self.v_current = self.volume(h)
-            self.rain_in += rain_rate_m_s * dt * n_cells * self.cell_area_m2
+            if isinstance(rain_rate_m_s, torch.Tensor):
+                self.rain_in += float(rain_rate_m_s.sum(dtype=torch.float64)) * dt * self.cell_area_m2
+            else:
+                self.rain_in += rain_rate_m_s * dt * n_cells * self.cell_area_m2
             self.drain_out += step_drained_m * self.cell_area_m2
             self.infil_out += step_infil_m * self.cell_area_m2
             self.boundary_out += float(diagnostics["boundary_out_m"]) * self.cell_area_m2

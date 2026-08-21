@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import subprocess
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -132,17 +132,17 @@ def main(
     # Real domain evaluation at Fr = 0.876
     real_domain_eval = interpolate_error_at_froude(sweep_rows, 0.876)
     typer.echo("\n--- Real Domain Operating Evaluation (Fr = 0.876) ---")
-    typer.echo(f"  Literature Prior Validity Limit: Fr = 0.500")
-    typer.echo(f"  Real Domain Observed Froude:     Fr = 0.876 (+0.376 above prior)")
-    typer.echo(f"  Interpolated Disagreement at Fr=0.876:")
+    typer.echo("  Literature Prior Validity Limit: Fr = 0.500")
+    typer.echo("  Real Domain Observed Froude:     Fr = 0.876 (+0.376 above prior)")
+    typer.echo("  Interpolated Disagreement at Fr=0.876:")
     typer.echo(f"    L1 Disagreement:    {real_domain_eval['l1_acc_vs_anuga_m']:.4f} m (2.4 cm on 1.0m flow)")
     typer.echo(f"    L2 Disagreement:    {real_domain_eval['l2_acc_vs_anuga_m']:.4f} m")
     typer.echo(f"    Mean Relative Diff: {real_domain_eval['mean_rel_diff_pct']:.2f}%")
     typer.echo(f"  Envelope Status: INSIDE 5% error envelope (Fr_crossover = {co_5pct:.3f}),")
-    typer.echo(f"                   OUTSIDE strict sub-centimetre regime (Fr < 0.28).")
-    typer.echo(f"  Physics Implication: The ~2.4 cm / 4.16% advective omission error must be")
-    typer.echo(f"                       budgeted into solver-vs-observation error separately")
-    typer.echo(f"                       from surrogate-vs-solver error (CLAUDE.md rule).")
+    typer.echo("                   OUTSIDE strict sub-centimetre regime (Fr < 0.28).")
+    typer.echo("  Physics Implication: The ~2.4 cm / 4.16% advective omission error must be")
+    typer.echo("                       budgeted into solver-vs-observation error separately")
+    typer.echo("                       from surrogate-vs-solver error (CLAUDE.md rule).")
 
     elapsed_s = time.time() - start_time
     manifest.update(

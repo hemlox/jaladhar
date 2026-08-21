@@ -1,0 +1,87 @@
+Detail
+00+100
+1/1
+:rt
+Box
+1x2x1.5
+Drain/Footpath
+Drain/Footpath
+ServiceRoad
+Service Road
+Underpass Ramp Portion
+Underpass Ramp Portion
+Underpass
+Underpass Ramp Portion
+Underpass RampPortion
+ServiceRoad
+0
+ServiceRoad
+0
+200
+Drain/Footpath
+Drain/Footpath
+6
+00
+00
+5
+3
+0
+NOTE: THIS DRAWING AND DETAILS ARE INDICATIVE ONLY FOR THE
+TENDER PURPOSE. THE SELECTED CONTRACTOR HAS TO DESIGN AND
+DEVELOP DETAILED DRAWINGS AS PER TENDER SPECIFICATIONS.
+DESCRIPTION
+REVISION.
+A8
+DATE
+RELEASED FOR
+NOTES:
+DESIGNED
+NNK
+Consultancy Services for “Preparation of Detailed Project
+Infra
+Support
+DRAWN
+PHG
+Report (DPR) for Widening of Sarjapura Main Road from
+Buha BegaMg Pe
+PROJECT:
+Jngi eiA auoeueg u smo endereg o orpoun epuesexie
+Your Complete Engineeri
+ing Partner
+CHECKED
+TRL
+junction on ORR’( Construction of Underpass at Harlur
+'ON 80
+ FEASIBILITY
+INFRA SUPPORT ENGINEERING
+Junction (Ch: 0+430 Km ).
+Traffic Engineering Cell
+CONSULTANTS PVT.LTD.
+APPROVED
+KBR
+DPR
+1402
+Bruhat Bangalore Mahanagara Palike
+An I50 9001-2008 Certified Compony
+DATE
+July - 2016
+TITLE:
+Traffic Circulation Plan
+TENDER
+N.R.square, Bangalore - 560 052
+#934, 3rd Cross, HRBR Layout 1st Block Kalyana Nagar,
+Bangalore 560043, Phone: +91 80 25421364
+REVISION
+CONSTRUCTION
+corporate(@infrasupport.in www.infrasupport.in
+SHEET
+1 of 1
+SCALE:
+As shown
+DRG. NO.: IS \ 1402 \ HIG I TP- 001
+RO
+8
+9
+10
+11
+12

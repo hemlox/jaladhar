@@ -14,7 +14,6 @@ so downstream code cannot silently assume fine-scale rainfall detail.
 
 from __future__ import annotations
 
-import glob
 import json
 import subprocess
 import time
@@ -266,14 +265,14 @@ def main(
         )
         manifest_path.write_text(json.dumps(manifest, indent=2))
 
-        typer.echo(f"IMERG Historical Adapter Execution Summary:")
+        typer.echo("IMERG Historical Adapter Execution Summary:")
         typer.echo(f"  Granules processed: {event.num_intervals}")
         typer.echo(f"  Duration: {event.total_duration_hours:.1f} hours")
         typer.echo(f"  Distinct IMERG native cells covering grid: {event.distinct_native_cells}")
         typer.echo(f"  Domain Areal-Mean Depth: {event.areal_mean_total_mm:.2f} mm")
         typer.echo(f"  Peak Cell Intensity: {event.peak_hourly_rate_mm_hr:.2f} mm/hr")
         typer.echo(f"  Total Domain Rainfall Volume: {event.total_volume_m3:,.1f} m^3")
-        typer.echo(f"  Mass balance check: PASS")
+        typer.echo("  Mass balance check: PASS")
         typer.echo(f"\nWrote manifest to {manifest_path}")
 
     except Exception as e:

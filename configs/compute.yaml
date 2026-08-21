@@ -123,3 +123,15 @@ budget:
 # scenario count appears in this file. A stage computing cells x timesteps x
 # scenarios supplies its own scenario count at call time; this file supplies
 # only the per-timestep cost anchor and the pool/budget it is checked against.
+
+development_hosts:
+  - name: cpu_laptop
+    kind: local
+    accelerator: none
+    roles: [development, unit_tests, acquisition, preprocessing]
+    measured_compute_throughput: false
+
+execution:
+  # A full Phase 3 replay is budgeted only against the measured GPU anchor.
+  # CPU hosts may run tests and preprocessing, never an unmeasured full replay.
+  allow_cpu_phase3_replay: false

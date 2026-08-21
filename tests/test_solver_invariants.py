@@ -25,7 +25,6 @@ from jaladhar.solver.analytical.kinematic import PlaneCase, validity_table
 from jaladhar.solver.checkpointing import (
     checkpointed_replay,
     optimal_segment_length,
-    predicted_peak_vram_mib,
 )
 from jaladhar.solver.mass import MassBudget
 from jaladhar.solver.run import replay, simulate, uniform_storm

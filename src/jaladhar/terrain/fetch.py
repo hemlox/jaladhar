@@ -39,6 +39,7 @@ reported provenance."
 
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 from typing import Any
 
@@ -65,6 +66,43 @@ class DEMSourceError(Exception):
     """
 
 
+def ensure_boundary(cfg: dict[str, Any], repo_root: Path) -> dict[str, Any]:
+    """Fetch and byte-verify the configured BBMP boundary before grid construction."""
+    boundary_cfg = cfg["boundary"]
+    required = [
+        "path",
+        "source_url",
+        "source_name",
+        "licence",
+        "expected_sha256",
+        "expected_size_bytes",
+    ]
+    missing = [key for key in required if key not in boundary_cfg]
+    if missing:
+        raise KeyError(f"boundary config is missing acquisition keys: {missing}")
+    path = repo_root / boundary_cfg["path"]
+    if not path.exists():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        download_file(str(boundary_cfg["source_url"]), path)
+    size = path.stat().st_size
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    expected_size = int(boundary_cfg["expected_size_bytes"])
+    expected_digest = str(boundary_cfg["expected_sha256"])
+    if size != expected_size or digest != expected_digest:
+        raise ValueError(
+            f"boundary byte contract mismatch for {path}: size={size}, sha256={digest}; "
+            f"expected size={expected_size}, sha256={expected_digest}"
+        )
+    return {
+        "path": str(path.relative_to(repo_root)),
+        "source_name": boundary_cfg["source_name"],
+        "source_url": boundary_cfg["source_url"],
+        "licence": boundary_cfg["licence"],
+        "size_bytes": size,
+        "sha256": digest,
+    }
+
+
 def download_file(url: str, dest: Path, timeout: int = 300) -> tuple[str, int]:
     """Idempotent, atomic download. Returns (status, size_bytes).
 
@@ -78,10 +116,9 @@ def download_file(url: str, dest: Path, timeout: int = 300) -> tuple[str, int]:
             remote_size = int(head.headers.get("Content-Length", 0))
         except Exception:
             remote_size = 0
-        # "cache aggressively, never re-download": an unverifiable HEAD (0,
-        # or a network hiccup) is NOT treated as a reason to re-fetch. Only
-        # a confirmed size mismatch forces a re-download.
-        if remote_size == 0 or dest.stat().st_size == remote_size:
+        # A cached DEM is not evidence of completeness without an independent
+        # remote byte count. Re-fetch when verification is unavailable.
+        if remote_size > 0 and dest.stat().st_size == remote_size:
             return "have", dest.stat().st_size
 
     dest.parent.mkdir(parents=True, exist_ok=True)
@@ -200,6 +237,7 @@ def fetch_dem(cfg: dict[str, Any], repo_root: Path = REPO) -> dict[str, Any]:
     which the CLI adds). Raises DEMSourceError if every configured source
     fails — the caller must stop, not fabricate elevation (CLAUDE.md rule 1).
     """
+    boundary = ensure_boundary(cfg, repo_root)
     grid, grid_diag = build_grid(cfg, repo_root)
     buffer_m = float(cfg["dem"]["buffer_m"])
     dst_grid = grid.buffered(buffer_m)
@@ -269,6 +307,7 @@ def fetch_dem(cfg: dict[str, Any], repo_root: Path = REPO) -> dict[str, Any]:
     median_in_band = bool(n_valid > 0 and band[0] <= elev_median <= band[1])
 
     return {
+        "boundary": boundary,
         "grid_diagnostics": grid_diag,
         "canonical_grid": grid.to_manifest_dict(),
         "buffer_m": buffer_m,

@@ -191,6 +191,27 @@ def _read(path: Path) -> np.ndarray:
         return ds.read(1)
 
 
+def assert_drain_manifest_contract(d_manifest: dict[str, Any], domain_crs: str) -> None:
+    """Assert the Phase 1 drain guarantees required by the solver (V8 seam)."""
+    if "source" not in d_manifest:
+        raise ValueError("Drain manifest missing guaranteed property: 'source'")
+    if d_manifest.get("feature_count", 0) <= 0:
+        raise ValueError(f"Drain manifest invalid feature_count: {d_manifest.get('feature_count')}")
+    if d_manifest.get("total_length_m", 0.0) <= 0.0:
+        raise ValueError(
+            f"Drain manifest invalid total_length_m: {d_manifest.get('total_length_m')}"
+        )
+    if d_manifest.get("crs") != domain_crs:
+        raise ValueError(
+            f"Drain CRS mismatch: manifest declares {d_manifest.get('crs')!r}, "
+            f"domain requires {domain_crs!r}"
+        )
+    if "class_breakdown" not in d_manifest:
+        raise ValueError("Drain manifest missing guaranteed property: 'class_breakdown'")
+    if not d_manifest.get("assumed_uncalibrated", False):
+        raise ValueError("Drain manifest must preserve assumed_uncalibrated=True (prior status)")
+
+
 def load_domain(
     cfg: dict[str, Any],
     repo_root: Path,
@@ -198,6 +219,7 @@ def load_domain(
     window: tuple[slice, slice] | None = None,
     device: str | torch.device = "cpu",
     use_buffered: bool = True,
+    elevation_override: Path | None = None,
 ) -> StaticFields:
     """Build static fields from Phase 1's `data/processed/` stack.
 
@@ -208,6 +230,12 @@ def load_domain(
     `window` crops to a sub-domain (used for differentiable tiles and for the
     VRAM measurement). Cropping REAL terrain rather than synthesising a test
     domain keeps CLAUDE.md rule 1 intact — no invented elevation, ever.
+
+    `elevation_override` replaces ONLY the elevation raster with an on-disk
+    variant (goal Part 3's carved DEM) on the SAME grid; manning, conveyance
+    and drains are untouched. The override must match the resolved stack's
+    shape exactly — asserted, not assumed (CLAUDE.md V8: the variant's manifest
+    guarantees the grid, and this assert enforces it at the seam).
     """
     processed = repo_root / "data" / "processed"
     if use_buffered and (processed / "buffered").exists():
@@ -217,6 +245,14 @@ def load_domain(
     n = _read(processed / "manning_n.tif")
     c = _read(processed / "building_conveyance_factor.tif")
     d = _read(processed / "drain_capacity.tif")
+    if elevation_override is not None:
+        z_override = _read(elevation_override)
+        if z_override.shape != z.shape:
+            raise ValueError(
+                f"elevation_override shape {z_override.shape} != stack elevation "
+                f"{z.shape}; variant must match the {processed.name} grid exactly."
+            )
+        z = z_override
     if window is not None:
         z, n, c, d = z[window], n[window], c[window], d[window]
 
@@ -234,6 +270,15 @@ def load_domain(
                 f"Terrain connectivity mismatch: manifest declares {manifest_conn!r}, "
                 "but ACC shallow-water solver uses D4 5-point cardinal stencil."
             )
+
+    # Assert drain manifest properties across phase boundary (Invariant V8)
+    if cfg.get("sinks", {}).get("drain", {}).get("enabled", False):
+        drain_manifest_path = repo_root / "runs" / "terrain_drains" / "manifest.json"
+        if drain_manifest_path.exists():
+            import json
+
+            d_manifest = json.loads(drain_manifest_path.read_text())
+            assert_drain_manifest_contract(d_manifest, str(domain["crs"]))
 
     return build_static_fields(
         z,

@@ -39,7 +39,7 @@ import typer
 from rasterio.features import rasterize
 from shapely.geometry import box
 
-from jaladhar.terrain.grid import build_grid, load_boundary, load_config, run_stage
+from jaladhar.terrain.grid import build_grid, load_config, run_stage
 
 try:
     from osmnx._errors import InsufficientResponseError

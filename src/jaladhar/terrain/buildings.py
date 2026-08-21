@@ -56,7 +56,7 @@ from rasterio.features import rasterize
 from shapely.geometry import box, shape
 
 from jaladhar.terrain.fetch import download_file
-from jaladhar.terrain.grid import build_grid, load_boundary, load_config, run_stage
+from jaladhar.terrain.grid import build_grid, load_config, run_stage
 
 app = typer.Typer(add_completion=False)
 REPO = Path(__file__).resolve().parents[3]

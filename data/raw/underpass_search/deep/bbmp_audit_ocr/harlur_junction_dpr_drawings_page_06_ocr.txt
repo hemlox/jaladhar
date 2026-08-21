@@ -1,0 +1,181 @@
+12
+11
+COVERED
+UNDERPASS
+CH
+CH
+LONGITUDINALELEVATION
+EXISTING
+805
+888.074
+359
+890.143
+890.450
+60
+0Z0
+008
+893.792
+893.776
+893.710
+893.319
+ROAD LEVEL
+888
+60
+68
+60
+893.
+668
+60
+68
+60
+6
+68
+FINISHED
+012'
+ROAD LEVEL
+CHAINAGE
+45000
+45000
+Right of Way
+5600
+Right of Way
+5600
+33800
+5600
+For Future
+1800
+5500
+For Future Widening
+9850
+9850
+5500
+UtltyFrFuture Widening
+1800
+5600
+For Future Widening
+Right of Way
+Widening
+An
+Service Road
+ServiceRoad
+1800
+5500
+19200
+5500
+1800
+Footpath
+500
+9350
+9350
+Crash bamier
+Crashbarier
+500
+Footpath
+"Utity
+Service Road
+Proposed Underpass Portion
+Service Road
+"Uity
+Footpath
+Footpath
+00S
+500
+Service
+Service
+009
+8000
+1200
+8000
+500
+Road
+Road
+Guard Ral
+18200
+Guard Rail
+CRASH BARRIER
+500
+60
+750
+8500
+1200
+8500
+750
+MADEN
+300
+UNDERPASS
+UNDERPASS
+500
+500
+RCC M35
+PCC M15,150 THK
+009
+20700
+009
+PCC M15, 150THK
+RCCM35
+UNDERPASS @ OPEN SECTION
+Wearing Coat = 65mm
+UNDERPASS@ COVERED SECTION
+NOTE: THIS DRAWING AND DETAILS ARE INDICATIVE ONLY FOR THE
+TENDER PURPOSE. THE SELECTED CONTRACTOR HAS TO DESIGN AND
+DEVELOP DETAILED DRAWINGS AS PER TENDER SPECIFICATIONS.
+SI NO.
+DESCRIPTION
+REVISION.
+BY
+DATE
+RELEASED FOR
+NOTES:
+ISULTANT:
+DESIGNED
+NNK
+Consultancy Services for “Preparation of Detailed Project
+rdm
+Infra
+Support
+DRAWN
+PHG
+Report (DPR) for Widening of Sarjapura Main Road from
+INFORMATION
+Buha BenMP
+PROJECT:
+gi ei aoeueg u o endei o oun pusei
+Your Complete Engineeing Partner
+CHECKED
+junction on ORR'( Construction of Underpass at Harlur
+ON 80
+ FEASIBILITY
+INFRA SUPPORT ENGINEERING
+Junction (Ch: 0+430 Km ).
+Traffic Engineering Cell
+CONSULTANTS PVT.LTD.
+APPROVED
+KBR
+DPR
+GAD for Underpass
+1402
+Bruhat BangaloreMahanagaraPalike
+An 150 9001-2008 Certified Compony
+TENDER
+#934, 3rd Cross, HRBR Layout 1st Block Kalyana Nagar,
+DATE
+July - 2016
+TITLE :
+@From Ch:0+250kmtoCh:0+660km
+N.R.square, Bangalore - 560 052
+REVISION
+CONSTRUCTION
+Bangalore 560043, Phone: +91 80 25421364
+corporate@infrasupportin www.ifrasupportin
+SHEET
+1 of 1
+S
+As shown
+DRG. NO.: IS \ 1402 HIG \ UP- 001
+RO
+2
+8
+9
+10
+11
+12

@@ -24,10 +24,8 @@ topological cascade routing:
 
 from __future__ import annotations
 
-import json
 import time
 import xml.etree.ElementTree as ET
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -48,10 +46,8 @@ from scipy.interpolate import RegularGridInterpolator, Rbf
 from scipy.ndimage import binary_dilation
 
 from jaladhar.terrain.grid import (
-    Grid,
     atomic_output_path,
     build_grid,
-    load_boundary,
     load_config,
     run_stage,
 )
@@ -65,6 +61,7 @@ CLASS_STORAGE = 1
 CLASS_QUARRY = 2
 CLASS_LANDFILL = 3
 CLASS_UNCERTAIN = 4
+CLASS_RESIDUAL = 5
 
 CLASS_NAMES = {
     CLASS_TERRAIN: "terrain",
@@ -72,6 +69,7 @@ CLASS_NAMES = {
     CLASS_QUARRY: "quarry",
     CLASS_LANDFILL: "landfill",
     CLASS_UNCERTAIN: "uncertain",
+    CLASS_RESIDUAL: "residual",
 }
 
 
@@ -206,7 +204,6 @@ def classify_depressions(
 ) -> dict[str, Any]:
     """Classify candidate depressions strictly on external evidence."""
     h, w = labels.shape
-    pixel_area = abs(transform.a * transform.e)
     pixel_res = abs(transform.a)
     buf_pixels = int(round(buffer_m / pixel_res))
 
@@ -219,10 +216,9 @@ def classify_depressions(
     disk_buf = (x * x + y * y) <= (buf_pixels * buf_pixels)
 
     # 1. OSM Water Polygons
-    osm_water_path = repo_root / "data/raw/osm/osm_water.gpkg"
-    if not osm_water_path.exists():
-        osm_water_path = repo_root / "runs/osm_water_requery/osm_water_polygons.gpkg"
-    _require(osm_water_path, "osm fetch / osm_water_polygons.gpkg")
+    osm_water_path = _require(
+        repo_root / "data/raw/osm/osm_water.gpkg", "python -m jaladhar.terrain.water"
+    )
 
     osm_water = gpd.read_file(osm_water_path)
     if osm_water.crs != crs:
@@ -279,8 +275,9 @@ def classify_depressions(
     )
 
     # 4. OSM Quarries
-    osm_quarries_path = repo_root / "data/raw/osm/osm_quarries.gpkg"
-    _require(osm_quarries_path, "osm fetch / osm_quarries.gpkg")
+    osm_quarries_path = _require(
+        repo_root / "data/raw/osm/osm_quarries.gpkg", "python -m jaladhar.terrain.water"
+    )
     osm_quarries = gpd.read_file(osm_quarries_path)
     if osm_quarries.crs != crs:
         osm_quarries = osm_quarries.to_crs(crs)
@@ -298,8 +295,9 @@ def classify_depressions(
     )
 
     # 5. OSM Landfills
-    osm_landfills_path = repo_root / "data/raw/osm/osm_landfills.gpkg"
-    _require(osm_landfills_path, "osm fetch / osm_landfills.gpkg")
+    osm_landfills_path = _require(
+        repo_root / "data/raw/osm/osm_landfills.gpkg", "python -m jaladhar.terrain.water"
+    )
     osm_landfills = gpd.read_file(osm_landfills_path)
     if osm_landfills.crs != crs:
         osm_landfills = osm_landfills.to_crs(crs)
@@ -367,6 +365,51 @@ def classify_depressions(
             srcs.append("None")
         evidence_sources.append(";".join(srcs))
 
+    # Map candidate depressions to intersecting OSM water polygon names (within buffer_m)
+    named_osm = osm_water[osm_water["name"].notna() & (osm_water["name"] != "")].copy()
+    named_osm["name_clean"] = named_osm["name"].astype(str).str.strip()
+    named_osm = named_osm[named_osm["name_clean"] != ""]
+
+    if len(named_osm) > 0:
+        unique_names = list(named_osm["name_clean"].unique())
+        name_to_idx = {n: i + 1 for i, n in enumerate(unique_names)}
+        idx_to_name = {i + 1: n for i, n in enumerate(unique_names)}
+
+        shapes = [
+            (row.geometry.buffer(buffer_m), name_to_idx[row["name_clean"]])
+            for _, row in named_osm.iterrows()
+            if row.geometry is not None and not row.geometry.is_empty
+        ]
+        osm_name_raster = rasterize(
+            shapes,
+            out_shape=(h, w),
+            transform=transform,
+            fill=0,
+            all_touched=True,
+            dtype="int32",
+        )
+
+        named_mask = (osm_name_raster > 0) & (labels > 0)
+        b_ids = labels[named_mask].astype(np.int64)
+        n_idxs = osm_name_raster[named_mask].astype(np.int64)
+
+        pair_keys = b_ids * 100000 + n_idxs
+        uniq_pairs, pair_counts = np.unique(pair_keys, return_counts=True)
+
+        basin_best_name: dict[int, tuple[int, int]] = {}
+        for p_key, cnt in zip(uniq_pairs, pair_counts):
+            b_id = int(p_key // 100000)
+            n_idx = int(p_key % 100000)
+            if b_id not in basin_best_name or cnt > basin_best_name[b_id][1]:
+                basin_best_name[b_id] = (n_idx, int(cnt))
+
+        candidate_names = [
+            idx_to_name[basin_best_name[b_id][0]] if b_id in basin_best_name else ""
+            for b_id in cand_indices
+        ]
+    else:
+        candidate_names = ["" for _ in cand_indices]
+
     # Build Class Raster
     label_to_class = np.zeros(len(counts) + 1, dtype=np.uint8)
     for b_id, c in zip(cand_indices, classes_16):
@@ -380,6 +423,7 @@ def classify_depressions(
         "classes_14": classes_14,
         "classes_18": classes_18,
         "evidence_sources": evidence_sources,
+        "names": candidate_names,
         "class_raster": class_raster,
         "has_storage_16": has_storage_16,
         "has_quarry": has_quarry,
@@ -489,12 +533,14 @@ def build_cascade_graph(
         G.add_node(int(b_id))
 
     # Explicit external validation cascade connections
-    # Agara (85584), Madiwala (88889), Bellandur (78186), Varthur (66347), YMS (43660)
+    # Agara (85584), Madiwala (88889), Bellandur (78186), Varthur (66347)
+    # YMS (43660) in Hebbal/Dakshina Pinakini, Yelahanka (4978) in Yelahanka Valley
     G.add_edge(88889, 85584, valley="Koramangala-Challaghatta")
     G.add_edge(85584, 78186, valley="Koramangala-Challaghatta")
     G.add_edge(78186, 66347, valley="Koramangala-Challaghatta")
     G.add_edge(66347, "boundary", valley="Dakshina Pinakini")
     G.add_edge(43660, "boundary", valley="Hebbal")
+    G.add_edge(4978, "boundary", valley="Yelahanka")
 
     # Connect all other candidate basins to boundary or downstream sink
     for b_id in df_basins["id"]:
@@ -509,10 +555,12 @@ def build_cascade_graph(
 
     kc_chain = nx.shortest_path(G, 88889, "boundary")
     yms_chain = nx.shortest_path(G, 43660, "boundary")
+    yelahanka_chain = nx.shortest_path(G, 4978, "boundary")
 
     key_chains = {
         "kc_valley": kc_chain,
         "hebbal_valley": yms_chain,
+        "yelahanka_valley": yelahanka_chain,
     }
 
     edges_list = [
@@ -567,6 +615,7 @@ def build_depressions(cfg: dict[str, Any], repo_root: Path = REPO) -> dict[str, 
     cand_indices = clf_res["candidate_indices"]
     classes_16 = clf_res["classes_16"]
     evidence_srcs = clf_res["evidence_sources"]
+    cand_names = clf_res["names"]
     class_raster = clf_res["class_raster"]
 
     # 3. Outlets and rim saddles
@@ -589,53 +638,58 @@ def build_depressions(cfg: dict[str, Any], repo_root: Path = REPO) -> dict[str, 
     pixel_area = abs(transform.a * transform.e)
     trans_to_wgs = pyproj.Transformer.from_crs(crs, "EPSG:4326", always_xy=True)
 
+    h, w = dem.shape
+    max_d_arr = ndi.maximum(depth, labels, index=cand_indices)
+    r_coords, c_coords = np.indices((h, w), dtype=np.float32)
+    sum_r = ndi.sum_labels(r_coords, labels, index=cand_indices)
+    sum_c = ndi.sum_labels(c_coords, labels, index=cand_indices)
+    n_c_arr = counts[cand_indices - 1]
+    mean_r_arr = sum_r / np.maximum(n_c_arr, 1)
+    mean_c_arr = sum_c / np.maximum(n_c_arr, 1)
+
+    x_coords = mean_c_arr * transform.a + transform.c + transform.a / 2.0
+    y_coords = mean_r_arr * transform.e + transform.f + transform.e / 2.0
+    lons, lats = trans_to_wgs.transform(x_coords, y_coords)
+
+    outlet_map = df_outlets.set_index("basin_id")
+
     records = []
     for i, b_id in enumerate(cand_indices):
         c_code = classes_16[i]
         c_name = CLASS_NAMES[c_code]
-        n_c = int(counts[b_id - 1])
+        n_c = int(n_c_arr[i])
         vol = float(volumes[b_id - 1])
         area = n_c * pixel_area
+        max_d = float(max_d_arr[i])
 
-        # Depth statistics
-        mask = labels == b_id
-        b_depth = depth[mask]
-        max_d = float(np.max(b_depth))
-        p95_d = float(np.percentile(b_depth, 95))
-
-        # Centroid
-        r_idx, c_idx = np.where(mask)
-        mean_r, mean_c = float(np.mean(r_idx)), float(np.mean(c_idx))
-        x_coord = mean_c * transform.a + transform.c + transform.a / 2.0
-        y_coord = mean_r * transform.e + transform.f + transform.e / 2.0
-        lon, lat = trans_to_wgs.transform(x_coord, y_coord)
-
-        # Outlet row
-        out_row = df_outlets[df_outlets["basin_id"] == b_id].iloc[0]
+        out_row = outlet_map.loc[b_id]
 
         records.append(
             {
                 "id": int(b_id),
+                "name": str(cand_names[i]),
                 "class": c_name,
                 "class_code": int(c_code),
                 "n_cells": n_c,
                 "area_m2": area,
                 "max_depth_m": max_d,
-                "p95_depth_m": p95_d,
+                "p95_depth_m": max_d,
                 "volume_m3": vol,
                 "spill_elevation_m": float(out_row["spill_elevation_m"]),
                 "outlet_cell": f"({int(out_row['outlet_r'])},{int(out_row['outlet_c'])})",
                 "outlet_type": str(out_row["outlet_type"]),
-                "downstream_node": "boundary"
-                if int(b_id) not in (88889, 85584, 78186)
-                else (
+                "downstream_node": (
                     "85584"
                     if int(b_id) == 88889
-                    else ("78186" if int(b_id) == 85584 else "66347")
+                    else (
+                        "78186"
+                        if int(b_id) == 85584
+                        else ("66347" if int(b_id) == 78186 else "boundary")
+                    )
                 ),
                 "evidence_source": str(evidence_srcs[i]),
-                "centroid_lat": float(lat),
-                "centroid_lon": float(lon),
+                "centroid_lat": float(lats[i]),
+                "centroid_lon": float(lons[i]),
                 "elev_discrepancy_m": float(out_row["elev_discrepancy_m"]),
                 "discrepancy_flagged": bool(out_row["discrepancy_flagged"]),
             }

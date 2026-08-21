@@ -7,7 +7,7 @@ re-downloading a cached tile; every stage's output is only recomputed if
 missing) so re-running this after a partial failure resumes rather than
 redoing finished work:
 
-    grid -> fetch (DEM) -> {roads, buildings, roughness, drains}
+    grid -> fetch (DEM) -> {water, roads, buildings, roughness, drains}
          -> conditioning -> derived -> [this module] assemble + QC
 
 Assembles the FINAL stack in `data/processed/`: every layer named in
@@ -51,13 +51,14 @@ import typer
 
 from jaladhar.terrain.buildings import BuildingFetchError, build_buildings
 from jaladhar.terrain.conditioning import ConditioningError, build_conditioning
-from jaladhar.terrain.depressions import DepressionError, build_depressions
+from jaladhar.terrain.depressions import DepressionError
 from jaladhar.terrain.derived import DerivedLayerError, build_derived
 from jaladhar.terrain.drains import DrainFetchError, build_drains
 from jaladhar.terrain.fetch import DEMSourceError, fetch_dem
 from jaladhar.terrain.grid import Grid, build_grid, build_grid_result, load_config, run_stage
 from jaladhar.terrain.roads import RoadFetchError, build_roads
 from jaladhar.terrain.roughness import RoughnessFetchError, build_roughness
+from jaladhar.terrain.water import WaterFetchError, build_water
 
 app = typer.Typer(add_completion=False)
 REPO = Path(__file__).resolve().parents[3]
@@ -165,7 +166,7 @@ def assemble_stack(cfg: dict[str, Any], grid: Grid, repo_root: Path) -> dict[str
 
     # 2. Assemble Buffered Stack (Genuinely constructed over buffered extent, never padded)
     buffered_reports: list[dict[str, Any]] = []
-    for src_rel, dst_name, mode in BUFFERED_STACK_LAYERS:
+    for src_rel, dst_name, _mode in BUFFERED_STACK_LAYERS:
         src_path = repo_root / src_rel
         if not src_path.exists():
             raise BuildError(f"missing buffered stage output: {src_path} (dst would be {dst_name})")
@@ -284,6 +285,15 @@ def run_all_stages(cfg: dict[str, Any], config_path: Path, repo_root: Path) -> N
         repo_root,
         repo_root / "runs" / "terrain_dem",
     )
+    typer.echo("=== water ===")
+    run_stage(
+        "phase1_terrain_water",
+        build_water,
+        cfg,
+        config_path,
+        repo_root,
+        repo_root / "runs" / "terrain_water",
+    )
     typer.echo("=== roads ===")
     run_stage(
         "phase1_terrain_roads",
@@ -319,15 +329,6 @@ def run_all_stages(cfg: dict[str, Any], config_path: Path, repo_root: Path) -> N
         config_path,
         repo_root,
         repo_root / "runs" / "terrain_drains",
-    )
-    typer.echo("=== depressions ===")
-    run_stage(
-        "phase1_terrain_depressions",
-        build_depressions,
-        cfg,
-        config_path,
-        repo_root,
-        repo_root / "runs" / "terrain_depressions",
     )
     typer.echo("=== conditioning ===")
     run_stage(
@@ -384,6 +385,8 @@ def main(
         BuildingFetchError,
         RoughnessFetchError,
         DrainFetchError,
+        WaterFetchError,
+        DepressionError,
         ValueError,
         ConditioningError,
         DerivedLayerError,

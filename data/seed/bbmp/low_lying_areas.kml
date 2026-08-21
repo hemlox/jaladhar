@@ -1,0 +1,912 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+<Document id="root_doc">
+<Schema name="lowlying_locations" id="lowlying_locations">
+	<SimpleField name="OBJECTID" type="float"></SimpleField>
+</Schema>
+<Folder><name>lowlying_locations</name>
+  <Placemark id="lowlying_locations.1">
+	<name>Gurudarshan Layout,Near Doddabommasandra</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">1</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5593241390377,13.0715371271425</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.2">
+	<name>Devi Nagara</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">2</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5730246337936,13.0520729036575</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.3">
+	<name>JRD Tata Nagar</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">3</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.573363637155,13.0552790788261</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.4">
+	<name>Bhadrappa Layout, Nagashettihalli</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">4</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5739608091609,13.0486685553505</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.5">
+	<name>Someshwara Nagar</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">5</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5792967997007,13.0923268027641</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.6">
+	<name>EWS working colony 3rd stage</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">6</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5824405738244,13.0935430976927</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.7">
+	<name>Attur, Near Dairy Circle</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">7</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5689946485051,13.107284706071</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.8">
+	<name>Balaji Layout, Near Tata Nagar</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">8</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.576471832231,13.05400991038</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.9">
+	<name>Shankrappa Layout,MAruthi nagar</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">9</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6051141303453,13.1036621250704</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.10">
+	<name>Kempapura</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">10</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6048096524019,13.0484853586708</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.11">
+	<name>Mariyanna Palya</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">11</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6153719042868,13.0513188409369</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.12">
+	<name>Telecom layout,Ashwathnagar</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">12</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6346562236285,13.0558438602303</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.13">
+	<name>Sanguruvanahalli</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">13</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5408666666729,12.9908666662383</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.14">
+	<name>8TH CROSS 6TH BLOCK SANKARAPPA GARDEN ,RAJAJINAGAR</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">14</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5525326297742,12.9813991521908</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.15">
+	<name>BHAKSHI GARDEN</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">15</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.566054909962,12.9684298800879</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.16">
+	<name>SANJEEVAPPA GARDEN</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">16</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5588053181909,13.0282233491054</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.17">
+	<name>NAGANNA NAGAR,NEAR BINNIY MILL ROAD</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">17</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5687506218599,12.9670968958218</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.18">
+	<name>KANTEERAVA NAGARA</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">18</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5415463996097,13.0196048115791</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.19">
+	<name>KAMALANAGAR</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">19</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5578611429665,13.0226867408992</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.20">
+	<name>12th  cross gubbanalayout industrial area</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">20</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5555462012644,12.9787048562282</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.21">
+	<name>SARVABHOUMA NAGAR-WARD NO 131 NAYANDHALLI</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">21</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5263786003369,12.9507786914149</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.22">
+	<name>14TH CROSS P&amp;T COLONY,CHOLARPALYA</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">22</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5477410304143,12.9913230396652</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.23">
+	<name>1ST MAIN 8TH CROSS N.R.GARDEN,CHOLARPALYA</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">23</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5435531792751,12.9929410729399</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.24">
+	<name>MUDALPALYA</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">24</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5313868890026,13.014326605879</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.25">
+	<name>METRO LAYOUT-WARD NO 131,NEAR NAYANDHALLI</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">25</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.530223812323,12.9654374195325</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.26">
+	<name>bismillanagar</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">26</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6031109926665,12.9269520831511</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.27">
+	<name>rudrappa garden</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">27</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5475717608872,12.9563239937434</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.28">
+	<name>samrudhinagar</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">28</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5468931526243,12.9526248968046</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.29">
+	<name>silkboardjunction</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">29</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5598718344172,12.8966741990632</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.30">
+	<name>SARVABHOUMA NAGAR-WARD NO 131 NAYANDHALLI</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">30</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5263786003369,12.9507786914149</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.31">
+	<name>SOMESHWARA COLONY NEAR SILK BOARD JUNCTION</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">31</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6159962568356,12.9155182467913</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.32">
+	<name>MARUTHI NAGAR, SANKRAPPA LAYOUT</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">32</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.628961332382,12.9178430901315</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.33">
+	<name>VENKATAREDDY NAGAR,SIDDAPURA</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">33</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5965047621556,12.9487522566802</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.34">
+	<name>VITTALA NAGAR , NEAR KEMPEGOWDANAGAR</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">34</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5422852024616,12.9531080573237</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.35">
+	<name>MARUTHI NAGARA ,NEAR BAPUJI NAGARA</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">35</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.538395591297,12.9554968119099</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.36">
+	<name>RANGANATHA LAYOUT,BHEL CIRCLE</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">36</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5353843832805,12.9475113405221</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.37">
+	<name>PWD QUARTERS NEAR WISLSON GARDEN</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">37</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5979684702579,12.9485943903588</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.38">
+	<name>ASHWINI LAYOUT</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">38</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6291898267498,12.9405389984356</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.39">
+	<name>EJIPURA</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">39</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6272964099633,12.9431092534146</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.40">
+	<name>LAKSHMAN RAO NAGARA</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">40</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6146833451546,12.9490792579336</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.41">
+	<name>Kengunta,Near Mallathalli</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">41</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.499259070136,12.9592538035114</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.42">
+	<name>Sri Hari layout</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">42</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.4941712244285,12.9574379990271</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.43">
+	<name>Near Vidyanikethan School</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">43</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.4886975317529,12.9560321588592</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.44">
+	<name>Vinayaka Layout,Near Nagarabhavi</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">44</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5148894417433,12.9647878349789</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.45">
+	<name>Bandemata-Near Kengeri</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">45</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.4885216619697,12.9131382566425</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.46">
+	<name>Janapriya Apartments,Near Rajarajeshwari Temple</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">46</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5089051560258,12.9276328453853</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.47">
+	<name>Kenchenahalli</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">47</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5094453240125,12.9304723356581</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.48">
+	<name>Shivanna Layout,Near Halagevaddarahalli</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">48</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5190201065997,12.9204643601057</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.49">
+	<name>BRINDAVAN NAGAR</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">49</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5545798971634,13.0346251587191</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.50">
+	<name>CHICKKABIDRIKAL</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">50</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.4905174317657,13.0445656358456</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.51">
+	<name>ANJANA NAGARA ,NEAR ANJANEYA TEMPLE (WARD NO 72)</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">51</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.4819589559286,12.9886740252605</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.52">
+	<name>BYRAVESHWARA NAGARA , HAGGANAHALLI</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">52</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5042014204633,12.9893216008603</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.53">
+	<name>CHOWDESHWARINAGAR,RAJIV GANDHI CIRCLE ,LAGGERE</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">53</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5269523740393,13.0097106932318</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.54">
+	<name>KALIKA NAGARA MAIN ROAD (WARD NO 41)</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">54</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.4919584197319,13.0099364369115</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.55">
+	<name>KOTTIGEPALYA</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">55</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5120418872617,12.9859703230919</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.56">
+	<name>RUKMINI NAGARA NEAR MAGADI ROAD (WARD NO 73)</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">56</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.4938813384294,13.0415863390777</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.57">
+	<name>SHIVANANDANAGARA</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">57</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.4951423539782,13.0067812943811</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.58">
+	<name>KALLAPA LAYOUT NEAR BASAVANAGARA</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">58</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.68690014911,12.9678401398011</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.59">
+	<name>TALA KAVERI LAYOUT NEAR HAL AIRPORT</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">59</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6862077155083,12.9604936418399</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.60">
+	<name>SJR DENTAL COLLEGE MAIN ROAD</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">60</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.7030290587202,12.948995700582</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.61">
+	<name>GANDHIPURAM NEAR WHITE FIELD</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">61</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.7559353478791,12.9713155689837</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.62">
+	<name>UDAYANAGARA NEAR A NARAYANPURA</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">62</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6755986418536,12.9900814783436</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.63">
+	<name>PAI LAYOUT</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">63</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6688288350888,12.9914150366501</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.64">
+	<name>CHINAPPA LAYOUT</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">64</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6855870790913,12.9853658544149</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.65">
+	<name>GARUDACHARPLAYA BASAVANAGARA</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">65</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.7194865485595,12.9866177680058</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.66">
+	<name>PASTTANDUR AGRAHARA NEAR ITPL</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">66</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.7350766808123,12.9749466444273</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.67">
+	<name>SAI BABA ASHRAM KADUGODI</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">67</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.7541586165213,13.0015538942678</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.68">
+	<name>PATTALAMMA LAYOUT NEAR KADUGODI</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">68</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.7590733023577,12.9988285462643</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.69">
+	<name>SIDDHARTHA LAYOUT KADUGODI</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">69</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.7631919179187,12.9970066317567</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.70">
+	<name>TRIVENI NAGAR NEAR KR PURAM</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">70</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.7199022142409,13.023151384561</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.71">
+	<name>KRISHNANAGARA , NEAR CHIKKADEVSANDRA</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">71</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.7065480462501,13.0053442229902</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.72">
+	<name>VINAYAKA LAYOUT NEAR BASAVANAPURA MAIN ROAD</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">72</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.7066730094247,13.0142993398719</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.73">
+	<name>HOYSALANAGARA KR PURA</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">73</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6659831346454,13.0172434237938</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.74">
+	<name>RR LAYOUT  NEAR VIJNANAPURA</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">74</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6758085923833,13.0115014743169</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.75">
+	<name>DR AMBEDKAR NAGAR NEAR VIJNANAPURA</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">75</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6866487764669,13.0151964152723</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.76">
+	<name>ABBAREDDY LAYOUT ,VIJNANA NAGARA</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">76</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6808290469289,12.9803526268145</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.77">
+	<name>Vaddara palya, Near Hennur Bande</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">77</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6443741089786,13.040109608308</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.78">
+	<name>BHUVANESHWARI NAGARA WARD NO 15</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">78</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5079819461216,13.0429792423788</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.79">
+	<name>BAGALKUNTE( L NARSIMHAYA LAYOUT)</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">79</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5030166638335,13.0642508306955</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.80">
+	<name>KEMPEGOWDANAGAR</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">80</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5106455509689,13.0451117355453</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.81">
+	<name>NELEGADARANAHALLI</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">81</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5021422802449,13.0336315289934</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.82">
+	<name>SHIVAPURA KERE NEAR NTTF</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">82</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5058579547525,13.0260111585721</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.83">
+	<name>KARAMCHAND LAYOUT NEAR KARIYANNA PALYA</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">83</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>nan,nan</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.84">
+	<name>SHAMPURA SLUM</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">84</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6134973249953,13.0228208475321</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.85">
+	<name>BASAVANNA NAGARA NEAR KADUGODANAHALLI</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">85</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.619731194629,13.0197394058802</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.86">
+	<name>THAMMANA LAYOUT NEAR LINGARAJAPURA,</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">86</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6287575718124,13.0099472299161</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.87">
+	<name>MUNIREDDY PALYA</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">87</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6010257257137,13.0070649025176</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.88">
+	<name>CHINAPPA GARDEN</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">88</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6025996341993,13.0029676087343</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.89">
+	<name>AMBEDKAR NAGAR NEAR BYAPPANAHALLI</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">89</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6405022618689,12.9880986194854</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.90">
+	<name>BANDAPPA COLONY , NEAR NEW BYAPPANAHALLI</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">90</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6406788155904,12.9843178984092</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.91">
+	<name>CAMBRIDGE LAYOUT</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">91</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6266700833542,12.9732903758183</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.92">
+	<name>BHARATHI NAGARA</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">92</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6114142619749,12.9879213450881</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.93">
+	<name>RAJIV GANDHI COLONY ,NEAR QUEENS ROAD</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">93</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6012056646917,12.9892315908177</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.94">
+	<name>MURUGESHPALYA</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">94</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6559917414575,12.9561352291091</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.95">
+	<name>SRINIVAGILU TANK BED LAYOUT</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">95</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.63672590623,12.9362383124114</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.96">
+	<name>SHANTHI NAGARA</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">96</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5995507450686,12.9564860857783</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.97">
+	<name>SAMPANGI RAMA NAGARA</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">97</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5922263953977,12.9729386784169</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.98">
+	<name>SEETHAPPA LAYOUT NEAR RABINDRANATH TAGORE LAYOUT</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">98</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6037671559015,13.0338719413767</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.99">
+	<name>BAMBOO BAZAR</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">99</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6038238812386,12.9926509102014</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.100">
+	<name>munireddypalya anekappa block</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">100</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5944385482952,13.0131255526489</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.101">
+	<name>SHANKAR NAGAR</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">101</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5711870842795,13.0311184601201</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.102">
+	<name>Govindapura,Nesar Nagavara</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">102</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6150247006031,13.0336836305647</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.103">
+	<name>ILLIYAS NAGAR KUMARSWAMY LAYOUT</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">103</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5697855769244,12.9058296131737</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.104">
+	<name>MUNISUBBAREDDY LAYOUT HONGASANDRA</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">104</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6284697894838,12.8989336873366</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.105">
+	<name>AMBEDKAR COLONY NEAR HONGASANDRA</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">105</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6281468991609,12.892686607447</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.106">
+	<name>MICO LAYOUT</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">106</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6269561383418,12.887502662661</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.107">
+	<name>ROYQAL MERIDIAN LAYOUT</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">107</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6243630245224,12.8875862464811</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.108">
+	<name>VISHWA PRIYA NAGARA NEAR BEGUR MAIN RAOD</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">108</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6290511776546,12.8820505434111</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.109">
+	<name>BEGUR KERE AREA</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">109</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.624941297316,12.8764046160013</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.110">
+	<name>SUBASH NAGARA</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">110</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6395408230583,12.8698824764384</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.111">
+	<name>GARVE BHAVI PALYA</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">111</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.637980096622,12.8944407153102</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.112">
+	<name>PARAPPAN AGRAHARA</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">112</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6611585673198,12.880294295714</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.113">
+	<name>G K LAYOUT</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">113</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6603268039859,12.8736972746511</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.114">
+	<name>KUDLU VILLAGE</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">114</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6575038153887,12.8894267732205</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.115">
+	<name>B.T.R GARDEN LAYOUT</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">115</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6423639181386,12.8885118028988</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.116">
+	<name>RAGHAVENDRA SLUM NEAR LAKSHMI LAYOUT</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">116</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.631708269581,12.89072551613</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.117">
+	<name>MUNIREDDY LAYOUT NEAR MANGAMMNAPALYA</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">117</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6371421706667,12.905056828351</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.118">
+	<name>VYSHYA BANK COLONY NEAR AREKERE</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">118</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6042850230189,12.8833498614989</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.119">
+	<name>KRISHNA LAYOUT NEAR HULIMAVU KERE</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">119</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.605805171246,12.8778216573113</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.120">
+	<name>BDA LAYOUT</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">120</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5914921841584,12.8578442680614</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.121">
+	<name>PUTTENHALLI</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">121</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5849201458667,12.9011915440869</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.122">
+	<name>ASHTA LAKSHMI LAYOUT ,PUTTENHALLI</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">122</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5866124577705,12.901838949215</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.123">
+	<name>GANAPATHPURA NEAR CHUNCHANGHATTA MAIN RAOD</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">123</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5703904084562,12.8863083535853</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.124">
+	<name>HARI NAGAR NEAR KONANKUNTTE</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">124</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5752011006453,12.8832966341697</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.125">
+	<name>VITTAL NAGAR NEAR ISRO LAYOUT,UTTARAHALLI</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">125</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5538648525391,12.9026252348706</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.126">
+	<name>sanjaynagar</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">126</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5450093250347,12.9178341662909</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.127">
+	<name>Yelechenahalli</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">127</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5712721864802,12.9056508417207</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.128">
+	<name>Kanakanagar-Near kumaraswamylayout</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">128</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5717608637709,12.9024803332078</coordinates></Point>
+  </Placemark>
+  <Placemark id="lowlying_locations.129">
+	<name>Dorakere</name>
+	<ExtendedData><SchemaData schemaUrl="#lowlying_locations">
+		<SimpleData name="OBJECTID">129</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5457117499136,12.9033576655262</coordinates></Point>
+  </Placemark>
+</Folder>
+</Document></kml>

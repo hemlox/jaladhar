@@ -1,0 +1,187 @@
+12
+45000
+Right of Way
+5600
+33800
+5600
+ForFuture Widening
+Right of Way
+ForFuture Widening
+1800
+5500
+19200
+Utit/Fotpath
+5500
+Otilty/ Footpath
+1800
+Service Road
+Proposed Underpass Portion
+Service Road
+500
+500
+8000
+1200
+8000
+009
+500
+Guard Rail
+Guard Rail
+18200
+500
+2.5%
+CRASH BARRIER
+%9
+500.
+2 No's of 200mm 
+MAIDEN-
+HDPE Pipe.for BESCOM
+300
+Proposed RCC Drain
+2 No's of 100mm @
+Paver Blocks
+HDPE Pipe for BSNL
+Wet Mix Macadam (WMM)
+Sand Layer
+2.5% SLOPE
+2.5% SLOPE
+500
+Granular Sub Base (GSB)
+RCC M35
+PCC M15,150 THK
+500
+20700
+UNDERPASS@OPENSECTION
+Chainage
+Chainage
+Length
+Cross Section
+From
+To
+in Mtrs
+Type
+250
+405
+155
+Open Section
+405
+455
+50
+Covered Section
+455
+660
+205
+Open Section
+410
+45000
+Right of Way
+5600
+1800
+5500
+9850
+9850
+5500
+1800
+5600
+ForFutureWidenyFoopath
+Service Road
+Service Road
+OiltyFotpathForFutureWidening
+500
+9350
+9350
+Crash barrier
+500
+Crash barrier
+Service
+Service
+Road
+Road
+600
+750
+8500
+1200
+8500
+750
+5500
+UNDERPASS
+UNDERPASS
+500
+500
+2.5% SLOPE
+2.5% SLOPE
+200
+009
+PCC M15,150THK
+RCCM35
+Wearing Coat =65mm
+UNDERPASS@COVEREDSECTION
+NOTE: THIS DRAWING AND DETAILS ARE INDICATIVE ONLY FOR THE
+TENDER PURPOSE. THE SELECTED CONTRACTOR HAS TO DESIGN AND
+DEVELOPDETAILED DRAWINGS ASPER TENDERSPECIFICATIONS.
+SI NO.
+DESCRIPTION
+REVISION.
+BY
+DATE
+RELEASED FOR
+NOTES:
+DESIGNED
+NNK
+Consultancy Services for “Preparation of Detailed Project
+1. AI Dimensions are in MIM Uniess Otherwise Specified.
+er damc
+Infra
+Support
+Report (DPR) for Widening of Sarjapura Main Road from
+INFORMATION
+2.Refer Only Witen Dimensions & noto mesure in the Draings.
+Bh BaMP
+DRAWN
+PHG
+PROJECT:
+Jng el auoeueg u mo ndee o uoun epueseie
+Your Complete Engineeing Parner
+Construction of BRTS Statfons is notithe Sope f tisWok.
+CHECKED
+junction on ORR'( Construction of Underpass at Harlur
+'ON 80
+ FEASIBILITY
+Al the Spedilcaton of Parement Layers shal be as per IRC / MoRTH
+INFRA SUPPORT ENGINEERING
+Junction (Ch: 0+430 Km ).
+Traffic Engineering Cell
+CONSULTANTS PVT.LTD.
+APPROVED
+KBR
+DPR
+1402
+Specficatons,
+Bruhat BangaloreMahanagara Palike
+An 150 9001-2008 Certified Compony
+TITLE :
+Typical Cross Section For
+TENDER
+5. If there is ay changes in the levels or Roed Surfac betoween the period
+#934, 3rd Cross, HRBR Layout 1st Block Kalyana Nagar,
+DATE
+July - 2016
+DPR Preperation & Implementation Sage then the Parment reatment
+N.R.square, Bangalore -560 052
+Underpass at CH: 0+430
+Bangalore 560043, Phone: +91 80 25421364
+REVISION
+CONSTRUCTION
+shalbe suabe modifed as per he strut  engieer hchage.
+corporate(@infrasupport.in www.ifrasupport.in
+SHEET
+1 of 2
+SCALE:
+As shown
+DRG. NO.: IS \ 1402 \ HIG\TCS - 001
+RO
+5
+8
+9
+10
+11
+12

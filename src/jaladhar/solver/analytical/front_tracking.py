@@ -16,7 +16,6 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-import torch
 import typer
 
 from jaladhar.solver.acc import SolverParams

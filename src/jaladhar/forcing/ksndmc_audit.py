@@ -13,9 +13,7 @@ Discriminator Logic:
 
 from __future__ import annotations
 
-import glob
 import json
-import os
 import re
 from collections import defaultdict
 from dataclasses import dataclass
@@ -206,9 +204,9 @@ def main(
     typer.echo(f"Auditing KSNDMC live captures in {data_dir}...")
     res = run_audit(data_dir)
 
-    typer.echo(f"\n=======================================================")
+    typer.echo("\n=======================================================")
     typer.echo(f"KSNDMC LIVE CAPTURE AUDIT (Total Files: {res['total_files']})")
-    typer.echo(f"=======================================================")
+    typer.echo("=======================================================")
 
     for day, ddata in sorted(res["days"].items()):
         typer.echo(f"\nDay: {day}")
@@ -226,9 +224,9 @@ def main(
             if len(ddata["decreases"]) > 5:
                 typer.echo(f"    ... and {len(ddata['decreases']) - 5} more morning reset decreases.")
 
-    typer.echo(f"\n=======================================================")
-    typer.echo(f"DISCRIMINATOR & VERDICT")
-    typer.echo(f"=======================================================")
+    typer.echo("\n=======================================================")
+    typer.echo("DISCRIMINATOR & VERDICT")
+    typer.echo("=======================================================")
     typer.echo(f"Verdict: {res['verdict']}")
     typer.echo("Key Evidence:")
     for g in res["discriminating_gauges"]:

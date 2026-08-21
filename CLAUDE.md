@@ -1,6 +1,6 @@
 # CLAUDE.md — JALADHAR standing rules
 
-Bengaluru urban flood digital twin. Full spec in [`PROMPT.md`](PROMPT.md); unresolved external unknowns in [`OPEN-ITEMS.md`](OPEN-ITEMS.md).
+Bengaluru urban flood digital twin. Full spec in [`docs/SPEC.md`](docs/SPEC.md); unresolved external unknowns in [`docs/OPEN-ITEMS.md`](docs/OPEN-ITEMS.md).
 
 **Problem statement (fixed, do not reword):**
 > To develop a real-time digital twin of Bengaluru's urban terrain that predicts street-level flood depths before they occur, using physics-informed neural surrogates and live rainfall telemetry.
@@ -59,12 +59,24 @@ Added after the Phase 1 review pass caught three vacuous tests, a false "accepta
 
 **The mechanical trigger, since noticing you're about to accept a proxy is the hard part, not knowing the rule:** before any claim of the form "X is true" — when writing a test, when writing an acceptance check, and when reporting a phase complete — ask *what would I SEE if X were false?*, then check whether the thing you're about to look at would actually change. If it would not change, you're looking at a proxy. Stop and find the observable that would.
 
+- **V9. The reviewer's own measurements are subject to rules 3 and 6, exactly as agent work is.** Any number that lands in `OPEN-ITEMS.md`, a writeup, or a goal prompt needs a saved script and a logged run behind it. A figure computed in a throwaway shell heredoc and then written down as fact has *worse* provenance than the agent reports being audited with it.
+
+  Added after the Phase 3 audit found **five reviewer figures that do not reproduce** — an IMERG cell count (25 vs a realized 16), a daily rainfall split whose retraction was itself wrong, a gauge-intensity maximum stated as 38.0 mm/hr against a realized 54.0, a "within 110 m" that was an 11×11 window at ±50 m, and a depth quoted from the local-max field inside an argument built on exact-cell values. Every one was produced while holding implementation agents to rule 3.
+
+- **V10. Verifying a claim is not the same as checking that its stated derivation is right.** A number can be traceable, correct, and labelled with a formula that does not produce it. Confirm the derivation, not just the provenance.
+
+  Added because the Phase 3 review blessed a "4% solver error budget" as the only traceable figure in a fabricated decomposition. The 4% is real — `mean_rel_diff = 0.0416`, manifest-verified — but it was labelled "Fr²/2 ≈ 4%", and Fr²/2 at Fr 0.876 is **38%**. The label was wrong by 10× and the review checked that the number existed rather than that its derivation held. This is CLAUDE.md's own "interrogate the metric before the number", failing at the point of application.
+
+- **V11. State which axis you closed an item on, and name the axes you did not.** Closing "is the forcing right?" by measuring totals leaves timing, intensity, spatial structure and antecedent state untested — and reads as though forcing is settled.
+
+  Added because item AJ was closed on rainfall totals, reopened on intensity, and the audit then found two further instances of the same shape. **The evidence that reopened it had been sitting unread in `data/fetched_articles.json` in this repository for a day.** Before closing any item: name the variable, name the axis measured, and list the axes that remain open on the same variable.
+
 **The independent multi-agent review pass is a permanent gate at the end of every phase**, not a one-off. Its value comes specifically from the reviewers having no stake in the code passing — that independence is the actual mechanism, and it is not reproducible from inside the context that wrote the code, including by trying harder.
 
 **Two recorded incidents are why this gate does not get graduated out of** — read them before concluding the review is redundant overhead, because the temptation to skip it arrives exactly when the V-rules feel internalised:
 
 - **Phase 1:** a 25-invariant list built *specifically* to exclude vacuous tests still shipped one (#15, "outfall flux is outward or zero") that passes trivially on a sealed boundary — so the severe, silent failure it existed to catch would have reddened nothing. Caught on review.
-- **Phase 2:** the in-place-write incident in `_boundary_outflux` — the rule was in the plan, restated in the docstring three paragraphs above the violating line, and violated anyway by the same context that wrote it, within minutes. It would have silently severed the one boundary gradient Phase 3 depends on, with correct forward values, conserved mass, and green tests. Caught on review. Full sequence in [`docs/phase2-writeup.md`](docs/phase2-writeup.md).
+- **Phase 2:** the in-place-write incident in `_boundary_outflux` — the rule was in the plan, restated in the docstring three paragraphs above the violating line, and violated anyway by the same context that wrote it, within minutes. It would have silently severed the one boundary gradient Phase 3 depends on, with correct forward values, conserved mass, and green tests. Caught on review. Full sequence in [`docs/phase2-writeup.md`](docs/phases/phase2-writeup.md).
 
 One from the outside, one from the inside on a maximally-salient rule. **The failure is structural, not attentional** — it is not fixed by more care, and confidence is the state in which it occurs.
 
@@ -92,7 +104,7 @@ Most work here arrives as a **report from an implementation agent**, not as code
 **On errors, his and yours:**
 
 - **When you catch him wrong, say it plainly and immediately** — the specific claim, and what the correct version implies differently. Don't soften it and don't dwell on it. He does the same in return.
-- **When something breaks, name the class of failure rather than the instance.** One-off fixes don't compound; a named class becomes a standing rule here. Seven are already identified in [`docs/CONTEXT-HANDOVER.md`](docs/CONTEXT-HANDOVER.md) §6.
+- **When something breaks, name the class of failure rather than the instance.** One-off fixes don't compound; a named class becomes a standing rule here. Seven are already identified in [`docs/archive/CONTEXT-HANDOVER.md`](docs/archive/CONTEXT-HANDOVER.md) §6.
 
 **On authority:**
 
@@ -109,6 +121,28 @@ The set must be **disjoint by file path and by device**. State the ownership spl
 Pair goals so they answer **different questions** rather than racing the same one — e.g. "is the terrain right" alongside "is the solver right". That maps onto the two error budgets this project already reports separately, and it means a failure in one does not invalidate the other.
 
 **Tone:** dense and direct. No hedging, no preamble, no restating the question back. Short answers to scoping questions, full treatment at review gates. Say what to do and why, in that order.
+
+## Reviewer operating discipline — permanent
+
+Added after the Phase 3 independent audit. Its finding was not a list of mistakes: **the measurements reproduced, the inferences did not.** One loop produced all of it — a measurement was converted into a verdict quickly, the verdict became the premise for the next batch of work, and by the time it was withdrawn there was already a rebuild sitting on top of it. These rules exist to break that loop.
+
+- **R1. Findings and readings are different objects, and only findings are load-bearing.** A **finding** is measured, produced by a committed script with a logged run (V9). A **reading** is what the reviewer thinks it means. Label every claim as one or the other. **No goal may be premised on a reading.** The drain rebuild at `338a955` was sequenced on "the root cause is terrain and drainage" — a reading that the audit found rested on evidence touching at most 6 of 24 points, against three larger mechanisms nobody had examined.
+
+- **R2. Validate the instrument before the subject.** No label set, reference raster or classifier gets used to score anything until it has been shown to detect known positives. A whole review cycle was spent scoring the model against a Sentinel-1 reference that finds **0.0% of Varthur Lake** and contains **0 of the project's own 24 verified flood points**. Everything computed against it — three CSI figures, a density stratification, a segment rescore, a withdrawn gate verdict — measured the instrument, not the model.
+
+- **R3. Inventory what is already on disk before acquiring, measuring, or closing.** `data/fetched_articles.json` was fetched on 2026-08-17 and sat unread while forcing was declared resolved and an acquisition goal was written to go find rainfall data. It contained **131.6 mm in 24 h, "most of which fell in less than 12 hours"**, from ~20 independent IMD-sourced outlets, plus KSNDMC station values at three of our own ground-truth sites. The search was for code and rasters; it was never for **evidence**.
+
+- **R4. Trace one mechanism end to end before generalising across many.** "Water does not arrive at the flood locations" was concluded arithmetically and **no flow path was ever followed through a single run**. Fifteen goals of scoring, stratifying and null-modelling did not answer why one cell is dry. One traced case beats another round of statistics, and it is cheaper.
+
+- **R5. Before issuing a verdict, write what would falsify it and check whether that check exists.** If it does not exist, the output is "unresolved, and here is the check", not a verdict. Three verdicts were issued and withdrawn — *the gate fails on extent*, *forcing is not the cause*, *the root cause is terrain* — each stated with language ("decisive", "killing case", "settles it") that made it load-bearing faster than the evidence justified.
+
+- **R6. A goal prompt carries the question and the method, never the anticipated answer.** One prompt told the agent in advance: *"if segment-level lift is not materially above 5.17x, the metric change bought nothing and you say so plainly."* The agent said so plainly. That was read as independent confirmation; it was an echo. Where the reviewer has a hypothesis it goes in a block the agent is instructed to **attack**, never in the framing.
+
+- **R7. The reviewer specifies; it does not measure ad hoc.** Every reviewer measurement in Phase 3 was run in a throwaway shell heredoc and then written into `OPEN-ITEMS.md` as fact. Five do not reproduce. The impulse was impatience with the review cycle, and it produced worse provenance than the agent reports being audited. If a measurement is worth making it is worth a committed script and a manifest (V9); if it is not worth that, it is not worth citing.
+
+- **R8. The independent audit of the reviewer is recurring, not a one-off.** The existing review gate covers implementation agents. Nothing covered the reviewer, and nothing internal would have — the audit's own summary was that the measurements were right and the inferences broke, on exactly the pattern the reviewer was catching in others. Independence is the mechanism; it does not transfer inward by trying harder.
+
+**The trigger, since the hard part is noticing the moment:** before writing "therefore", "this means", or "the cause is" — ask *which of these words is measured?* Then label the sentence a finding or a reading, and check whether anything downstream is already standing on it.
 
 ## Git
 

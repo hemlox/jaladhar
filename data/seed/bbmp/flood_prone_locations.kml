@@ -1,0 +1,528 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+<Document id="root_doc">
+<Schema name="flood_prone_locations" id="flood_prone_locations">
+	<SimpleField name="OBJECTID" type="float"></SimpleField>
+</Schema>
+<Folder><name>flood_prone_locations</name>
+  <Placemark id="flood_prone_locations.1">
+	<name>Bhadrappa layout
+</name>
+	<ExtendedData><SchemaData schemaUrl="#flood_prone_locations">
+		<SimpleData name="OBJECTID">1</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5760195323719,13.0484082909097</coordinates></Point>
+  </Placemark>
+  <Placemark id="flood_prone_locations.2">
+	<name>Sampangiram Nagar</name>
+	<ExtendedData><SchemaData schemaUrl="#flood_prone_locations">
+		<SimpleData name="OBJECTID">2</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5746801037001,12.9936285184412</coordinates></Point>
+  </Placemark>
+  <Placemark id="flood_prone_locations.3">
+	<name>KEB Compound Maththikere</name>
+	<ExtendedData><SchemaData schemaUrl="#flood_prone_locations">
+		<SimpleData name="OBJECTID">3</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5586167901292,13.0362993665224</coordinates></Point>
+  </Placemark>
+  <Placemark id="flood_prone_locations.4">
+	<name>Gubbanna Layout</name>
+	<ExtendedData><SchemaData schemaUrl="#flood_prone_locations">
+		<SimpleData name="OBJECTID">4</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5556456666107,12.979208530649</coordinates></Point>
+  </Placemark>
+  <Placemark id="flood_prone_locations.5">
+	<name>Minerva Mill</name>
+	<ExtendedData><SchemaData schemaUrl="#flood_prone_locations">
+		<SimpleData name="OBJECTID">5</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5644641478985,12.9794524061035</coordinates></Point>
+  </Placemark>
+  <Placemark id="flood_prone_locations.6">
+	<name>Binny Mill Tank Area</name>
+	<ExtendedData><SchemaData schemaUrl="#flood_prone_locations">
+		<SimpleData name="OBJECTID">6</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5680827922834,12.9687461731971</coordinates></Point>
+  </Placemark>
+  <Placemark id="flood_prone_locations.7">
+	<name>Binny Mill Tank Area</name>
+	<ExtendedData><SchemaData schemaUrl="#flood_prone_locations">
+		<SimpleData name="OBJECTID">7</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5717029034626,12.9742403689976</coordinates></Point>
+  </Placemark>
+  <Placemark id="flood_prone_locations.8">
+	<name>Kamakshipalya Tank Slum Area</name>
+	<ExtendedData><SchemaData schemaUrl="#flood_prone_locations">
+		<SimpleData name="OBJECTID">8</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5270908138867,12.9886834477827</coordinates></Point>
+  </Placemark>
+  <Placemark id="flood_prone_locations.9">
+	<name>Shivananda circle_Railway under pass</name>
+	<ExtendedData><SchemaData schemaUrl="#flood_prone_locations">
+		<SimpleData name="OBJECTID">9</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5778290177912,12.9877884559723</coordinates></Point>
+  </Placemark>
+  <Placemark id="flood_prone_locations.10">
+	<name>Okalipuram Junction</name>
+	<ExtendedData><SchemaData schemaUrl="#flood_prone_locations">
+		<SimpleData name="OBJECTID">10</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5689299545501,12.9826870750483</coordinates></Point>
+  </Placemark>
+  <Placemark id="flood_prone_locations.11">
+	<name>Mekhri circle
+</name>
+	<ExtendedData><SchemaData schemaUrl="#flood_prone_locations">
+		<SimpleData name="OBJECTID">11</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5837934475058,13.0169907396307</coordinates></Point>
+  </Placemark>
+  <Placemark id="flood_prone_locations.12">
+	<name>Railway underbridge near Kino theatre
+</name>
+	<ExtendedData><SchemaData schemaUrl="#flood_prone_locations">
+		<SimpleData name="OBJECTID">12</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5748676833932,12.9845070969248</coordinates></Point>
+  </Placemark>
+  <Placemark id="flood_prone_locations.13">
+	<name>Jagajeevan ram nagar
+</name>
+	<ExtendedData><SchemaData schemaUrl="#flood_prone_locations">
+		<SimpleData name="OBJECTID">13</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5506791839937,12.9655880581422</coordinates></Point>
+  </Placemark>
+  <Placemark id="flood_prone_locations.14">
+	<name>Padarayan pura
+</name>
+	<ExtendedData><SchemaData schemaUrl="#flood_prone_locations">
+		<SimpleData name="OBJECTID">14</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5496064708584,12.9645626214676</coordinates></Point>
+  </Placemark>
+  <Placemark id="flood_prone_locations.15">
+	<name>Cotton pete
+</name>
+	<ExtendedData><SchemaData schemaUrl="#flood_prone_locations">
+		<SimpleData name="OBJECTID">15</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5654467948301,12.9666850889455</coordinates></Point>
+  </Placemark>
+  <Placemark id="flood_prone_locations.16">
+	<name>City Market Area</name>
+	<ExtendedData><SchemaData schemaUrl="#flood_prone_locations">
+		<SimpleData name="OBJECTID">16</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5841381432569,12.9652646790215</coordinates></Point>
+  </Placemark>
+  <Placemark id="flood_prone_locations.17">
+	<name>Jayanagar 3rd Block LIC Colony</name>
+	<ExtendedData><SchemaData schemaUrl="#flood_prone_locations">
+		<SimpleData name="OBJECTID">17</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5895308406719,12.9297680655436</coordinates></Point>
+  </Placemark>
+  <Placemark id="flood_prone_locations.18">
+	<name>Krishnappa Garden behind Byrasandra Tank D/s</name>
+	<ExtendedData><SchemaData schemaUrl="#flood_prone_locations">
+		<SimpleData name="OBJECTID">18</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5984756164525,12.9299432220019</coordinates></Point>
+  </Placemark>
+  <Placemark id="flood_prone_locations.19">
+	<name>Wilson Garden Area up to Bannerghatta Road</name>
+	<ExtendedData><SchemaData schemaUrl="#flood_prone_locations">
+		<SimpleData name="OBJECTID">19</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5971767211248,12.94803361376</coordinates></Point>
+  </Placemark>
+  <Placemark id="flood_prone_locations.20">
+	<name>Arekempannahalli Area</name>
+	<ExtendedData><SchemaData schemaUrl="#flood_prone_locations">
+		<SimpleData name="OBJECTID">20</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5931066062809,12.9462654306049</coordinates></Point>
+  </Placemark>
+  <Placemark id="flood_prone_locations.21">
+	<name>Marehahalli Tank</name>
+	<ExtendedData><SchemaData schemaUrl="#flood_prone_locations">
+		<SimpleData name="OBJECTID">21</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5884362542258,12.9153014272189</coordinates></Point>
+  </Placemark>
+  <Placemark id="flood_prone_locations.22">
+	<name>Bismillanagar – Agencies</name>
+	<ExtendedData><SchemaData schemaUrl="#flood_prone_locations">
+		<SimpleData name="OBJECTID">22</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6021990381511,12.9258533949181</coordinates></Point>
+  </Placemark>
+  <Placemark id="flood_prone_locations.23">
+	<name>Ejipura</name>
+	<ExtendedData><SchemaData schemaUrl="#flood_prone_locations">
+		<SimpleData name="OBJECTID">23</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6308201304403,12.938392303162</coordinates></Point>
+  </Placemark>
+  <Placemark id="flood_prone_locations.24">
+	<name>Koramangala Slum</name>
+	<ExtendedData><SchemaData schemaUrl="#flood_prone_locations">
+		<SimpleData name="OBJECTID">24</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6279742060404,12.9248172689016</coordinates></Point>
+  </Placemark>
+  <Placemark id="flood_prone_locations.25">
+	<name>Cholurpalya</name>
+	<ExtendedData><SchemaData schemaUrl="#flood_prone_locations">
+		<SimpleData name="OBJECTID">25</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.549050659257,12.9720098012112</coordinates></Point>
+  </Placemark>
+  <Placemark id="flood_prone_locations.26">
+	<name>Bapujinagar</name>
+	<ExtendedData><SchemaData schemaUrl="#flood_prone_locations">
+		<SimpleData name="OBJECTID">26</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5397292977655,12.9567706596381</coordinates></Point>
+  </Placemark>
+  <Placemark id="flood_prone_locations.27">
+	<name>Sanjaya Gandhi Slum Area</name>
+	<ExtendedData><SchemaData schemaUrl="#flood_prone_locations">
+		<SimpleData name="OBJECTID">27</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5924590296566,12.9272333443431</coordinates></Point>
+  </Placemark>
+  <Placemark id="flood_prone_locations.28">
+	<name>NGV to HSR Layout</name>
+	<ExtendedData><SchemaData schemaUrl="#flood_prone_locations">
+		<SimpleData name="OBJECTID">28</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6201472893617,12.9485540001667</coordinates></Point>
+  </Placemark>
+  <Placemark id="flood_prone_locations.29">
+	<name>Shanthi Nagar
+</name>
+	<ExtendedData><SchemaData schemaUrl="#flood_prone_locations">
+		<SimpleData name="OBJECTID">29</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5932394856098,12.9542588171904</coordinates></Point>
+  </Placemark>
+  <Placemark id="flood_prone_locations.30">
+	<name>Vidyapeeta circle
+</name>
+	<ExtendedData><SchemaData schemaUrl="#flood_prone_locations">
+		<SimpleData name="OBJECTID">30</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.560866420845,12.9333959675497</coordinates></Point>
+  </Placemark>
+  <Placemark id="flood_prone_locations.31">
+	<name>Srinvas nagar
+</name>
+	<ExtendedData><SchemaData schemaUrl="#flood_prone_locations">
+		<SimpleData name="OBJECTID">31</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5547781949542,12.9355822257389</coordinates></Point>
+  </Placemark>
+  <Placemark id="flood_prone_locations.32">
+	<name>KH Road
+</name>
+	<ExtendedData><SchemaData schemaUrl="#flood_prone_locations">
+		<SimpleData name="OBJECTID">32</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5920319676972,12.9554637045861</coordinates></Point>
+  </Placemark>
+  <Placemark id="flood_prone_locations.33">
+	<name>Magadi Police station
+</name>
+	<ExtendedData><SchemaData schemaUrl="#flood_prone_locations">
+		<SimpleData name="OBJECTID">33</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5515100928131,12.9744908364828</coordinates></Point>
+  </Placemark>
+  <Placemark id="flood_prone_locations.34">
+	<name>RPC layout
+</name>
+	<ExtendedData><SchemaData schemaUrl="#flood_prone_locations">
+		<SimpleData name="OBJECTID">34</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5378980802288,12.9627817776568</coordinates></Point>
+  </Placemark>
+  <Placemark id="flood_prone_locations.35">
+	<name>Ghali Anjaneya temple road
+</name>
+	<ExtendedData><SchemaData schemaUrl="#flood_prone_locations">
+		<SimpleData name="OBJECTID">35</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5412892455988,12.9527270765932</coordinates></Point>
+  </Placemark>
+  <Placemark id="flood_prone_locations.36">
+	<name>Brindavananagar below Matthikere Tank Market</name>
+	<ExtendedData><SchemaData schemaUrl="#flood_prone_locations">
+		<SimpleData name="OBJECTID">36</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5551490591783,13.0348090486984</coordinates></Point>
+  </Placemark>
+  <Placemark id="flood_prone_locations.37">
+	<name>Shankarappa Garden Gopalapura</name>
+	<ExtendedData><SchemaData schemaUrl="#flood_prone_locations">
+		<SimpleData name="OBJECTID">37</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5230110502165,12.9216713081842</coordinates></Point>
+  </Placemark>
+  <Placemark id="flood_prone_locations.38">
+	<name>Kamakshipalya Tank Slum Area</name>
+	<ExtendedData><SchemaData schemaUrl="#flood_prone_locations">
+		<SimpleData name="OBJECTID">38</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5220423616625,12.9928063456362</coordinates></Point>
+  </Placemark>
+  <Placemark id="flood_prone_locations.39">
+	<name>Yeshwanthpur Railway station</name>
+	<ExtendedData><SchemaData schemaUrl="#flood_prone_locations">
+		<SimpleData name="OBJECTID">39</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5503772276235,13.0237767512959</coordinates></Point>
+  </Placemark>
+  <Placemark id="flood_prone_locations.40">
+	<name>BEML Layout in RR Nagar
+</name>
+	<ExtendedData><SchemaData schemaUrl="#flood_prone_locations">
+		<SimpleData name="OBJECTID">40</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5196606016522,12.9077359056874</coordinates></Point>
+  </Placemark>
+  <Placemark id="flood_prone_locations.41">
+	<name>Nayandahalli
+</name>
+	<ExtendedData><SchemaData schemaUrl="#flood_prone_locations">
+		<SimpleData name="OBJECTID">41</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5247623890697,12.9410926623963</coordinates></Point>
+  </Placemark>
+  <Placemark id="flood_prone_locations.42">
+	<name>Kengeri Yellamma temple
+</name>
+	<ExtendedData><SchemaData schemaUrl="#flood_prone_locations">
+		<SimpleData name="OBJECTID">42</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.4827357145787,12.8989117811536</coordinates></Point>
+  </Placemark>
+  <Placemark id="flood_prone_locations.43">
+	<name>Bhovi Colony, near Sane Guruvanahalli Tank</name>
+	<ExtendedData><SchemaData schemaUrl="#flood_prone_locations">
+		<SimpleData name="OBJECTID">43</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6762073762645,13.0120970535359</coordinates></Point>
+  </Placemark>
+  <Placemark id="flood_prone_locations.44">
+	<name>HAL Airport Road
+</name>
+	<ExtendedData><SchemaData schemaUrl="#flood_prone_locations">
+		<SimpleData name="OBJECTID">44</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6822640125691,12.9545043770751</coordinates></Point>
+  </Placemark>
+  <Placemark id="flood_prone_locations.45">
+	<name>Sulthan Palya Main Road</name>
+	<ExtendedData><SchemaData schemaUrl="#flood_prone_locations">
+		<SimpleData name="OBJECTID">45</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6047832157688,13.029909094329</coordinates></Point>
+  </Placemark>
+  <Placemark id="flood_prone_locations.46">
+	<name>Pillappa Garden – Agencies</name>
+	<ExtendedData><SchemaData schemaUrl="#flood_prone_locations">
+		<SimpleData name="OBJECTID">46</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5911778338861,13.0259073108735</coordinates></Point>
+  </Placemark>
+  <Placemark id="flood_prone_locations.47">
+	<name>Anandanagara</name>
+	<ExtendedData><SchemaData schemaUrl="#flood_prone_locations">
+		<SimpleData name="OBJECTID">47</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5913121170567,13.0313282901683</coordinates></Point>
+  </Placemark>
+  <Placemark id="flood_prone_locations.48">
+	<name>Miller Tank,</name>
+	<ExtendedData><SchemaData schemaUrl="#flood_prone_locations">
+		<SimpleData name="OBJECTID">48</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5980641442409,12.9919937964763</coordinates></Point>
+  </Placemark>
+  <Placemark id="flood_prone_locations.49">
+	<name>Miller Tank,  Chinnappa Garden</name>
+	<ExtendedData><SchemaData schemaUrl="#flood_prone_locations">
+		<SimpleData name="OBJECTID">49</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6029722401728,13.0022055362563</coordinates></Point>
+  </Placemark>
+  <Placemark id="flood_prone_locations.50">
+	<name>Saraswathipuram – Jogu Palya</name>
+	<ExtendedData><SchemaData schemaUrl="#flood_prone_locations">
+		<SimpleData name="OBJECTID">50</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6328895046426,12.9723832240064</coordinates></Point>
+  </Placemark>
+  <Placemark id="flood_prone_locations.51">
+	<name>K R Garden</name>
+	<ExtendedData><SchemaData schemaUrl="#flood_prone_locations">
+		<SimpleData name="OBJECTID">51</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6561560190804,12.9540152394115</coordinates></Point>
+  </Placemark>
+  <Placemark id="flood_prone_locations.52">
+	<name>Rudrappa Garden</name>
+	<ExtendedData><SchemaData schemaUrl="#flood_prone_locations">
+		<SimpleData name="OBJECTID">52</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6179956694604,12.9599637430321</coordinates></Point>
+  </Placemark>
+  <Placemark id="flood_prone_locations.53">
+	<name>TV tower-Jaymahal extension</name>
+	<ExtendedData><SchemaData schemaUrl="#flood_prone_locations">
+		<SimpleData name="OBJECTID">53</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5919039680898,13.0080769194141</coordinates></Point>
+  </Placemark>
+  <Placemark id="flood_prone_locations.54">
+	<name>hotel Chalukya Junction</name>
+	<ExtendedData><SchemaData schemaUrl="#flood_prone_locations">
+		<SimpleData name="OBJECTID">54</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5881613485635,12.9844988501416</coordinates></Point>
+  </Placemark>
+  <Placemark id="flood_prone_locations.55">
+	<name>Dommlur
+</name>
+	<ExtendedData><SchemaData schemaUrl="#flood_prone_locations">
+		<SimpleData name="OBJECTID">55</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.638739052261,12.9609332364794</coordinates></Point>
+  </Placemark>
+  <Placemark id="flood_prone_locations.56">
+	<name>Ulsoor
+</name>
+	<ExtendedData><SchemaData schemaUrl="#flood_prone_locations">
+		<SimpleData name="OBJECTID">56</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6239676660707,12.9819583642869</coordinates></Point>
+  </Placemark>
+  <Placemark id="flood_prone_locations.57">
+	<name>DJ Halli
+</name>
+	<ExtendedData><SchemaData schemaUrl="#flood_prone_locations">
+		<SimpleData name="OBJECTID">57</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6102881503737,13.0092675390655</coordinates></Point>
+  </Placemark>
+  <Placemark id="flood_prone_locations.58">
+	<name>KR circle Underpass
+</name>
+	<ExtendedData><SchemaData schemaUrl="#flood_prone_locations">
+		<SimpleData name="OBJECTID">58</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5873230437196,12.9754291432402</coordinates></Point>
+  </Placemark>
+  <Placemark id="flood_prone_locations.59">
+	<name>Ashok Nagar
+,museum road</name>
+	<ExtendedData><SchemaData schemaUrl="#flood_prone_locations">
+		<SimpleData name="OBJECTID">59</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6047966021774,12.9707756363863</coordinates></Point>
+  </Placemark>
+  <Placemark id="flood_prone_locations.60">
+	<name>UB city  road
+</name>
+	<ExtendedData><SchemaData schemaUrl="#flood_prone_locations">
+		<SimpleData name="OBJECTID">60</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.596618073961,12.9713287895918</coordinates></Point>
+  </Placemark>
+  <Placemark id="flood_prone_locations.61">
+	<name>New Thippasandra
+</name>
+	<ExtendedData><SchemaData schemaUrl="#flood_prone_locations">
+		<SimpleData name="OBJECTID">61</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6541428920762,12.9720323148392</coordinates></Point>
+  </Placemark>
+  <Placemark id="flood_prone_locations.62">
+	<name>Cox town</name>
+	<ExtendedData><SchemaData schemaUrl="#flood_prone_locations">
+		<SimpleData name="OBJECTID">62</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6234084406428,12.9954416110413</coordinates></Point>
+  </Placemark>
+  <Placemark id="flood_prone_locations.63">
+	<name>Thippasandra
+</name>
+	<ExtendedData><SchemaData schemaUrl="#flood_prone_locations">
+		<SimpleData name="OBJECTID">63</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6468109190841,12.9737073498141</coordinates></Point>
+  </Placemark>
+  <Placemark id="flood_prone_locations.64">
+	<name>Indiranagar 80ft road
+</name>
+	<ExtendedData><SchemaData schemaUrl="#flood_prone_locations">
+		<SimpleData name="OBJECTID">64</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6477438290099,12.9688733328378</coordinates></Point>
+  </Placemark>
+  <Placemark id="flood_prone_locations.65">
+	<name>Pulakeshinagara
+</name>
+	<ExtendedData><SchemaData schemaUrl="#flood_prone_locations">
+		<SimpleData name="OBJECTID">65</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6099036344411,12.9968405532487</coordinates></Point>
+  </Placemark>
+  <Placemark id="flood_prone_locations.66">
+	<name>Banaswadi
+</name>
+	<ExtendedData><SchemaData schemaUrl="#flood_prone_locations">
+		<SimpleData name="OBJECTID">66</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6471286288786,13.0119037874296</coordinates></Point>
+  </Placemark>
+  <Placemark id="flood_prone_locations.67">
+	<name>Sarjapur road
+</name>
+	<ExtendedData><SchemaData schemaUrl="#flood_prone_locations">
+		<SimpleData name="OBJECTID">67</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.4993792626398,13.0065860880774</coordinates></Point>
+  </Placemark>
+  <Placemark id="flood_prone_locations.68">
+	<name>NGV to HSR Layout</name>
+	<ExtendedData><SchemaData schemaUrl="#flood_prone_locations">
+		<SimpleData name="OBJECTID">68</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.647667755358,12.9067696947654</coordinates></Point>
+  </Placemark>
+  <Placemark id="flood_prone_locations.69">
+	<name>Kallena Agrahara in Arekere</name>
+	<ExtendedData><SchemaData schemaUrl="#flood_prone_locations">
+		<SimpleData name="OBJECTID">69</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5935020858486,12.8709701779312</coordinates></Point>
+  </Placemark>
+  <Placemark id="flood_prone_locations.70">
+	<name>RR Layout in Arekere &amp; Hulimavu junction</name>
+	<ExtendedData><SchemaData schemaUrl="#flood_prone_locations">
+		<SimpleData name="OBJECTID">70</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5965807107272,12.8842403779908</coordinates></Point>
+  </Placemark>
+</Folder>
+</Document></kml>

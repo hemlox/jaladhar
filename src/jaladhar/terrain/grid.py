@@ -269,16 +269,39 @@ def run_stage(
     rule 1, don't let a failure look like it produced valid output).
     """
     t0 = time.perf_counter()
-    result = build_fn(cfg, repo_root)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    start_manifest = {
+        "stage": stage,
+        "status": "running",
+        "git_sha": git_sha(),
+        "config_path": str(config_path),
+        "start_time_iso": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    }
+    (out_dir / "manifest.json").write_text(json.dumps(start_manifest, indent=2, default=str))
+
+    try:
+        result = build_fn(cfg, repo_root)
+    except Exception as e:
+        error_manifest = {
+            "stage": stage,
+            "status": "failed",
+            "git_sha": git_sha(),
+            "config_path": str(config_path),
+            "error": str(e),
+            "wall_clock_sec": time.perf_counter() - t0,
+        }
+        (out_dir / "manifest.json").write_text(json.dumps(error_manifest, indent=2, default=str))
+        raise
+
     wall_clock = time.perf_counter() - t0
     manifest = {
         "stage": stage,
+        "status": "completed",
         "git_sha": git_sha(),
         "config_path": str(config_path),
         "wall_clock_sec": wall_clock,
         **result,
     }
-    out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "manifest.json").write_text(json.dumps(manifest, indent=2, default=str))
     return result
 

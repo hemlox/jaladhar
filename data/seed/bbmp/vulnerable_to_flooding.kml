@@ -1,0 +1,2213 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+<Document id="root_doc">
+<Schema name="flood_vulnerable_locations" id="flood_vulnerable_locations">
+	<SimpleField name="OBJECTID" type="float"></SimpleField>
+	<SimpleField name="WARD_NAME" type="string"></SimpleField>
+	<SimpleField name="WARDNO" type="float"></SimpleField>
+	<SimpleField name="LocationName" type="string"></SimpleField>
+	<SimpleField name="KGISFVLID" type="float"></SimpleField>
+	<SimpleField name="ZONE" type="string"></SimpleField>
+</Schema>
+<Folder><name>flood_vulnerable_locations</name>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">1</SimpleData>
+		<SimpleData name="WARD_NAME">Hemmigepura</SimpleData>
+		<SimpleData name="WARDNO">198</SimpleData>
+		<SimpleData name="LocationName">Mantri Lake view Appartment Next to Talagattapura Lake</SimpleData>
+		<SimpleData name="KGISFVLID">1</SimpleData>
+		<SimpleData name="ZONE">RR Nagar</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5324350003062,12.867499000001</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">2</SimpleData>
+		<SimpleData name="WARD_NAME">Hemmigepura</SimpleData>
+		<SimpleData name="WARDNO">198</SimpleData>
+		<SimpleData name="LocationName">Kendriya nagara</SimpleData>
+		<SimpleData name="KGISFVLID">2</SimpleData>
+		<SimpleData name="ZONE">RR Nagar</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5280829995545,12.8717750001904</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">3</SimpleData>
+		<SimpleData name="WARD_NAME">Hemmigepura</SimpleData>
+		<SimpleData name="WARDNO">198</SimpleData>
+		<SimpleData name="LocationName">Raghuvanahalli </SimpleData>
+		<SimpleData name="KGISFVLID">3</SimpleData>
+		<SimpleData name="ZONE">RR Nagar</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5426940003978,12.8777110000686</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">4</SimpleData>
+		<SimpleData name="WARD_NAME">Hemmigepura</SimpleData>
+		<SimpleData name="WARDNO">198</SimpleData>
+		<SimpleData name="LocationName">Balaji Layout, Kanakapura Road</SimpleData>
+		<SimpleData name="KGISFVLID">4</SimpleData>
+		<SimpleData name="ZONE">RR Nagar</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5412729999903,12.877864999889</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">5</SimpleData>
+		<SimpleData name="WARD_NAME">Begur</SimpleData>
+		<SimpleData name="WARDNO">192</SimpleData>
+		<SimpleData name="LocationName">Singasandra Country club road</SimpleData>
+		<SimpleData name="KGISFVLID">5</SimpleData>
+		<SimpleData name="ZONE">Bommanahalli</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6374179998471,12.8789069996308</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">6</SimpleData>
+		<SimpleData name="WARD_NAME">Arakere</SimpleData>
+		<SimpleData name="WARDNO">193</SimpleData>
+		<SimpleData name="LocationName">Someshwara layout Arekere</SimpleData>
+		<SimpleData name="KGISFVLID">6</SimpleData>
+		<SimpleData name="ZONE">Bommanahalli</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6040510003254,12.8799690003176</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">7</SimpleData>
+		<SimpleData name="WARD_NAME">Arakere</SimpleData>
+		<SimpleData name="WARDNO">193</SimpleData>
+		<SimpleData name="LocationName">BDA layout Hulimavu</SimpleData>
+		<SimpleData name="KGISFVLID">7</SimpleData>
+		<SimpleData name="ZONE">Bommanahalli</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6039869998664,12.8805180001676</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">8</SimpleData>
+		<SimpleData name="WARD_NAME">Arakere</SimpleData>
+		<SimpleData name="WARDNO">193</SimpleData>
+		<SimpleData name="LocationName">Kempamma layout RSD Arekere</SimpleData>
+		<SimpleData name="KGISFVLID">8</SimpleData>
+		<SimpleData name="ZONE">Bommanahalli</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6044149998363,12.8805860001823</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">9</SimpleData>
+		<SimpleData name="WARD_NAME">Arakere</SimpleData>
+		<SimpleData name="WARDNO">193</SimpleData>
+		<SimpleData name="LocationName">Hulimavu Sri Lanka colony</SimpleData>
+		<SimpleData name="KGISFVLID">9</SimpleData>
+		<SimpleData name="ZONE">Bommanahalli</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.608253000444,12.8817559999585</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">10</SimpleData>
+		<SimpleData name="WARD_NAME">Singasandra</SimpleData>
+		<SimpleData name="WARDNO">191</SimpleData>
+		<SimpleData name="LocationName">Hosur road near Royal Enfield show room</SimpleData>
+		<SimpleData name="KGISFVLID">10</SimpleData>
+		<SimpleData name="ZONE">Bommanahalli</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6420749998582,12.8859370001465</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">11</SimpleData>
+		<SimpleData name="WARD_NAME">Bilekhalli</SimpleData>
+		<SimpleData name="WARDNO">188</SimpleData>
+		<SimpleData name="LocationName">Anugraha layout Billekahalli</SimpleData>
+		<SimpleData name="KGISFVLID">11</SimpleData>
+		<SimpleData name="ZONE">Bommanahalli</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.611508000245,12.8965700001818</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">12</SimpleData>
+		<SimpleData name="WARD_NAME">Bellandur</SimpleData>
+		<SimpleData name="WARDNO">150</SimpleData>
+		<SimpleData name="LocationName">Doddakannelli</SimpleData>
+		<SimpleData name="KGISFVLID">12</SimpleData>
+		<SimpleData name="ZONE">Bommanahalli</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6929070003515,12.8978170003302</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">13</SimpleData>
+		<SimpleData name="WARD_NAME">Hongasandra</SimpleData>
+		<SimpleData name="WARDNO">189</SimpleData>
+		<SimpleData name="LocationName">Garebhavipalya NH  service road junction</SimpleData>
+		<SimpleData name="KGISFVLID">13</SimpleData>
+		<SimpleData name="ZONE">Bommanahalli</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6331209998401,12.9009220002675</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">14</SimpleData>
+		<SimpleData name="WARD_NAME">Hongasandra</SimpleData>
+		<SimpleData name="WARDNO">189</SimpleData>
+		<SimpleData name="LocationName">Oxford college NH Junction</SimpleData>
+		<SimpleData name="KGISFVLID">14</SimpleData>
+		<SimpleData name="ZONE">Bommanahalli</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6314429996222,12.9013600001532</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">15</SimpleData>
+		<SimpleData name="WARD_NAME">Bilekhalli</SimpleData>
+		<SimpleData name="WARDNO">188</SimpleData>
+		<SimpleData name="LocationName">Anugraha layout RSD phase 1</SimpleData>
+		<SimpleData name="KGISFVLID">15</SimpleData>
+		<SimpleData name="ZONE">Bommanahalli</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6112620004318,12.9018859997625</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">16</SimpleData>
+		<SimpleData name="WARD_NAME">JP Nagar</SimpleData>
+		<SimpleData name="WARDNO">177</SimpleData>
+		<SimpleData name="LocationName">Dollars Colony JP Nagar</SimpleData>
+		<SimpleData name="KGISFVLID">16</SimpleData>
+		<SimpleData name="ZONE">Bommanahalli</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5988530001048,12.9033309997057</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">17</SimpleData>
+		<SimpleData name="WARD_NAME">Bilekhalli</SimpleData>
+		<SimpleData name="WARDNO">188</SimpleData>
+		<SimpleData name="LocationName">Dollars Colony NS palya (BTM 2nd stage)</SimpleData>
+		<SimpleData name="KGISFVLID">17</SimpleData>
+		<SimpleData name="ZONE">Bommanahalli</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6028070002702,12.9044550001162</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">18</SimpleData>
+		<SimpleData name="WARD_NAME">Bommanahalli</SimpleData>
+		<SimpleData name="WARDNO">175</SimpleData>
+		<SimpleData name="LocationName">Hongasandara Ambedkar Nagar</SimpleData>
+		<SimpleData name="KGISFVLID">18</SimpleData>
+		<SimpleData name="ZONE">Bommanahalli</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6267580001024,12.9047820003245</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">19</SimpleData>
+		<SimpleData name="WARD_NAME">Bilekhalli</SimpleData>
+		<SimpleData name="WARDNO">188</SimpleData>
+		<SimpleData name="LocationName">NS palya RSD</SimpleData>
+		<SimpleData name="KGISFVLID">19</SimpleData>
+		<SimpleData name="ZONE">Bommanahalli</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6030360002863,12.9049030001327</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">20</SimpleData>
+		<SimpleData name="WARD_NAME">HSR Layout</SimpleData>
+		<SimpleData name="WARDNO">174</SimpleData>
+		<SimpleData name="LocationName">HSR sector 2 Garden layout</SimpleData>
+		<SimpleData name="KGISFVLID">20</SimpleData>
+		<SimpleData name="ZONE">Bommanahalli</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6449330003609,12.909073000038</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">21</SimpleData>
+		<SimpleData name="WARD_NAME">HSR Layout</SimpleData>
+		<SimpleData name="WARDNO">174</SimpleData>
+		<SimpleData name="LocationName">HSR 3rd sector lead off drains</SimpleData>
+		<SimpleData name="KGISFVLID">21</SimpleData>
+		<SimpleData name="ZONE">Bommanahalli</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6415849997452,12.9093590002885</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">22</SimpleData>
+		<SimpleData name="WARD_NAME">Hemmigepura</SimpleData>
+		<SimpleData name="WARDNO">198</SimpleData>
+		<SimpleData name="LocationName">BEML layout</SimpleData>
+		<SimpleData name="KGISFVLID">22</SimpleData>
+		<SimpleData name="ZONE">RR Nagar</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5127089997889,12.9110659996409</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">23</SimpleData>
+		<SimpleData name="WARD_NAME">HSR Layout</SimpleData>
+		<SimpleData name="WARDNO">174</SimpleData>
+		<SimpleData name="LocationName">Sector 6 lead off drains surrounding 5th and 9th main</SimpleData>
+		<SimpleData name="KGISFVLID">23</SimpleData>
+		<SimpleData name="ZONE">Bommanahalli</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6324019996395,12.911655000009</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">24</SimpleData>
+		<SimpleData name="WARD_NAME">HSR Layout</SimpleData>
+		<SimpleData name="WARDNO">174</SimpleData>
+		<SimpleData name="LocationName">HSR layout 9th and 5th main</SimpleData>
+		<SimpleData name="KGISFVLID">24</SimpleData>
+		<SimpleData name="ZONE">Bommanahalli</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6324019996395,12.911655000009</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">25</SimpleData>
+		<SimpleData name="WARD_NAME">Shakambari Nagar</SimpleData>
+		<SimpleData name="WARDNO">179</SimpleData>
+		<SimpleData name="LocationName">Navodaya Layout</SimpleData>
+		<SimpleData name="KGISFVLID">25</SimpleData>
+		<SimpleData name="ZONE">South</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.574917000122,12.9140560001083</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">26</SimpleData>
+		<SimpleData name="WARD_NAME">BTM Layout</SimpleData>
+		<SimpleData name="WARDNO">176</SimpleData>
+		<SimpleData name="LocationName">BTM layout</SimpleData>
+		<SimpleData name="KGISFVLID">26</SimpleData>
+		<SimpleData name="ZONE">South</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6167499995868,12.9157499999453</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">27</SimpleData>
+		<SimpleData name="WARD_NAME">Rajarajeshwari Nagar</SimpleData>
+		<SimpleData name="WARDNO">160</SimpleData>
+		<SimpleData name="LocationName">Near Kapi Katte hotel, BEML Layout, 3rd Stage</SimpleData>
+		<SimpleData name="KGISFVLID">27</SimpleData>
+		<SimpleData name="ZONE">RR Nagar</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5205070003507,12.9157930001939</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">28</SimpleData>
+		<SimpleData name="WARD_NAME">Rajarajeshwari Nagar</SimpleData>
+		<SimpleData name="WARDNO">160</SimpleData>
+		<SimpleData name="LocationName">Shankarappa Layout to BEML gate</SimpleData>
+		<SimpleData name="KGISFVLID">28</SimpleData>
+		<SimpleData name="ZONE">RR Nagar</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5225559997874,12.9164060001552</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">29</SimpleData>
+		<SimpleData name="WARD_NAME">Rajarajeshwari Nagar</SimpleData>
+		<SimpleData name="WARDNO">160</SimpleData>
+		<SimpleData name="LocationName">RR nagar BEML 5th stage near Kapi katte hotel</SimpleData>
+		<SimpleData name="KGISFVLID">29</SimpleData>
+		<SimpleData name="ZONE">RR Nagar</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5208829999744,12.9164329997018</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">30</SimpleData>
+		<SimpleData name="WARD_NAME">JP Nagar</SimpleData>
+		<SimpleData name="WARDNO">177</SimpleData>
+		<SimpleData name="LocationName">Hosur road Jayadeva flyover to Udupi Garden Signal </SimpleData>
+		<SimpleData name="KGISFVLID">30</SimpleData>
+		<SimpleData name="ZONE">South</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.599888999588,12.9164720003761</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">31</SimpleData>
+		<SimpleData name="WARD_NAME">Bommanahalli</SimpleData>
+		<SimpleData name="WARDNO">175</SimpleData>
+		<SimpleData name="LocationName">Silk Board junction</SimpleData>
+		<SimpleData name="KGISFVLID">31</SimpleData>
+		<SimpleData name="ZONE">South</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6227219995918,12.9171940003384</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">32</SimpleData>
+		<SimpleData name="WARD_NAME">Hemmigepura</SimpleData>
+		<SimpleData name="WARDNO">198</SimpleData>
+		<SimpleData name="LocationName">Global Village Joining V Valley at Global Village Property</SimpleData>
+		<SimpleData name="KGISFVLID">32</SimpleData>
+		<SimpleData name="ZONE">RR Nagar</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5019910002475,12.918066999854</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">33</SimpleData>
+		<SimpleData name="WARD_NAME">Jakkasandra</SimpleData>
+		<SimpleData name="WARDNO">173</SimpleData>
+		<SimpleData name="LocationName">Silk Board</SimpleData>
+		<SimpleData name="KGISFVLID">33</SimpleData>
+		<SimpleData name="ZONE">South</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6218890001268,12.9186389995745</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">34</SimpleData>
+		<SimpleData name="WARD_NAME">Varthuru</SimpleData>
+		<SimpleData name="WARDNO">149</SimpleData>
+		<SimpleData name="LocationName">Gunjur</SimpleData>
+		<SimpleData name="KGISFVLID">34</SimpleData>
+		<SimpleData name="ZONE">Mahadevapura</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.7324980001139,12.9210900003641</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">35</SimpleData>
+		<SimpleData name="WARD_NAME">Jayanagar East</SimpleData>
+		<SimpleData name="WARDNO">170</SimpleData>
+		<SimpleData name="LocationName">Bannerghatta road near Oakyard Apartment</SimpleData>
+		<SimpleData name="KGISFVLID">35</SimpleData>
+		<SimpleData name="ZONE">South</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5999439997024,12.9216939998662</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">36</SimpleData>
+		<SimpleData name="WARD_NAME">Hemmigepura</SimpleData>
+		<SimpleData name="WARDNO">198</SimpleData>
+		<SimpleData name="LocationName">Heorhalli, Mahadeshwara Nagara</SimpleData>
+		<SimpleData name="KGISFVLID">36</SimpleData>
+		<SimpleData name="ZONE">RR Nagar</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5114800003827,12.9222039999469</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">37</SimpleData>
+		<SimpleData name="WARD_NAME">Rajarajeshwari Nagar</SimpleData>
+		<SimpleData name="WARDNO">160</SimpleData>
+		<SimpleData name="LocationName">Basaveshwara Circle BEML 3rd stage</SimpleData>
+		<SimpleData name="KGISFVLID">37</SimpleData>
+		<SimpleData name="ZONE">RR Nagar</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5185219998343,12.9228170001818</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">38</SimpleData>
+		<SimpleData name="WARD_NAME">Gurappanapalya</SimpleData>
+		<SimpleData name="WARDNO">171</SimpleData>
+		<SimpleData name="LocationName">Gurappanapalya Banneragatta main road</SimpleData>
+		<SimpleData name="KGISFVLID">38</SimpleData>
+		<SimpleData name="ZONE">South</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6004439997076,12.9230000002928</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">39</SimpleData>
+		<SimpleData name="WARD_NAME">Rajarajeshwari Nagar</SimpleData>
+		<SimpleData name="WARDNO">160</SimpleData>
+		<SimpleData name="LocationName">Gurudutta Layout to Sapthagiri Layout</SimpleData>
+		<SimpleData name="KGISFVLID">39</SimpleData>
+		<SimpleData name="ZONE">RR Nagar</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5389369996774,12.9232390000653</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">40</SimpleData>
+		<SimpleData name="WARD_NAME">Hemmigepura</SimpleData>
+		<SimpleData name="WARDNO">198</SimpleData>
+		<SimpleData name="LocationName">Pattanagere main road beside RV college</SimpleData>
+		<SimpleData name="KGISFVLID">40</SimpleData>
+		<SimpleData name="ZONE">RR Nagar</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5050029996364,12.9234149999601</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">41</SimpleData>
+		<SimpleData name="WARD_NAME">Hosakerehalli</SimpleData>
+		<SimpleData name="WARDNO">161</SimpleData>
+		<SimpleData name="LocationName">Near Dattarthraya Temple, Hosakerehalli</SimpleData>
+		<SimpleData name="KGISFVLID">41</SimpleData>
+		<SimpleData name="ZONE">South</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5391330000573,12.9246960001373</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">42</SimpleData>
+		<SimpleData name="WARD_NAME">Rajarajeshwari Nagar</SimpleData>
+		<SimpleData name="WARDNO">160</SimpleData>
+		<SimpleData name="LocationName">Halagevadeyarahalli lake to Kenchenahalli  lake</SimpleData>
+		<SimpleData name="KGISFVLID">42</SimpleData>
+		<SimpleData name="ZONE">RR Nagar</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5215560001489,12.9248170004001</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">43</SimpleData>
+		<SimpleData name="WARD_NAME">Madivala</SimpleData>
+		<SimpleData name="WARDNO">172</SimpleData>
+		<SimpleData name="LocationName">Tavarekere Main road</SimpleData>
+		<SimpleData name="KGISFVLID">43</SimpleData>
+		<SimpleData name="ZONE">South</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6090279999762,12.9249439996397</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">44</SimpleData>
+		<SimpleData name="WARD_NAME">Bellandur</SimpleData>
+		<SimpleData name="WARDNO">150</SimpleData>
+		<SimpleData name="LocationName">Bellandur</SimpleData>
+		<SimpleData name="KGISFVLID">44</SimpleData>
+		<SimpleData name="ZONE">Mahadevapura</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6781159995721,12.926463999968</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">45</SimpleData>
+		<SimpleData name="WARD_NAME">Rajarajeshwari Nagar</SimpleData>
+		<SimpleData name="WARDNO">160</SimpleData>
+		<SimpleData name="LocationName">Jawaregowdana Doddi, Bangarappa Nagara</SimpleData>
+		<SimpleData name="KGISFVLID">45</SimpleData>
+		<SimpleData name="ZONE">RR Nagar</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5203309995722,12.9285690002317</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">46</SimpleData>
+		<SimpleData name="WARD_NAME">Varthuru</SimpleData>
+		<SimpleData name="WARDNO">149</SimpleData>
+		<SimpleData name="LocationName">Sarjapura road</SimpleData>
+		<SimpleData name="KGISFVLID">46</SimpleData>
+		<SimpleData name="ZONE">Mahadevapura</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.7179079998361,12.9287960003197</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">47</SimpleData>
+		<SimpleData name="WARD_NAME">Suddgunte Palya</SimpleData>
+		<SimpleData name="WARDNO">152</SimpleData>
+		<SimpleData name="LocationName">Bannerghatta Road near spar super market</SimpleData>
+		<SimpleData name="KGISFVLID">47</SimpleData>
+		<SimpleData name="ZONE">South</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6010279998388,12.9302500000676</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">48</SimpleData>
+		<SimpleData name="WARD_NAME">Rajarajeshwari Nagar</SimpleData>
+		<SimpleData name="WARDNO">160</SimpleData>
+		<SimpleData name="LocationName">Near DIAT college</SimpleData>
+		<SimpleData name="KGISFVLID">48</SimpleData>
+		<SimpleData name="ZONE">RR Nagar</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5129919999065,12.9315919998495</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">49</SimpleData>
+		<SimpleData name="WARD_NAME">Jayanagar</SimpleData>
+		<SimpleData name="WARDNO">153</SimpleData>
+		<SimpleData name="LocationName">Gulbarga Calony RBI extension</SimpleData>
+		<SimpleData name="KGISFVLID">49</SimpleData>
+		<SimpleData name="ZONE">South</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5939170002161,12.9319170000067</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">50</SimpleData>
+		<SimpleData name="WARD_NAME">Hosakerehalli</SimpleData>
+		<SimpleData name="WARDNO">161</SimpleData>
+		<SimpleData name="LocationName">Hosakerehalli, near D'souza Nagara</SimpleData>
+		<SimpleData name="KGISFVLID">50</SimpleData>
+		<SimpleData name="ZONE">South</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5353230002493,12.9320229995686</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">51</SimpleData>
+		<SimpleData name="WARD_NAME">Rajarajeshwari Nagar</SimpleData>
+		<SimpleData name="WARDNO">160</SimpleData>
+		<SimpleData name="LocationName">Ideal Homes beside Akkamahadevi choultry</SimpleData>
+		<SimpleData name="KGISFVLID">51</SimpleData>
+		<SimpleData name="ZONE">RR Nagar</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5168580003841,12.9327910000653</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">52</SimpleData>
+		<SimpleData name="WARD_NAME">Byrasandra</SimpleData>
+		<SimpleData name="WARDNO">169</SimpleData>
+		<SimpleData name="LocationName">Byrasandara Fire station</SimpleData>
+		<SimpleData name="KGISFVLID">52</SimpleData>
+		<SimpleData name="ZONE">South</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5889720000425,12.9329440004321</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">53</SimpleData>
+		<SimpleData name="WARD_NAME">Ejipura</SimpleData>
+		<SimpleData name="WARDNO">148</SimpleData>
+		<SimpleData name="LocationName">Koramangala 4 th block</SimpleData>
+		<SimpleData name="KGISFVLID">53</SimpleData>
+		<SimpleData name="ZONE">South</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6303889996797,12.9338059995997</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">54</SimpleData>
+		<SimpleData name="WARD_NAME">Ejipura</SimpleData>
+		<SimpleData name="WARDNO">148</SimpleData>
+		<SimpleData name="LocationName">ST Bed Koramangala</SimpleData>
+		<SimpleData name="KGISFVLID">54</SimpleData>
+		<SimpleData name="ZONE">South</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6301390003163,12.9347220002171</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">55</SimpleData>
+		<SimpleData name="WARD_NAME">Varthuru</SimpleData>
+		<SimpleData name="WARDNO">149</SimpleData>
+		<SimpleData name="LocationName">Panathur</SimpleData>
+		<SimpleData name="KGISFVLID">55</SimpleData>
+		<SimpleData name="ZONE">Mahadevapura</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.7050130001721,12.9363549996158</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">56</SimpleData>
+		<SimpleData name="WARD_NAME">Koramangala</SimpleData>
+		<SimpleData name="WARDNO">151</SimpleData>
+		<SimpleData name="LocationName">Sony Signal to Maharaja signal in Koramangala</SimpleData>
+		<SimpleData name="KGISFVLID">56</SimpleData>
+		<SimpleData name="ZONE">South</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6264169996428,12.9368889998067</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">57</SimpleData>
+		<SimpleData name="WARD_NAME">Varthuru</SimpleData>
+		<SimpleData name="WARDNO">149</SimpleData>
+		<SimpleData name="LocationName">Varthur police station</SimpleData>
+		<SimpleData name="KGISFVLID">57</SimpleData>
+		<SimpleData name="ZONE">Mahadevapura</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.7468440000649,12.9380780003797</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">58</SimpleData>
+		<SimpleData name="WARD_NAME">Ejipura</SimpleData>
+		<SimpleData name="WARDNO">148</SimpleData>
+		<SimpleData name="LocationName">Ejipura Ashwini layout</SimpleData>
+		<SimpleData name="KGISFVLID">58</SimpleData>
+		<SimpleData name="ZONE">South</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6287500002291,12.9386389997591</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">59</SimpleData>
+		<SimpleData name="WARD_NAME">Varthuru</SimpleData>
+		<SimpleData name="WARDNO">149</SimpleData>
+		<SimpleData name="LocationName">Balagere</SimpleData>
+		<SimpleData name="KGISFVLID">59</SimpleData>
+		<SimpleData name="ZONE">Mahadevapura</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.7231780003678,12.9389319999565</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">60</SimpleData>
+		<SimpleData name="WARD_NAME">Ullalu</SimpleData>
+		<SimpleData name="WARDNO">130</SimpleData>
+		<SimpleData name="LocationName">Sonnenahalli Bridge Upstream  Gollarahatti</SimpleData>
+		<SimpleData name="KGISFVLID">60</SimpleData>
+		<SimpleData name="ZONE">RR Nagar</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.4829419999122,12.9420450004498</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">61</SimpleData>
+		<SimpleData name="WARD_NAME">Jayanagar</SimpleData>
+		<SimpleData name="WARDNO">153</SimpleData>
+		<SimpleData name="LocationName">RV Teachers College</SimpleData>
+		<SimpleData name="KGISFVLID">61</SimpleData>
+		<SimpleData name="ZONE">South</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5814719998392,12.943583000005</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">62</SimpleData>
+		<SimpleData name="WARD_NAME">Nayandahalli</SimpleData>
+		<SimpleData name="WARDNO">131</SimpleData>
+		<SimpleData name="LocationName">Nayandahalli and near Railway track</SimpleData>
+		<SimpleData name="KGISFVLID">62</SimpleData>
+		<SimpleData name="ZONE">West</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.525586000155,12.944652999721</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">63</SimpleData>
+		<SimpleData name="WARD_NAME">Deepanjali Nagar</SimpleData>
+		<SimpleData name="WARDNO">158</SimpleData>
+		<SimpleData name="LocationName">Ranganatha Colony</SimpleData>
+		<SimpleData name="KGISFVLID">63</SimpleData>
+		<SimpleData name="ZONE">South</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5350700000603,12.9453019997598</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">64</SimpleData>
+		<SimpleData name="WARD_NAME">Deepanjali Nagar</SimpleData>
+		<SimpleData name="WARDNO">158</SimpleData>
+		<SimpleData name="LocationName">Nayandahalli Junction, Mysore road</SimpleData>
+		<SimpleData name="KGISFVLID">64</SimpleData>
+		<SimpleData name="ZONE">South</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5289369997109,12.9454799999144</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">65</SimpleData>
+		<SimpleData name="WARD_NAME">Siddapura</SimpleData>
+		<SimpleData name="WARDNO">144</SimpleData>
+		<SimpleData name="LocationName">Siddpapura gate</SimpleData>
+		<SimpleData name="KGISFVLID">65</SimpleData>
+		<SimpleData name="ZONE">South</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5896389996749,12.9463060000123</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">66</SimpleData>
+		<SimpleData name="WARD_NAME">Hanumanth Nagar</SimpleData>
+		<SimpleData name="WARDNO">155</SimpleData>
+		<SimpleData name="LocationName">Kempegowda Nagar</SimpleData>
+		<SimpleData name="KGISFVLID">66</SimpleData>
+		<SimpleData name="ZONE">South</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5633780004369,12.9472350000525</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">67</SimpleData>
+		<SimpleData name="WARD_NAME">Hanumanth Nagar</SimpleData>
+		<SimpleData name="WARDNO">155</SimpleData>
+		<SimpleData name="LocationName">Anjanappa Layout to Kempegowda Nagara</SimpleData>
+		<SimpleData name="KGISFVLID">67</SimpleData>
+		<SimpleData name="ZONE">South</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5633749999135,12.9473279997002</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">68</SimpleData>
+		<SimpleData name="WARD_NAME">Nilasandra</SimpleData>
+		<SimpleData name="WARDNO">116</SimpleData>
+		<SimpleData name="LocationName">Rajendra Nagar slum opp KPWD quarters</SimpleData>
+		<SimpleData name="KGISFVLID">68</SimpleData>
+		<SimpleData name="ZONE">South</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6191940003729,12.9478609998277</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">69</SimpleData>
+		<SimpleData name="WARD_NAME">Ullalu</SimpleData>
+		<SimpleData name="WARDNO">130</SimpleData>
+		<SimpleData name="LocationName">Vinayaka layout</SimpleData>
+		<SimpleData name="KGISFVLID">69</SimpleData>
+		<SimpleData name="ZONE">RR Nagar</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.4876939998255,12.9495949995645</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">70</SimpleData>
+		<SimpleData name="WARD_NAME">Bellandur</SimpleData>
+		<SimpleData name="WARDNO">150</SimpleData>
+		<SimpleData name="LocationName">S G R Dental college</SimpleData>
+		<SimpleData name="KGISFVLID">70</SimpleData>
+		<SimpleData name="ZONE">Mahadevapura</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.7006789995642,12.9499429997715</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">71</SimpleData>
+		<SimpleData name="WARD_NAME">Vannarpet</SimpleData>
+		<SimpleData name="WARDNO">115</SimpleData>
+		<SimpleData name="LocationName">Ejipura opp army land</SimpleData>
+		<SimpleData name="KGISFVLID">71</SimpleData>
+		<SimpleData name="ZONE">East</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6258889999632,12.9503890003974</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">72</SimpleData>
+		<SimpleData name="WARD_NAME">Gali Anjanaya Temple</SimpleData>
+		<SimpleData name="WARDNO">157</SimpleData>
+		<SimpleData name="LocationName">Kavika Bridge to Nice road bridge</SimpleData>
+		<SimpleData name="KGISFVLID">72</SimpleData>
+		<SimpleData name="ZONE">South</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.538597000007,12.9505679997939</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">73</SimpleData>
+		<SimpleData name="WARD_NAME">Shanthi Nagar</SimpleData>
+		<SimpleData name="WARDNO">117</SimpleData>
+		<SimpleData name="LocationName">Anepalya junction</SimpleData>
+		<SimpleData name="KGISFVLID">73</SimpleData>
+		<SimpleData name="ZONE">East</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6056110001208,12.9509999995556</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">74</SimpleData>
+		<SimpleData name="WARD_NAME">Shanthi Nagar</SimpleData>
+		<SimpleData name="WARDNO">117</SimpleData>
+		<SimpleData name="LocationName">JK Pura</SimpleData>
+		<SimpleData name="KGISFVLID">74</SimpleData>
+		<SimpleData name="ZONE">East</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5989999996095,12.9511669997171</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">75</SimpleData>
+		<SimpleData name="WARD_NAME">Shanthi Nagar</SimpleData>
+		<SimpleData name="WARDNO">117</SimpleData>
+		<SimpleData name="LocationName">Anepalya Gajendranagar SWD surroundings</SimpleData>
+		<SimpleData name="KGISFVLID">75</SimpleData>
+		<SimpleData name="ZONE">East</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6059440001871,12.951944000318</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">76</SimpleData>
+		<SimpleData name="WARD_NAME">Shanthi Nagar</SimpleData>
+		<SimpleData name="WARDNO">117</SimpleData>
+		<SimpleData name="LocationName">Wilson garden PWD quarters</SimpleData>
+		<SimpleData name="KGISFVLID">76</SimpleData>
+		<SimpleData name="ZONE">East</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5968330003742,12.9529720003271</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">77</SimpleData>
+		<SimpleData name="WARD_NAME">Hampinagar</SimpleData>
+		<SimpleData name="WARDNO">133</SimpleData>
+		<SimpleData name="LocationName">Sri Galianjaneya  swamy temple, Mysore road</SimpleData>
+		<SimpleData name="KGISFVLID">77</SimpleData>
+		<SimpleData name="ZONE">South</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5412530000206,12.9530350001226</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">78</SimpleData>
+		<SimpleData name="WARD_NAME">Vishveshwara Puram</SimpleData>
+		<SimpleData name="WARDNO">143</SimpleData>
+		<SimpleData name="LocationName">VV Puram Law College to Mallathhali tank</SimpleData>
+		<SimpleData name="KGISFVLID">78</SimpleData>
+		<SimpleData name="ZONE">South</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5742830002665,12.9537479997871</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">79</SimpleData>
+		<SimpleData name="WARD_NAME">Marathahalli</SimpleData>
+		<SimpleData name="WARDNO">86</SimpleData>
+		<SimpleData name="LocationName">Deepa nursing home</SimpleData>
+		<SimpleData name="KGISFVLID">79</SimpleData>
+		<SimpleData name="ZONE">Mahadevapura</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6905489997383,12.9550209998133</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">80</SimpleData>
+		<SimpleData name="WARD_NAME">Konena Agrahara</SimpleData>
+		<SimpleData name="WARDNO">113</SimpleData>
+		<SimpleData name="LocationName">BDA Layout Konena Agrahara</SimpleData>
+		<SimpleData name="KGISFVLID">80</SimpleData>
+		<SimpleData name="ZONE">East</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6490480004463,12.9556239996646</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">81</SimpleData>
+		<SimpleData name="WARD_NAME">Doddanekkundi</SimpleData>
+		<SimpleData name="WARDNO">85</SimpleData>
+		<SimpleData name="LocationName">Thubarahalli</SimpleData>
+		<SimpleData name="KGISFVLID">81</SimpleData>
+		<SimpleData name="ZONE">Mahadevapura</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.7205450004042,12.9556519996609</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">82</SimpleData>
+		<SimpleData name="WARD_NAME">Shanthi Nagar</SimpleData>
+		<SimpleData name="WARDNO">117</SimpleData>
+		<SimpleData name="LocationName">Micheal church</SimpleData>
+		<SimpleData name="KGISFVLID">82</SimpleData>
+		<SimpleData name="ZONE">East</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5970280003726,12.9561390000171</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">83</SimpleData>
+		<SimpleData name="WARD_NAME">Hagadur</SimpleData>
+		<SimpleData name="WARDNO">84</SimpleData>
+		<SimpleData name="LocationName">Ramagondanahalli</SimpleData>
+		<SimpleData name="KGISFVLID">83</SimpleData>
+		<SimpleData name="ZONE">Mahadevapura</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.7410439996623,12.9561819998388</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">84</SimpleData>
+		<SimpleData name="WARD_NAME">Bapuji Nagar</SimpleData>
+		<SimpleData name="WARDNO">134</SimpleData>
+		<SimpleData name="LocationName">Hosaguddadahalli, Bapujinagara</SimpleData>
+		<SimpleData name="KGISFVLID">84</SimpleData>
+		<SimpleData name="ZONE">South</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5425799995643,12.9563169999223</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">85</SimpleData>
+		<SimpleData name="WARD_NAME">Hagadur</SimpleData>
+		<SimpleData name="WARDNO">84</SimpleData>
+		<SimpleData name="LocationName">Varthur</SimpleData>
+		<SimpleData name="KGISFVLID">85</SimpleData>
+		<SimpleData name="ZONE">Mahadevapura</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.7359389999681,12.9569400002218</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">86</SimpleData>
+		<SimpleData name="WARD_NAME">Chamrajpet</SimpleData>
+		<SimpleData name="WARDNO">140</SimpleData>
+		<SimpleData name="LocationName">Chamarajapet</SimpleData>
+		<SimpleData name="KGISFVLID">86</SimpleData>
+		<SimpleData name="ZONE">West</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5620830002074,12.9570390000152</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">87</SimpleData>
+		<SimpleData name="WARD_NAME">Chamrajpet</SimpleData>
+		<SimpleData name="WARDNO">140</SimpleData>
+		<SimpleData name="LocationName">Nari Halla</SimpleData>
+		<SimpleData name="KGISFVLID">87</SimpleData>
+		<SimpleData name="ZONE">West</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5686809997419,12.957241999757</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">88</SimpleData>
+		<SimpleData name="WARD_NAME">Nagarbhavi</SimpleData>
+		<SimpleData name="WARDNO">128</SimpleData>
+		<SimpleData name="LocationName">NGEF layout</SimpleData>
+		<SimpleData name="KGISFVLID">88</SimpleData>
+		<SimpleData name="ZONE">West</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5144290004146,12.9576869996214</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">89</SimpleData>
+		<SimpleData name="WARD_NAME">Hagadur</SimpleData>
+		<SimpleData name="WARDNO">84</SimpleData>
+		<SimpleData name="LocationName">Varthur Columbia Asia hospital</SimpleData>
+		<SimpleData name="KGISFVLID">89</SimpleData>
+		<SimpleData name="ZONE">Mahadevapura</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.7449189996862,12.9584879997902</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">90</SimpleData>
+		<SimpleData name="WARD_NAME">Jnana Bharathi</SimpleData>
+		<SimpleData name="WARDNO">129</SimpleData>
+		<SimpleData name="LocationName">Backside Fortis Hospital NGEF Layout</SimpleData>
+		<SimpleData name="KGISFVLID">90</SimpleData>
+		<SimpleData name="ZONE">RR Nagar</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5113029995796,12.9592619996094</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">91</SimpleData>
+		<SimpleData name="WARD_NAME">Doddanekkundi</SimpleData>
+		<SimpleData name="WARDNO">85</SimpleData>
+		<SimpleData name="LocationName">Munnekolalu</SimpleData>
+		<SimpleData name="KGISFVLID">91</SimpleData>
+		<SimpleData name="ZONE">Mahadevapura</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.7080749997724,12.9598240002569</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">92</SimpleData>
+		<SimpleData name="WARD_NAME">Jeevanbhima Nagar</SimpleData>
+		<SimpleData name="WARDNO">88</SimpleData>
+		<SimpleData name="LocationName">Nandhini hotel backside on 100 feet road Indiranagar</SimpleData>
+		<SimpleData name="KGISFVLID">92</SimpleData>
+		<SimpleData name="ZONE">East</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6430559997718,12.96111100043</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">93</SimpleData>
+		<SimpleData name="WARD_NAME">Dharmaraya Swamy Temple Ward</SimpleData>
+		<SimpleData name="WARDNO">119</SimpleData>
+		<SimpleData name="LocationName">Kumbaragundi</SimpleData>
+		<SimpleData name="KGISFVLID">93</SimpleData>
+		<SimpleData name="ZONE">South</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.582806000285,12.9621110002995</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">94</SimpleData>
+		<SimpleData name="WARD_NAME">Herohalli</SimpleData>
+		<SimpleData name="WARDNO">72</SimpleData>
+		<SimpleData name="LocationName">Mallathahalli lake inlet Muddaiahna palya road</SimpleData>
+		<SimpleData name="KGISFVLID">94</SimpleData>
+		<SimpleData name="ZONE">RR Nagar</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.4919100002234,12.9624099995629</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">95</SimpleData>
+		<SimpleData name="WARD_NAME">Dharmaraya Swamy Temple Ward</SimpleData>
+		<SimpleData name="WARDNO">119</SimpleData>
+		<SimpleData name="LocationName">Kumbargundi lead off drains</SimpleData>
+		<SimpleData name="KGISFVLID">95</SimpleData>
+		<SimpleData name="ZONE">South</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5839720004376,12.9624170000544</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">96</SimpleData>
+		<SimpleData name="WARD_NAME">Dharmaraya Swamy Temple Ward</SimpleData>
+		<SimpleData name="WARDNO">119</SimpleData>
+		<SimpleData name="LocationName">Osaman Khan  road near KR Market</SimpleData>
+		<SimpleData name="KGISFVLID">96</SimpleData>
+		<SimpleData name="ZONE">South</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5798060002524,12.9630000001948</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">97</SimpleData>
+		<SimpleData name="WARD_NAME">Shantala Nagar</SimpleData>
+		<SimpleData name="WARDNO">111</SimpleData>
+		<SimpleData name="LocationName">Palm grove road</SimpleData>
+		<SimpleData name="KGISFVLID">97</SimpleData>
+		<SimpleData name="ZONE">East</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6146390004251,12.9637220001151</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">98</SimpleData>
+		<SimpleData name="WARD_NAME">Chalavadipalya</SimpleData>
+		<SimpleData name="WARDNO">138</SimpleData>
+		<SimpleData name="LocationName">Cheluvadipalya Near by  Good Shed Road</SimpleData>
+		<SimpleData name="KGISFVLID">98</SimpleData>
+		<SimpleData name="ZONE">West</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5665249996156,12.9653170002783</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">99</SimpleData>
+		<SimpleData name="WARD_NAME">Chalavadipalya</SimpleData>
+		<SimpleData name="WARDNO">138</SimpleData>
+		<SimpleData name="LocationName">Siddartha Nagar, Cheluvadipalya</SimpleData>
+		<SimpleData name="KGISFVLID">99</SimpleData>
+		<SimpleData name="ZONE">West</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5665249996156,12.9653170002783</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">100</SimpleData>
+		<SimpleData name="WARD_NAME">Kottegepalya</SimpleData>
+		<SimpleData name="WARDNO">73</SimpleData>
+		<SimpleData name="LocationName">Bande Maramma Temple behind Nagarabhavi 10th cross Bus Stop</SimpleData>
+		<SimpleData name="KGISFVLID">100</SimpleData>
+		<SimpleData name="ZONE">RR Nagar</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.517394000081,12.9657029995558</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">101</SimpleData>
+		<SimpleData name="WARD_NAME">Rayapuram</SimpleData>
+		<SimpleData name="WARDNO">137</SimpleData>
+		<SimpleData name="LocationName">Rayapuram near Govt. Maternity Hospital</SimpleData>
+		<SimpleData name="KGISFVLID">101</SimpleData>
+		<SimpleData name="ZONE">West</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5526190001116,12.9658829998577</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">102</SimpleData>
+		<SimpleData name="WARD_NAME">Kottegepalya</SimpleData>
+		<SimpleData name="WARDNO">73</SimpleData>
+		<SimpleData name="LocationName">Malagala main road to Vrishabhavathi Valley</SimpleData>
+		<SimpleData name="KGISFVLID">102</SimpleData>
+		<SimpleData name="ZONE">RR Nagar</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5174889995426,12.9659500000668</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">103</SimpleData>
+		<SimpleData name="WARD_NAME">Vijnana Nagar</SimpleData>
+		<SimpleData name="WARDNO">81</SimpleData>
+		<SimpleData name="LocationName">Talakaveri layout</SimpleData>
+		<SimpleData name="KGISFVLID">103</SimpleData>
+		<SimpleData name="ZONE">Mahadevapura</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6827779996137,12.9663889997484</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">104</SimpleData>
+		<SimpleData name="WARD_NAME">Hosahalli</SimpleData>
+		<SimpleData name="WARDNO">124</SimpleData>
+		<SimpleData name="LocationName">Vrishabhavthi main valley near Cholurapalya</SimpleData>
+		<SimpleData name="KGISFVLID">104</SimpleData>
+		<SimpleData name="ZONE">South</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5496969995646,12.9684050002546</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">105</SimpleData>
+		<SimpleData name="WARD_NAME">Doddanekkundi</SimpleData>
+		<SimpleData name="WARDNO">85</SimpleData>
+		<SimpleData name="LocationName">Doddenakundi near Gururaja layout</SimpleData>
+		<SimpleData name="KGISFVLID">105</SimpleData>
+		<SimpleData name="ZONE">Mahadevapura</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6921780002252,12.969065999681</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">106</SimpleData>
+		<SimpleData name="WARD_NAME">Hagadur</SimpleData>
+		<SimpleData name="WARDNO">84</SimpleData>
+		<SimpleData name="LocationName">Nellurahalli</SimpleData>
+		<SimpleData name="KGISFVLID">106</SimpleData>
+		<SimpleData name="ZONE">Mahadevapura</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.7366859995484,12.9692999997563</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">107</SimpleData>
+		<SimpleData name="WARD_NAME">Shantala Nagar</SimpleData>
+		<SimpleData name="WARDNO">111</SimpleData>
+		<SimpleData name="LocationName">Magrath road and brigade road junction</SimpleData>
+		<SimpleData name="KGISFVLID">107</SimpleData>
+		<SimpleData name="ZONE">East</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.609667000206,12.9706109999042</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">108</SimpleData>
+		<SimpleData name="WARD_NAME">Jogupalya</SimpleData>
+		<SimpleData name="WARDNO">89</SimpleData>
+		<SimpleData name="LocationName">Cambridge layout near Jogupalya</SimpleData>
+		<SimpleData name="KGISFVLID">108</SimpleData>
+		<SimpleData name="ZONE">East</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6336109997223,12.9708330001648</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">109</SimpleData>
+		<SimpleData name="WARD_NAME">Mudalapalya</SimpleData>
+		<SimpleData name="WARDNO">127</SimpleData>
+		<SimpleData name="LocationName">Kalyannagar, Moodalapalya</SimpleData>
+		<SimpleData name="KGISFVLID">109</SimpleData>
+		<SimpleData name="ZONE">West</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5186560004364,12.9711689997559</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">110</SimpleData>
+		<SimpleData name="WARD_NAME">Jogupalya</SimpleData>
+		<SimpleData name="WARDNO">89</SimpleData>
+		<SimpleData name="LocationName">Jogupalya in Ulsoor</SimpleData>
+		<SimpleData name="KGISFVLID">110</SimpleData>
+		<SimpleData name="ZONE">East</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6333329999603,12.9716670001861</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">111</SimpleData>
+		<SimpleData name="WARD_NAME">Kempapura</SimpleData>
+		<SimpleData name="WARDNO">122</SimpleData>
+		<SimpleData name="LocationName">Kempapura Agrahara Secondary Drain, Magadi road</SimpleData>
+		<SimpleData name="KGISFVLID">111</SimpleData>
+		<SimpleData name="ZONE">South</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5541089999492,12.9722480000324</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">112</SimpleData>
+		<SimpleData name="WARD_NAME">Cottonpete</SimpleData>
+		<SimpleData name="WARDNO">120</SimpleData>
+		<SimpleData name="LocationName">K P Agrahara 7th Cross  Road</SimpleData>
+		<SimpleData name="KGISFVLID">112</SimpleData>
+		<SimpleData name="ZONE">West</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5628830003884,12.972618999646</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">113</SimpleData>
+		<SimpleData name="WARD_NAME">Vijayanagar</SimpleData>
+		<SimpleData name="WARDNO">123</SimpleData>
+		<SimpleData name="LocationName">Manuvana, Pipeline road</SimpleData>
+		<SimpleData name="KGISFVLID">113</SimpleData>
+		<SimpleData name="ZONE">South</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5466510000851,12.9737299998207</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">114</SimpleData>
+		<SimpleData name="WARD_NAME">Binnypete</SimpleData>
+		<SimpleData name="WARDNO">121</SimpleData>
+		<SimpleData name="LocationName">Gopalpura area</SimpleData>
+		<SimpleData name="KGISFVLID">114</SimpleData>
+		<SimpleData name="ZONE">West</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5604169997079,12.9752170001849</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">115</SimpleData>
+		<SimpleData name="WARD_NAME">Binnypete</SimpleData>
+		<SimpleData name="WARDNO">121</SimpleData>
+		<SimpleData name="LocationName">Gopalpura</SimpleData>
+		<SimpleData name="KGISFVLID">115</SimpleData>
+		<SimpleData name="ZONE">West</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5604169997079,12.9752170001849</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">116</SimpleData>
+		<SimpleData name="WARD_NAME">Okalipuram</SimpleData>
+		<SimpleData name="WARDNO">96</SimpleData>
+		<SimpleData name="LocationName">Netaji Nagara in  KP Agrahara</SimpleData>
+		<SimpleData name="KGISFVLID">116</SimpleData>
+		<SimpleData name="ZONE">West</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5627040001008,12.9756190003332</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">117</SimpleData>
+		<SimpleData name="WARD_NAME">Subhash Nagar</SimpleData>
+		<SimpleData name="WARDNO">95</SimpleData>
+		<SimpleData name="LocationName">Binnymill Road  near Belimath</SimpleData>
+		<SimpleData name="KGISFVLID">117</SimpleData>
+		<SimpleData name="ZONE">West</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5673469998796,12.9765969995814</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">118</SimpleData>
+		<SimpleData name="WARD_NAME">Halsoor</SimpleData>
+		<SimpleData name="WARDNO">90</SimpleData>
+		<SimpleData name="LocationName">MV garden &amp; Murphy market</SimpleData>
+		<SimpleData name="KGISFVLID">118</SimpleData>
+		<SimpleData name="ZONE">East</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6272219997728,12.9783330001697</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">119</SimpleData>
+		<SimpleData name="WARD_NAME">Garudachar Palya</SimpleData>
+		<SimpleData name="WARDNO">82</SimpleData>
+		<SimpleData name="LocationName">Pattandur agrahara</SimpleData>
+		<SimpleData name="KGISFVLID">119</SimpleData>
+		<SimpleData name="ZONE">Mahadevapura</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.7337530001081,12.9788889998589</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">120</SimpleData>
+		<SimpleData name="WARD_NAME">Subhash Nagar</SimpleData>
+		<SimpleData name="WARDNO">95</SimpleData>
+		<SimpleData name="LocationName">Nagamma nagara Near Binny mill road</SimpleData>
+		<SimpleData name="KGISFVLID">120</SimpleData>
+		<SimpleData name="ZONE">West</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5697720002867,12.9799999996435</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">121</SimpleData>
+		<SimpleData name="WARD_NAME">Okalipuram</SimpleData>
+		<SimpleData name="WARDNO">96</SimpleData>
+		<SimpleData name="LocationName">Gandi Statue, Oklipuram.</SimpleData>
+		<SimpleData name="KGISFVLID">121</SimpleData>
+		<SimpleData name="ZONE">West</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5655249998615,12.9834499997698</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">122</SimpleData>
+		<SimpleData name="WARD_NAME">Dr. Rajkumar</SimpleData>
+		<SimpleData name="WARDNO">106</SimpleData>
+		<SimpleData name="LocationName">Rajajinagar  Industrial  Area ,1st Cross Road</SimpleData>
+		<SimpleData name="KGISFVLID">122</SimpleData>
+		<SimpleData name="ZONE">West</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5460639998798,12.9841170002625</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">123</SimpleData>
+		<SimpleData name="WARD_NAME">Shivaji Nagar</SimpleData>
+		<SimpleData name="WARDNO">92</SimpleData>
+		<SimpleData name="LocationName">Broadway road junction</SimpleData>
+		<SimpleData name="KGISFVLID">123</SimpleData>
+		<SimpleData name="ZONE">East</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6041670001918,12.9863889998184</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">124</SimpleData>
+		<SimpleData name="WARD_NAME">Bharathi Nagar</SimpleData>
+		<SimpleData name="WARDNO">91</SimpleData>
+		<SimpleData name="LocationName">Armstrong road junction in Shivajinagar</SimpleData>
+		<SimpleData name="KGISFVLID">124</SimpleData>
+		<SimpleData name="ZONE">East</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6102780001299,12.9863890001152</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">125</SimpleData>
+		<SimpleData name="WARD_NAME">Herohalli</SimpleData>
+		<SimpleData name="WARDNO">72</SimpleData>
+		<SimpleData name="LocationName">Herohalli lake inlet Handrahalli main road</SimpleData>
+		<SimpleData name="KGISFVLID">125</SimpleData>
+		<SimpleData name="ZONE">RR Nagar</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.4895020004309,12.9870139997285</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">126</SimpleData>
+		<SimpleData name="WARD_NAME">Sri Ramamandir</SimpleData>
+		<SimpleData name="WARDNO">108</SimpleData>
+		<SimpleData name="LocationName">Sri Rammandir, Gubbanna Industrial Estate</SimpleData>
+		<SimpleData name="KGISFVLID">126</SimpleData>
+		<SimpleData name="ZONE">West</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5592970002844,12.987563999594</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">127</SimpleData>
+		<SimpleData name="WARD_NAME">Vijnana Nagar</SimpleData>
+		<SimpleData name="WARDNO">81</SimpleData>
+		<SimpleData name="LocationName">Shivaganga layout</SimpleData>
+		<SimpleData name="KGISFVLID">127</SimpleData>
+		<SimpleData name="ZONE">Mahadevapura</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6902780000745,12.9888890003729</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">128</SimpleData>
+		<SimpleData name="WARD_NAME">A Narayanapura</SimpleData>
+		<SimpleData name="WARDNO">56</SimpleData>
+		<SimpleData name="LocationName">Pai Layout</SimpleData>
+		<SimpleData name="KGISFVLID">128</SimpleData>
+		<SimpleData name="ZONE">Mahadevapura</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6683329996398,12.990277999831</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">129</SimpleData>
+		<SimpleData name="WARD_NAME">Basaveshwaranagar</SimpleData>
+		<SimpleData name="WARDNO">100</SimpleData>
+		<SimpleData name="LocationName">Netaji ground &amp; Saneguruvanalli</SimpleData>
+		<SimpleData name="KGISFVLID">129</SimpleData>
+		<SimpleData name="ZONE">West</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5440499997635,12.990871999651</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">130</SimpleData>
+		<SimpleData name="WARD_NAME">Vrisabhavathi Nagar</SimpleData>
+		<SimpleData name="WARDNO">102</SimpleData>
+		<SimpleData name="LocationName">Near summanahalli bridge (up stream)</SimpleData>
+		<SimpleData name="KGISFVLID">130</SimpleData>
+		<SimpleData name="ZONE">West</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5214369999444,12.9912430000379</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">131</SimpleData>
+		<SimpleData name="WARD_NAME">Subhash Nagar</SimpleData>
+		<SimpleData name="WARDNO">95</SimpleData>
+		<SimpleData name="LocationName">Near Mantri Mall bridge</SimpleData>
+		<SimpleData name="KGISFVLID">131</SimpleData>
+		<SimpleData name="ZONE">West</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5705640000386,12.9913279999354</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">132</SimpleData>
+		<SimpleData name="WARD_NAME">Garudachar Palya</SimpleData>
+		<SimpleData name="WARDNO">82</SimpleData>
+		<SimpleData name="LocationName">Hoodi</SimpleData>
+		<SimpleData name="KGISFVLID">132</SimpleData>
+		<SimpleData name="ZONE">Mahadevapura</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.7181370002738,12.9920149996462</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">133</SimpleData>
+		<SimpleData name="WARD_NAME">Prakash Nagar</SimpleData>
+		<SimpleData name="WARDNO">98</SimpleData>
+		<SimpleData name="LocationName">Prakashnagar Near Mudalayar Choultry</SimpleData>
+		<SimpleData name="KGISFVLID">133</SimpleData>
+		<SimpleData name="ZONE">West</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.557166999634,12.9934829997549</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">134</SimpleData>
+		<SimpleData name="WARD_NAME">Benniganahalli</SimpleData>
+		<SimpleData name="WARDNO">50</SimpleData>
+		<SimpleData name="LocationName">Railway parallel road Sadanadanagar</SimpleData>
+		<SimpleData name="KGISFVLID">134</SimpleData>
+		<SimpleData name="ZONE">East</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6588889998819,12.9947220001824</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">135</SimpleData>
+		<SimpleData name="WARD_NAME">Garudachar Palya</SimpleData>
+		<SimpleData name="WARDNO">82</SimpleData>
+		<SimpleData name="LocationName">Maheshwari nagar</SimpleData>
+		<SimpleData name="KGISFVLID">135</SimpleData>
+		<SimpleData name="ZONE">Mahadevapura</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6928709998418,12.9949200004422</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">136</SimpleData>
+		<SimpleData name="WARD_NAME">Dattatreya Temple</SimpleData>
+		<SimpleData name="WARDNO">77</SimpleData>
+		<SimpleData name="LocationName">Link Road, Malleshwaram</SimpleData>
+		<SimpleData name="KGISFVLID">136</SimpleData>
+		<SimpleData name="ZONE">West</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5733829999703,12.9960140000966</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">137</SimpleData>
+		<SimpleData name="WARD_NAME">Herohalli</SimpleData>
+		<SimpleData name="WARDNO">72</SimpleData>
+		<SimpleData name="LocationName">Syndicate Layout beside park</SimpleData>
+		<SimpleData name="KGISFVLID">137</SimpleData>
+		<SimpleData name="ZONE">RR Nagar</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.4881040000855,12.9964130000207</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">138</SimpleData>
+		<SimpleData name="WARD_NAME">Dattatreya Temple</SimpleData>
+		<SimpleData name="WARDNO">77</SimpleData>
+		<SimpleData name="LocationName">Guttahalli Circle, Malleshwaram</SimpleData>
+		<SimpleData name="KGISFVLID">138</SimpleData>
+		<SimpleData name="ZONE">West</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5780420000429,12.9974140000488</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">139</SimpleData>
+		<SimpleData name="WARD_NAME">Dattatreya Temple</SimpleData>
+		<SimpleData name="WARDNO">77</SimpleData>
+		<SimpleData name="LocationName">Near by 2nd Cross Ring Road</SimpleData>
+		<SimpleData name="KGISFVLID">139</SimpleData>
+		<SimpleData name="ZONE">West</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5731080003203,12.9976689998968</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">140</SimpleData>
+		<SimpleData name="WARD_NAME">Kottegepalya</SimpleData>
+		<SimpleData name="WARDNO">73</SimpleData>
+		<SimpleData name="LocationName">Pillappanakatte valley (KTG Roads to DWCC)</SimpleData>
+		<SimpleData name="KGISFVLID">140</SimpleData>
+		<SimpleData name="ZONE">Dasarahalli</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5167400001607,12.998219999936</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">141</SimpleData>
+		<SimpleData name="WARD_NAME">Shankar Matt</SimpleData>
+		<SimpleData name="WARDNO">75</SimpleData>
+		<SimpleData name="LocationName">1st main road bridge down stream</SimpleData>
+		<SimpleData name="KGISFVLID">141</SimpleData>
+		<SimpleData name="ZONE">West</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5278780003759,13.0010000003161</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">142</SimpleData>
+		<SimpleData name="WARD_NAME">Rajagopal Nagar</SimpleData>
+		<SimpleData name="WARDNO">70</SimpleData>
+		<SimpleData name="LocationName">Lavakushanagara to Vrishabhavathi Valley</SimpleData>
+		<SimpleData name="KGISFVLID">142</SimpleData>
+		<SimpleData name="ZONE">Dasarahalli</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5164540000044,13.0015319999151</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">143</SimpleData>
+		<SimpleData name="WARD_NAME">Shankar Matt</SimpleData>
+		<SimpleData name="WARDNO">75</SimpleData>
+		<SimpleData name="LocationName">Jai Maruthi nagar and Nandini layout bridge ( up and down stream)</SimpleData>
+		<SimpleData name="KGISFVLID">143</SimpleData>
+		<SimpleData name="ZONE">West</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5325529996695,13.0017559998102</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">144</SimpleData>
+		<SimpleData name="WARD_NAME">Kadu Malleshwar</SimpleData>
+		<SimpleData name="WARDNO">65</SimpleData>
+		<SimpleData name="LocationName">Munikrishnappa layout area of Kaveripura</SimpleData>
+		<SimpleData name="KGISFVLID">144</SimpleData>
+		<SimpleData name="ZONE">West</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5636110003156,13.0033059997124</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">145</SimpleData>
+		<SimpleData name="WARD_NAME">Shankar Matt</SimpleData>
+		<SimpleData name="WARDNO">75</SimpleData>
+		<SimpleData name="LocationName">Sandeep bar</SimpleData>
+		<SimpleData name="KGISFVLID">145</SimpleData>
+		<SimpleData name="ZONE">West</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5290469997468,13.0035669996389</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">146</SimpleData>
+		<SimpleData name="WARD_NAME">Laggere</SimpleData>
+		<SimpleData name="WARDNO">69</SimpleData>
+		<SimpleData name="LocationName">Kemegowda bridge</SimpleData>
+		<SimpleData name="KGISFVLID">146</SimpleData>
+		<SimpleData name="ZONE">West</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5294920002743,13.0041169998666</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">147</SimpleData>
+		<SimpleData name="WARD_NAME">Laggere</SimpleData>
+		<SimpleData name="WARDNO">69</SimpleData>
+		<SimpleData name="LocationName">17th and 19th main in Kamalanagar</SimpleData>
+		<SimpleData name="KGISFVLID">147</SimpleData>
+		<SimpleData name="ZONE">West</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5293170001005,13.0041750002618</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">148</SimpleData>
+		<SimpleData name="WARD_NAME">Laggere</SimpleData>
+		<SimpleData name="WARDNO">69</SimpleData>
+		<SimpleData name="LocationName">Laggere 40-vent Bridge</SimpleData>
+		<SimpleData name="KGISFVLID">148</SimpleData>
+		<SimpleData name="ZONE">West</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5290939999229,13.0044060003846</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">149</SimpleData>
+		<SimpleData name="WARD_NAME">Nandini Layout</SimpleData>
+		<SimpleData name="WARDNO">43</SimpleData>
+		<SimpleData name="LocationName">Nandini Layout Junction</SimpleData>
+		<SimpleData name="KGISFVLID">149</SimpleData>
+		<SimpleData name="ZONE">West</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5300419997567,13.0058639995654</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">150</SimpleData>
+		<SimpleData name="WARD_NAME">Vijnanapura</SimpleData>
+		<SimpleData name="WARDNO">51</SimpleData>
+		<SimpleData name="LocationName">RR layout &amp; Ambedkar Nagar</SimpleData>
+		<SimpleData name="KGISFVLID">150</SimpleData>
+		<SimpleData name="ZONE">Mahadevapura</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6722220004205,13.0066670000632</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">151</SimpleData>
+		<SimpleData name="WARD_NAME">Devasandra</SimpleData>
+		<SimpleData name="WARDNO">55</SimpleData>
+		<SimpleData name="LocationName">Devasandra (Nethravathi Badavane)</SimpleData>
+		<SimpleData name="KGISFVLID">151</SimpleData>
+		<SimpleData name="ZONE">Mahadevapura</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6963890001064,13.0066669998917</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">152</SimpleData>
+		<SimpleData name="WARD_NAME">Kammanahalli</SimpleData>
+		<SimpleData name="WARDNO">28</SimpleData>
+		<SimpleData name="LocationName">Kalyananagar</SimpleData>
+		<SimpleData name="KGISFVLID">152</SimpleData>
+		<SimpleData name="ZONE">East</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6369440003274,13.0088889996928</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">153</SimpleData>
+		<SimpleData name="WARD_NAME">Nandini Layout</SimpleData>
+		<SimpleData name="WARDNO">43</SimpleData>
+		<SimpleData name="LocationName">Near ward office ( circular road)</SimpleData>
+		<SimpleData name="KGISFVLID">153</SimpleData>
+		<SimpleData name="ZONE">West</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5355280001312,13.0095110001703</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">154</SimpleData>
+		<SimpleData name="WARD_NAME">Nandini Layout</SimpleData>
+		<SimpleData name="WARDNO">43</SimpleData>
+		<SimpleData name="LocationName">Back of Presidency school</SimpleData>
+		<SimpleData name="KGISFVLID">154</SimpleData>
+		<SimpleData name="ZONE">West</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5355280001312,13.0095110001703</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">155</SimpleData>
+		<SimpleData name="WARD_NAME">Nandini Layout</SimpleData>
+		<SimpleData name="WARDNO">43</SimpleData>
+		<SimpleData name="LocationName">3rd circular road Nandini layout</SimpleData>
+		<SimpleData name="KGISFVLID">155</SimpleData>
+		<SimpleData name="ZONE">West</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5355280001312,13.0095110001703</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">156</SimpleData>
+		<SimpleData name="WARD_NAME">Vijnanapura</SimpleData>
+		<SimpleData name="WARDNO">51</SimpleData>
+		<SimpleData name="LocationName">ITI Layout</SimpleData>
+		<SimpleData name="KGISFVLID">156</SimpleData>
+		<SimpleData name="ZONE">Mahadevapura</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6802779998802,13.0105559999868</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">157</SimpleData>
+		<SimpleData name="WARD_NAME">K R Puram</SimpleData>
+		<SimpleData name="WARDNO">52</SimpleData>
+		<SimpleData name="LocationName">Ambedkar Nagar near Ramamurthy Nagar</SimpleData>
+		<SimpleData name="KGISFVLID">157</SimpleData>
+		<SimpleData name="ZONE">Mahadevapura</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6813890003321,13.0108329998322</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">158</SimpleData>
+		<SimpleData name="WARD_NAME">Nandini Layout</SimpleData>
+		<SimpleData name="WARDNO">43</SimpleData>
+		<SimpleData name="LocationName">Down stream of Aggere bridge (Sakamma badavane)</SimpleData>
+		<SimpleData name="KGISFVLID">158</SimpleData>
+		<SimpleData name="ZONE">West</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5280640003205,13.0109529999659</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">159</SimpleData>
+		<SimpleData name="WARD_NAME">Vijnanapura</SimpleData>
+		<SimpleData name="WARDNO">51</SimpleData>
+		<SimpleData name="LocationName">Koudenahalli (Ramamurthy Nagar main road)</SimpleData>
+		<SimpleData name="KGISFVLID">159</SimpleData>
+		<SimpleData name="ZONE">Mahadevapura</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6791670000031,13.0113890001174</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">160</SimpleData>
+		<SimpleData name="WARD_NAME">Rajagopal Nagar</SimpleData>
+		<SimpleData name="WARDNO">70</SimpleData>
+		<SimpleData name="LocationName">Government School &amp; Durgalamma Temple</SimpleData>
+		<SimpleData name="KGISFVLID">160</SimpleData>
+		<SimpleData name="ZONE">Dasarahalli</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5117799998828,13.0126399999882</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">161</SimpleData>
+		<SimpleData name="WARD_NAME">Rammurthynagar</SimpleData>
+		<SimpleData name="WARDNO">26</SimpleData>
+		<SimpleData name="LocationName">NRI layout</SimpleData>
+		<SimpleData name="KGISFVLID">161</SimpleData>
+		<SimpleData name="ZONE">Mahadevapura</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6788889999928,13.0127779998621</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">162</SimpleData>
+		<SimpleData name="WARD_NAME">Malleshwaram</SimpleData>
+		<SimpleData name="WARDNO">45</SimpleData>
+		<SimpleData name="LocationName">Near Yashavanthpur TTMC</SimpleData>
+		<SimpleData name="KGISFVLID">162</SimpleData>
+		<SimpleData name="ZONE">West</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5613889997101,13.0128949999045</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">163</SimpleData>
+		<SimpleData name="WARD_NAME">Horamavu</SimpleData>
+		<SimpleData name="WARDNO">25</SimpleData>
+		<SimpleData name="LocationName">Hoysala nagar in Hormavu</SimpleData>
+		<SimpleData name="KGISFVLID">163</SimpleData>
+		<SimpleData name="ZONE">Mahadevapura</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6655560003485,13.0186110004055</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">164</SimpleData>
+		<SimpleData name="WARD_NAME">Kacharakanahalli</SimpleData>
+		<SimpleData name="WARDNO">29</SimpleData>
+		<SimpleData name="LocationName">HRBR Lyt</SimpleData>
+		<SimpleData name="KGISFVLID">164</SimpleData>
+		<SimpleData name="ZONE">East</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6347219997556,13.0188889999146</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">165</SimpleData>
+		<SimpleData name="WARD_NAME">Ganganagar</SimpleData>
+		<SimpleData name="WARDNO">20</SimpleData>
+		<SimpleData name="LocationName">Jala Dharshani Layout of Hebbal</SimpleData>
+		<SimpleData name="KGISFVLID">165</SimpleData>
+		<SimpleData name="ZONE">East</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5824999999099,13.0247220002418</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">166</SimpleData>
+		<SimpleData name="WARD_NAME">Ganganagar</SimpleData>
+		<SimpleData name="WARDNO">20</SimpleData>
+		<SimpleData name="LocationName">Vasanthappa block  Hebbal</SimpleData>
+		<SimpleData name="KGISFVLID">166</SimpleData>
+		<SimpleData name="ZONE">East</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5846359999877,13.0297769996971</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">167</SimpleData>
+		<SimpleData name="WARD_NAME">HMT</SimpleData>
+		<SimpleData name="WARDNO">38</SimpleData>
+		<SimpleData name="LocationName">Peenya industrial  area 3rd phase 1st  main road</SimpleData>
+		<SimpleData name="KGISFVLID">167</SimpleData>
+		<SimpleData name="ZONE">RR Nagar</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5201420002763,13.0330969996944</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">168</SimpleData>
+		<SimpleData name="WARD_NAME">Dodda Bidarakallu</SimpleData>
+		<SimpleData name="WARDNO">40</SimpleData>
+		<SimpleData name="LocationName">Bhavani nagara Doddabidarakallu</SimpleData>
+		<SimpleData name="KGISFVLID">168</SimpleData>
+		<SimpleData name="ZONE">RR Nagar</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.4905820000948,13.033173000101</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">169</SimpleData>
+		<SimpleData name="WARD_NAME">Hebbala</SimpleData>
+		<SimpleData name="WARDNO">21</SimpleData>
+		<SimpleData name="LocationName">A Block of  Hebbal</SimpleData>
+		<SimpleData name="KGISFVLID">169</SimpleData>
+		<SimpleData name="ZONE">East</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5902780004546,13.0333329999155</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">170</SimpleData>
+		<SimpleData name="WARD_NAME">Hebbala</SimpleData>
+		<SimpleData name="WARDNO">21</SimpleData>
+		<SimpleData name="LocationName">Low Laying areas of Chamundi nagar of Hebbal</SimpleData>
+		<SimpleData name="KGISFVLID">170</SimpleData>
+		<SimpleData name="ZONE">East</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6002779999901,13.0333329997996</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">171</SimpleData>
+		<SimpleData name="WARD_NAME">Hebbala</SimpleData>
+		<SimpleData name="WARDNO">21</SimpleData>
+		<SimpleData name="LocationName">Sun Rise colony of Hebbal</SimpleData>
+		<SimpleData name="KGISFVLID">171</SimpleData>
+		<SimpleData name="ZONE">East</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5972219997212,13.0355560000782</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">172</SimpleData>
+		<SimpleData name="WARD_NAME">Rammurthynagar</SimpleData>
+		<SimpleData name="WARDNO">26</SimpleData>
+		<SimpleData name="LocationName">Richi's Garden</SimpleData>
+		<SimpleData name="KGISFVLID">172</SimpleData>
+		<SimpleData name="ZONE">Mahadevapura</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6811109998455,13.0366669997307</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">173</SimpleData>
+		<SimpleData name="WARD_NAME">Dodda Bidarakallu</SimpleData>
+		<SimpleData name="WARDNO">40</SimpleData>
+		<SimpleData name="LocationName">Andanappa layout Doddabidarakallu</SimpleData>
+		<SimpleData name="KGISFVLID">173</SimpleData>
+		<SimpleData name="ZONE">RR Nagar</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.4871170004473,13.0366980002346</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">174</SimpleData>
+		<SimpleData name="WARD_NAME">J P Park</SimpleData>
+		<SimpleData name="WARDNO">17</SimpleData>
+		<SimpleData name="LocationName">Near bescom office Mattikere</SimpleData>
+		<SimpleData name="KGISFVLID">174</SimpleData>
+		<SimpleData name="ZONE">West</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.55670599993,13.0367360000285</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">175</SimpleData>
+		<SimpleData name="WARD_NAME">HBR Layout</SimpleData>
+		<SimpleData name="WARDNO">24</SimpleData>
+		<SimpleData name="LocationName">HBR Layout</SimpleData>
+		<SimpleData name="KGISFVLID">175</SimpleData>
+		<SimpleData name="ZONE">East</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6380559998534,13.0391669999123</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">176</SimpleData>
+		<SimpleData name="WARD_NAME">HMT</SimpleData>
+		<SimpleData name="WARDNO">38</SimpleData>
+		<SimpleData name="LocationName">Near Jalahalli Metro station</SimpleData>
+		<SimpleData name="KGISFVLID">176</SimpleData>
+		<SimpleData name="ZONE">RR Nagar</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5199260002574,13.0397289999055</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">177</SimpleData>
+		<SimpleData name="WARD_NAME">Nagavara</SimpleData>
+		<SimpleData name="WARDNO">23</SimpleData>
+		<SimpleData name="LocationName">Veerannapalya</SimpleData>
+		<SimpleData name="KGISFVLID">177</SimpleData>
+		<SimpleData name="ZONE">East</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.61222199988,13.0411110003888</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">178</SimpleData>
+		<SimpleData name="WARDNO">40</SimpleData>
+		<SimpleData name="LocationName">Shambhavinagar</SimpleData>
+		<SimpleData name="KGISFVLID">178</SimpleData>
+		<SimpleData name="ZONE">Dasarahalli</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.4780799999728,13.0413700000185</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">179</SimpleData>
+		<SimpleData name="WARD_NAME">Thanisandra</SimpleData>
+		<SimpleData name="WARDNO">6</SimpleData>
+		<SimpleData name="LocationName">Veerannapalya drain near Manpho convention center</SimpleData>
+		<SimpleData name="KGISFVLID">179</SimpleData>
+		<SimpleData name="ZONE">Yelahanka</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6155559996975,13.0424999996035</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">180</SimpleData>
+		<SimpleData name="WARD_NAME">Byatarayanapura</SimpleData>
+		<SimpleData name="WARDNO">7</SimpleData>
+		<SimpleData name="LocationName">Near Shani mahathma temple beside Hebbal Flyover</SimpleData>
+		<SimpleData name="KGISFVLID">180</SimpleData>
+		<SimpleData name="ZONE">East</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5913889998385,13.0425000003776</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">181</SimpleData>
+		<SimpleData name="WARD_NAME">Horamavu</SimpleData>
+		<SimpleData name="WARDNO">25</SimpleData>
+		<SimpleData name="LocationName">Vaddera Palya (Railway track)</SimpleData>
+		<SimpleData name="KGISFVLID">181</SimpleData>
+		<SimpleData name="ZONE">Mahadevapura</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6447219998583,13.0427780001412</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">182</SimpleData>
+		<SimpleData name="WARD_NAME">Byatarayanapura</SimpleData>
+		<SimpleData name="WARDNO">7</SimpleData>
+		<SimpleData name="LocationName">Kariyannapalya outer ring road, near Varun motors</SimpleData>
+		<SimpleData name="KGISFVLID">182</SimpleData>
+		<SimpleData name="ZONE">Yelahanka</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5988889997057,13.0430560002637</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">183</SimpleData>
+		<SimpleData name="WARD_NAME">HBR Layout</SimpleData>
+		<SimpleData name="WARDNO">24</SimpleData>
+		<SimpleData name="LocationName">Nanda gokula</SimpleData>
+		<SimpleData name="KGISFVLID">183</SimpleData>
+		<SimpleData name="ZONE">East</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6280559999516,13.0436110002171</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">184</SimpleData>
+		<SimpleData name="WARD_NAME">Byatarayanapura</SimpleData>
+		<SimpleData name="WARDNO">7</SimpleData>
+		<SimpleData name="LocationName">Kariyannapalya Bridge over flowed ORR</SimpleData>
+		<SimpleData name="KGISFVLID">184</SimpleData>
+		<SimpleData name="ZONE">Yelahanka</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6002780002857,13.0436109999325</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">185</SimpleData>
+		<SimpleData name="WARD_NAME">Radhakrishna Temple</SimpleData>
+		<SimpleData name="WARDNO">18</SimpleData>
+		<SimpleData name="LocationName">Upstreams of Devinagar (junction of Ring road and railway track)  of Hebbal</SimpleData>
+		<SimpleData name="KGISFVLID">185</SimpleData>
+		<SimpleData name="ZONE">East</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5708330003102,13.0466670000846</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">186</SimpleData>
+		<SimpleData name="WARD_NAME">Chokkasandra</SimpleData>
+		<SimpleData name="WARDNO">39</SimpleData>
+		<SimpleData name="LocationName">Gundappa Layout &amp; Belmar Layout</SimpleData>
+		<SimpleData name="KGISFVLID">186</SimpleData>
+		<SimpleData name="ZONE">Dasarahalli</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.500740000131,13.0468099997455</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">187</SimpleData>
+		<SimpleData name="WARD_NAME">Thanisandra</SimpleData>
+		<SimpleData name="WARDNO">6</SimpleData>
+		<SimpleData name="LocationName">Manyata tech park, MS Ramaiah north city To element mall</SimpleData>
+		<SimpleData name="KGISFVLID">187</SimpleData>
+		<SimpleData name="ZONE">Yelahanka</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6236110002089,13.0472219998923</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">188</SimpleData>
+		<SimpleData name="WARD_NAME">Byatarayanapura</SimpleData>
+		<SimpleData name="WARDNO">7</SimpleData>
+		<SimpleData name="LocationName">From Esteem mall beside Dhobi Ghat to Yogesh nagar bridge</SimpleData>
+		<SimpleData name="KGISFVLID">188</SimpleData>
+		<SimpleData name="ZONE">Yelahanka</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5933330000545,13.0472220002583</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">189</SimpleData>
+		<SimpleData name="WARD_NAME">Kodigehalli</SimpleData>
+		<SimpleData name="WARDNO">8</SimpleData>
+		<SimpleData name="LocationName">TATA nagar 8th cross</SimpleData>
+		<SimpleData name="KGISFVLID">189</SimpleData>
+		<SimpleData name="ZONE">Yelahanka</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5716669996158,13.0550000002269</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">190</SimpleData>
+		<SimpleData name="WARD_NAME">Thanisandra</SimpleData>
+		<SimpleData name="WARDNO">6</SimpleData>
+		<SimpleData name="LocationName">Near Rachanahalli lake inlet</SimpleData>
+		<SimpleData name="KGISFVLID">190</SimpleData>
+		<SimpleData name="ZONE">Yelahanka</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6147219998168,13.0577779997751</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">191</SimpleData>
+		<SimpleData name="WARD_NAME">Shettihalli</SimpleData>
+		<SimpleData name="WARDNO">12</SimpleData>
+		<SimpleData name="LocationName">Aaimatha layout, Mallasandra</SimpleData>
+		<SimpleData name="KGISFVLID">191</SimpleData>
+		<SimpleData name="ZONE">Dasarahalli</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5117799995436,13.0606799996662</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">192</SimpleData>
+		<SimpleData name="WARD_NAME">Bagalakunte</SimpleData>
+		<SimpleData name="WARDNO">14</SimpleData>
+		<SimpleData name="LocationName">MEI layout</SimpleData>
+		<SimpleData name="KGISFVLID">192</SimpleData>
+		<SimpleData name="ZONE">Dasarahalli</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5011599998644,13.0608700000336</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">193</SimpleData>
+		<SimpleData name="WARD_NAME">Kuvempu Nagar</SimpleData>
+		<SimpleData name="WARDNO">11</SimpleData>
+		<SimpleData name="LocationName">Kammagondanahalli near MNTI Polytechnic</SimpleData>
+		<SimpleData name="KGISFVLID">193</SimpleData>
+		<SimpleData name="ZONE">Dasarahalli</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5347100003529,13.0640699996863</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">194</SimpleData>
+		<SimpleData name="WARD_NAME">Shettihalli</SimpleData>
+		<SimpleData name="WARDNO">12</SimpleData>
+		<SimpleData name="LocationName">Shettihalli &amp; Chikkasandra Village </SimpleData>
+		<SimpleData name="KGISFVLID">194</SimpleData>
+		<SimpleData name="ZONE">Dasarahalli</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5117800000453,13.0663400000601</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">195</SimpleData>
+		<SimpleData name="WARD_NAME">Bagalakunte</SimpleData>
+		<SimpleData name="WARDNO">14</SimpleData>
+		<SimpleData name="LocationName">Siddeswara Layout</SimpleData>
+		<SimpleData name="KGISFVLID">195</SimpleData>
+		<SimpleData name="ZONE">Dasarahalli</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5006499998342,13.0672400001178</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">196</SimpleData>
+		<SimpleData name="WARD_NAME">Bagalakunte</SimpleData>
+		<SimpleData name="WARDNO">14</SimpleData>
+		<SimpleData name="LocationName">Shivapura tank</SimpleData>
+		<SimpleData name="KGISFVLID">196</SimpleData>
+		<SimpleData name="ZONE">Dasarahalli</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5006499998342,13.0672400001178</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">197</SimpleData>
+		<SimpleData name="WARD_NAME">Vidyaranyapura</SimpleData>
+		<SimpleData name="WARDNO">9</SimpleData>
+		<SimpleData name="LocationName">Thindlu  to Doddabommasandra tank</SimpleData>
+		<SimpleData name="KGISFVLID">197</SimpleData>
+		<SimpleData name="ZONE">Yelahanka</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5627780001287,13.0691669998851</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">198</SimpleData>
+		<SimpleData name="WARD_NAME">Yelahanka Satellite Town</SimpleData>
+		<SimpleData name="WARDNO">4</SimpleData>
+		<SimpleData name="LocationName">LBSnagar Yelahanka</SimpleData>
+		<SimpleData name="KGISFVLID">198</SimpleData>
+		<SimpleData name="ZONE">Yelahanka</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5936109999906,13.0925000001134</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">199</SimpleData>
+		<SimpleData name="WARD_NAME">Kempegowda</SimpleData>
+		<SimpleData name="WARDNO">1</SimpleData>
+		<SimpleData name="LocationName">Kogilu cross behind Udupi Grand hotel</SimpleData>
+		<SimpleData name="KGISFVLID">199</SimpleData>
+		<SimpleData name="ZONE">Yelahanka</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.6011110002963,13.1030559999236</coordinates></Point>
+  </Placemark>
+  <Placemark>
+	<ExtendedData><SchemaData schemaUrl="#flood_vulnerable_locations">
+		<SimpleData name="OBJECTID">200</SimpleData>
+		<SimpleData name="WARD_NAME">Kempegowda</SimpleData>
+		<SimpleData name="WARDNO">1</SimpleData>
+		<SimpleData name="LocationName">Kondappa layout</SimpleData>
+		<SimpleData name="KGISFVLID">200</SimpleData>
+		<SimpleData name="ZONE">Yelahanka</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>77.5933329998893,13.1102779998028</coordinates></Point>
+  </Placemark>
+</Folder>
+</Document></kml>

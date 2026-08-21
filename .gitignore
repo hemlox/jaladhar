@@ -8,7 +8,8 @@
 
 # Data — downloaded artefacts, never versioned. Provenance lives in manifests.
 # .gitkeep exceptions preserve the directory shape across a clone.
-data/
+data/*
+!data/seed/
 !data/**/.gitkeep
 
 # Run outputs, manifests, benchmark results
@@ -47,3 +48,5 @@ dist/
 *.swp
 .idea/
 .vscode/
+.agents/
+.opencode/

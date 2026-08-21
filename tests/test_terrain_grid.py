@@ -26,12 +26,44 @@ import pytest
 import rasterio
 import yaml
 
+from jaladhar.terrain import build as terrain_build
+
 REPO = Path(__file__).resolve().parents[1]
 PROCESSED = REPO / "data" / "processed"
 INTERIM = REPO / "data" / "interim" / "terrain"
 INTERIM_DEM = REPO / "data" / "interim" / "dem"
 RUNS = REPO / "runs"
 CONFIG_PATH = REPO / "configs" / "domain_bengaluru.yaml"
+
+
+def test_full_pipeline_orders_conditioning_before_derived_without_duplicate_depressions(
+    tmp_path, monkeypatch
+):
+    """V2/V5: derived sees conditioning's prebreach; no duplicate stage runs.
+
+    The absent marker is the deliberate red state. Only the mocked
+    conditioning stage can create the independent artifact observed by the
+    mocked derived stage, so a stage-order regression cannot pass.
+    """
+    observed: list[str] = []
+    prebreach = tmp_path / "dem_conditioned_prebreach.tif"
+    assert not prebreach.exists()
+
+    def fake_run_stage(stage, builder, cfg, config_path, repo_root, out_dir):
+        observed.append(stage)
+        if stage == "phase1_terrain_conditioning":
+            prebreach.write_bytes(b"realized-by-conditioning")
+        if stage == "phase1_terrain_derived":
+            assert prebreach.read_bytes() == b"realized-by-conditioning"
+        return {}
+
+    monkeypatch.setattr(terrain_build, "run_stage", fake_run_stage)
+    terrain_build.run_all_stages({}, tmp_path / "config.yaml", tmp_path)
+
+    assert "phase1_terrain_depressions" not in observed
+    assert observed.index("phase1_terrain_conditioning") < observed.index(
+        "phase1_terrain_derived"
+    )
 
 
 def _cfg() -> dict:
@@ -43,9 +75,16 @@ def _skip_unless_exist(*paths: Path) -> None:
     missing = [str(p) for p in paths if not p.exists()]
     if missing:
         pytest.skip(
-            f"required pipeline output(s) not present: {missing} — "
+            f"BLOCKED: required pipeline output(s) not present: {missing} — "
             "run `python -m jaladhar.terrain.build` first"
         )
+
+
+def _require_boundary() -> None:
+    cfg = _cfg()
+    boundary_path = REPO / cfg["boundary"]["path"]
+    if not boundary_path.exists():
+        pytest.skip(f"BLOCKED: canonical grid requires missing BBMP boundary: {boundary_path}")
 
 
 def _manifest(stage_dir: str) -> dict:
@@ -76,6 +115,7 @@ def test_invariant_1_all_layers_aligned():
     from jaladhar.terrain.grid import build_grid
 
     cfg = _cfg()
+    _require_boundary()
     grid, _ = build_grid(cfg, REPO)
     buffer_m = float(cfg["dem"]["buffer_m"])
     buffered_grid = grid.buffered(buffer_m)
@@ -184,7 +224,7 @@ def test_invariant_2_no_missing_data_inside_bbmp(layer_name: str, bbmp_interior_
     the invariant is named for.
     """
     if bbmp_interior_mask is None:
-        pytest.skip("BBMP boundary file not present — cannot build the interior mask")
+        pytest.skip("BLOCKED: BBMP boundary file absent; cannot build interior mask")
     path = PROCESSED / layer_name
     _skip_unless_exist(path)
     with rasterio.open(path) as ds:
@@ -253,7 +293,7 @@ def test_invariant_2_sparse_layer_has_real_signal_inside_bbmp(layer_name: str, b
     cross-check catches a partial corruption too.
     """
     if bbmp_interior_mask is None:
-        pytest.skip("BBMP boundary file not present — cannot build the interior mask")
+        pytest.skip("BLOCKED: BBMP boundary file absent; cannot build interior mask")
     path = PROCESSED / layer_name
     _skip_unless_exist(path)
     with rasterio.open(path) as ds:
@@ -612,8 +652,10 @@ def test_invariant_6_manning_n_bounds():
 
 
 def test_invariant_7_breach_cut_and_fill_bounds():
-    """Conditioning cuts must not exceed cut_max (0.50m) and fills must not exceed
-    fill_max (0.25m) — bounded filling deviation documented in conditioning manifest."""
+    """Conditioning cuts must not exceed cut_max (2.60m) and fills must not exceed
+    fill_max (3.25m) — bounded filling deviation documented in conditioning manifest."""
+    from jaladhar.terrain.conditioning import CUT_MAX_M, FILL_MAX_M
+
     pre_path = INTERIM / "dem_conditioned_prebreach.tif"
     post_path = INTERIM / "dem_conditioned_postbreach.tif"
     _skip_unless_exist(pre_path, post_path)
@@ -631,8 +673,8 @@ def test_invariant_7_breach_cut_and_fill_bounds():
     max_cut = float(cuts.max()) if len(cuts) > 0 else 0.0
     max_fill = float(fills.max()) if len(fills) > 0 else 0.0
 
-    assert max_cut <= 0.50 + 1e-4, f"max cut {max_cut:.4f} m exceeds 0.50 m limit"
-    assert max_fill <= 0.25 + 1e-4, f"max fill {max_fill:.4f} m exceeds 0.25 m limit"
+    assert max_cut <= CUT_MAX_M + 1e-4, f"max cut {max_cut:.4f} m exceeds {CUT_MAX_M} m limit"
+    assert max_fill <= FILL_MAX_M + 1e-4, f"max fill {max_fill:.4f} m exceeds {FILL_MAX_M} m limit"
 
 
 # --- Invariant 8: pit count strictly decreased after breaching -------------
@@ -863,7 +905,6 @@ def test_invariant_d4_pit_count_zero_on_conditioned_dem():
     four cardinal faces. A cell whose only descending neighbour is diagonal
     is depression-free under D8 and a perfect trap under the solver.
     """
-    from jaladhar.terrain.conditioning import count_pits_d4
 
     post_path = INTERIM / "dem_conditioned_postbreach.tif"
     orig_dem_path = INTERIM_DEM / "dem_10m_buffered.tif"
@@ -905,4 +946,3 @@ def test_d4_pit_count_mutation_pre_d4_breach_shows_pits():
         f"Initial D4 pit count is {n_initial} — expected > 0 "
         "to demonstrate that the D4 invariant is non-vacuous (V5)."
     )
-

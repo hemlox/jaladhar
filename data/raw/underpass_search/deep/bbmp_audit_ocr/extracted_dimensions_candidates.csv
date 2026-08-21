@@ -1,0 +1,2 @@
+pdf,page,underpass_inferred,dimension_type,value_str,unit,verbatim_snippet,confidence,note
+harlur_junction_dpr_drawings.pdf,3,,candidate_m,2.000,m,0 500 C 2.5%SLOPE 500 2.000 2.000 2.000 2.000 M 15. 2.5% SLOPE 25 3.000 3.000 8133 3.00,low_ocr,automated candidate; human vision review in report determines true dimension type (grating/pipe/chamber vs clearance)

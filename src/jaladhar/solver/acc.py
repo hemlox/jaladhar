@@ -156,7 +156,6 @@ def face_weight(hf: torch.Tensor, p: SolverParams) -> torch.Tensor:
     elif p.wetdry_mode == "ramp":
         # Smoothstep across [depth_threshold_m, depth_threshold_m + ramp_width_m]
         lo = p.depth_threshold_m
-        hi = lo + p.ramp_width_m
         u = torch.clamp((hf - lo) / p.ramp_width_m, 0.0, 1.0)
         return u * u * (3.0 - 2.0 * u)
     raise ValueError(f"unknown wetdry mode {p.wetdry_mode}")
@@ -228,7 +227,7 @@ def acc_step(
     static: Any,
     dt: float,
     p: SolverParams,
-    rain_rate_m_s: float = 0.0,
+    rain_rate_m_s: float | torch.Tensor = 0.0,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, dict[str, torch.Tensor]]:
     """Advance one ACC timestep. Pure function; no tensor is mutated in place.
 
@@ -238,9 +237,12 @@ def acc_step(
     schedule, so it is a constant in the graph — no `.item()` is called here
     and no Python branch depends on a tensor value.
 
-    Returns `(h, qx, qy, diagnostics)`. The diagnostics are float64 scalars
-    for the mass budget, computed inside a `torch.no_grad()` block: they are
-    reductions of already-computed tensors and never feed the state, so they
+    Returns `(h, qx, qy, diagnostics)`. Diagnostics include float64 mass-budget
+    reductions and the signed realized face depth increments in metres. The
+    latter are post-conveyance and post-donor-limiter: they are the exact
+    ``fx``/``fy`` fields used in the state update, unlike returned ``qx`` and
+    ``qy`` which are momentum states before donor limiting. Diagnostics are
+    computed inside a `torch.no_grad()` block and never feed the state, so they
     add nothing to the graph. (This is deliberately NOT the forbidden
     `.detach()`-in-the-hot-path pattern, which would sever the state's own
     gradient path.)
@@ -274,7 +276,7 @@ def acc_step(
 
     # -- 5. mass update ---------------------------------------------------
     h_new = h + _div_x(fx) + _div_y(fy) - b_out
-    if rain_rate_m_s != 0.0:
+    if isinstance(rain_rate_m_s, torch.Tensor) or rain_rate_m_s != 0.0:
         h_new = h_new + rain_rate_m_s * dt
 
     # Non-negativity is algebraic (guaranteed by the donor-cell flux limiter).
@@ -291,7 +293,7 @@ def acc_step(
             + F.pad(fy.abs(), (0, 0, 0, 1))
             + b_out
         )
-        if rain_rate_m_s != 0.0:
+        if isinstance(rain_rate_m_s, torch.Tensor) or rain_rate_m_s != 0.0:
             flux_mag = flux_mag + rain_rate_m_s * dt
         local_scale = torch.maximum(h, flux_mag)
         tol = 4.0 * torch.finfo(h_new.dtype).eps * local_scale
@@ -314,7 +316,23 @@ def acc_step(
     h_new = h_new - infiltrated
 
     with torch.no_grad():
+        # This is the exact routed term used by the state update. Including
+        # open-domain outfalls makes its negative integral over an arbitrary
+        # mask equal all routed export, even when that mask touches the model
+        # perimeter.
+        transport_depth_change = _div_x(fx) + _div_y(fy) - b_out
         diagnostics = {
+            # Diagnostic-only views. Detaching here cannot sever the state:
+            # h_new was already formed from fx/fy above. It prevents callers
+            # retaining the full autograd graph merely to log realized flux.
+            "realized_face_depth_increment_x_m": fx.detach(),
+            "realized_face_depth_increment_y_m": fy.detach(),
+            # Cell-centred conservative transport increment. Summing this
+            # over a mask is the negative signed flux through that mask's
+            # boundary; rain and sinks are excluded, domain outfalls included.
+            "transport_depth_change_m": transport_depth_change.detach(),
+            "drained_depth_m": drained.detach(),
+            "infiltrated_depth_m": infiltrated.detach(),
             "boundary_out_m": b_out.sum(dtype=torch.float64),
             "drained_m": drained.sum(dtype=torch.float64),
             "infiltrated_m": infiltrated.sum(dtype=torch.float64),

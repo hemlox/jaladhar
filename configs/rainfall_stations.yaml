@@ -1,0 +1,33 @@
+# JALADHAR - archived Bengaluru station-rainfall acquisition
+#
+# The window is UTC and the end date is inclusive for the NOAA API.  The
+# acquisition module converts it to an exclusive end timestamp for local
+# filtering.
+start_date: "2022-08-30"
+end_date: "2022-09-06"
+output_dir: "data/raw/rainfall_stations"
+
+noaa_global_hourly:
+  endpoint: "https://www.ncei.noaa.gov/access/services/data/v1"
+  stations:
+    - "42705699999" # VOBL / Kempegowda International Airport
+    - "43302599999" # VOBG / HAL Airport
+    - "43295099999" # Bengaluru city synoptic station
+    - "43296099999" # Bengaluru/Hindustan Airport synoptic station
+  format: "json"
+  include_attributes: true
+
+noaa_isd_lite:
+  base_url: "https://www.ncei.noaa.gov/pub/data/noaa/isd-lite"
+  stations:
+    - "427056-99999" # VOBL / Kempegowda International Airport
+    - "433025-99999" # VOBG / HAL Airport
+    - "432950-99999" # Bengaluru city synoptic station
+    - "432960-99999" # Bengaluru/Hindustan Airport synoptic station
+
+iem_metar:
+  endpoint: "https://mesonet.agron.iastate.edu/cgi-bin/request/asos.py"
+  stations:
+    - "VOBL"
+    - "VOBG"
+  data: "metar"

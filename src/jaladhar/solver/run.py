@@ -162,7 +162,7 @@ def simulate(
             if budget is not None and steps % mass_check_every == 0:
                 budget.check(steps)
             if snapshot_every_s is not None and t >= next_snap:
-                snapshots.append((t, h.clone()))
+                snapshots.append((t, h.detach().cpu()))
                 next_snap += snapshot_every_s
 
     return RunResult(

@@ -7,6 +7,36 @@ name = "jaladhar"
 version = "0.1.0"
 description = "Bengaluru urban flood digital twin — physics solver + neural surrogate"
 requires-python = ">=3.11"
+dependencies = [
+    "affine",
+    "anuga",
+    "boto3",
+    "fiona",
+    "geopandas",
+    "h5py",
+    "matplotlib",
+    "networkx",
+    "numpy",
+    "osmnx",
+    "pandas",
+    "pyproj",
+    "python-dotenv",
+    "pyyaml",
+    "rasterio",
+    "requests",
+    "scipy",
+    "shapely",
+    "torch==2.6.0",
+    "typer",
+    "whitebox",
+]
+
+[project.optional-dependencies]
+dev = [
+    "black",
+    "pytest",
+    "ruff",
+]
 
 # Makes `python -m jaladhar.terrain.build` (and every other module CLI) work
 # without PYTHONPATH=src. Every working invocation before this needed that

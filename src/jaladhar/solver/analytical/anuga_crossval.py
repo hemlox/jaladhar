@@ -37,7 +37,6 @@ from typing import Any
 
 import anuga
 import numpy as np
-import torch
 import typer
 
 from jaladhar.solver.acc import SolverParams

@@ -63,7 +63,10 @@ def granule_urls(start: date, end: date, tok: str) -> list[str]:
             if h.endswith(".HDF5") and h.startswith("http"):
                 urls.append(h)
                 break
-    return urls
+    # CMR can expose the same data link through duplicate metadata entries.
+    # Deduplicate before parallel dispatch: two workers sharing one ``.part``
+    # path can otherwise race at the atomic rename and report FileNotFoundError.
+    return list(dict.fromkeys(urls))
 
 
 def fetch_one(url: str, dest_dir: Path, tok: str) -> tuple[str, str]:

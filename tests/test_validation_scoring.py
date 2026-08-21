@@ -29,9 +29,6 @@ import numpy as np
 import pytest
 
 from src.jaladhar.validation.scoring import (
-    ContingencyTable,
-    ValidationScoreResult,
-    compute_contingency_counts,
     score_extent,
     score_threshold_curve,
 )

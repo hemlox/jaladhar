@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import Any
 
 import boto3
 import typer
@@ -36,9 +37,11 @@ SCENES = {
     ),
 }
 
-# VV only: PROMPT.md §8 specifies VV backscatter thresholding. VH is present in
-# the same products if urban-density stratification later needs it.
-WANTED = ("-vv-", "quick-look.png")
+# VV only: validation.yaml consumes the measurement plus the annotation,
+# calibration, and noise XMLs for that same polarization.  Selecting by both
+# directory and basename prevents VH files and unrelated SAFE metadata from
+# entering the evidence bundle.
+REQUIRED_OBJECT_KINDS = ("measurement", "annotation", "calibration", "noise")
 
 
 def client():
@@ -52,6 +55,69 @@ def client():
     )
 
 
+def required_object_kind(key: str, prefix: str) -> str | None:
+    """Return the required VV object kind represented by an S3 key, if any."""
+    if not key.startswith(prefix):
+        return None
+    rel = key[len(prefix) :].lower()
+    basename = rel.rsplit("/", 1)[-1]
+    if "-vv-" not in basename:
+        return None
+    if rel.startswith("measurement/") and basename.endswith((".tif", ".tiff")):
+        return "measurement"
+    if rel.startswith("annotation/calibration/") and basename.startswith("calibration-"):
+        return "calibration" if basename.endswith(".xml") else None
+    if rel.startswith("annotation/calibration/") and basename.startswith("noise-"):
+        return "noise" if basename.endswith(".xml") else None
+    if rel.startswith("annotation/") and "/" not in rel[len("annotation/") :]:
+        return "annotation" if basename.endswith(".xml") else None
+    return None
+
+
+def list_required_objects(s3: Any, prefix: str) -> list[dict[str, Any]]:
+    """List all pages and return exactly one object for every required kind."""
+    objects: list[dict[str, Any]] = []
+    continuation_token: str | None = None
+    while True:
+        kwargs: dict[str, Any] = {"Bucket": "eodata", "Prefix": prefix}
+        if continuation_token is not None:
+            kwargs["ContinuationToken"] = continuation_token
+        response = s3.list_objects_v2(**kwargs)
+        objects.extend(response.get("Contents", []))
+        if not response.get("IsTruncated", False):
+            break
+        continuation_token = response.get("NextContinuationToken")
+        if not continuation_token:
+            raise RuntimeError(f"truncated S3 listing for {prefix} omitted continuation token")
+
+    by_kind: dict[str, list[dict[str, Any]]] = {kind: [] for kind in REQUIRED_OBJECT_KINDS}
+    for obj in objects:
+        kind = required_object_kind(obj["Key"], prefix)
+        if kind is not None:
+            by_kind[kind].append(obj)
+
+    bad_counts = {kind: len(found) for kind, found in by_kind.items() if len(found) != 1}
+    if bad_counts:
+        raise RuntimeError(
+            f"Sentinel-1 SAFE {prefix} must contain exactly one required VV object per kind; "
+            f"bad counts={bad_counts}"
+        )
+    return [by_kind[kind][0] for kind in REQUIRED_OBJECT_KINDS]
+
+
+def remove_stale_partials_after_verification(target: Path) -> list[Path]:
+    """Remove interrupted siblings only after a complete target exists.
+
+    A successful exact-size target is the independent observable that makes a
+    ``.part*`` sibling stale. This avoids deleting a possible in-progress file
+    when no verified target exists.
+    """
+    stale = sorted(target.parent.glob(f"{target.name}.part*"))
+    for path in stale:
+        path.unlink()
+    return stale
+
+
 @app.command()
 def main(
     out: Path = typer.Option(REPO / "data/raw/sentinel1", help="Download directory"),
@@ -61,20 +127,29 @@ def main(
     for label, prefix in SCENES.items():
         dest = out / label
         dest.mkdir(parents=True, exist_ok=True)
-        objs = s3.list_objects_v2(Bucket="eodata", Prefix=prefix).get("Contents", [])
-        picked = [o for o in objs if any(w in o["Key"] for w in WANTED)]
+        picked = list_required_objects(s3, prefix)
         typer.echo(f"\n=== {label}: {len(picked)} objects ===")
         for o in picked:
             rel = o["Key"][len(prefix) :]
             target = dest / rel
             if target.exists() and target.stat().st_size == o["Size"]:
+                removed = remove_stale_partials_after_verification(target)
+                for stale in removed:
+                    typer.echo(f"  removed stale partial {stale.relative_to(dest)}")
                 typer.echo(f"  skip (have) {rel}")
                 continue
             target.parent.mkdir(parents=True, exist_ok=True)
             typer.echo(f"  get {o['Size'] / 1e6:8.1f} MB  {rel}")
             tmp = target.with_suffix(target.suffix + ".part")
             s3.download_file("eodata", o["Key"], str(tmp))
+            actual_size = tmp.stat().st_size
+            if actual_size != o["Size"]:
+                raise RuntimeError(
+                    f"Sentinel-1 object size mismatch for {o['Key']}: "
+                    f"downloaded {actual_size}, expected {o['Size']}"
+                )
             tmp.rename(target)  # atomic: a partial file must never look complete
+            remove_stale_partials_after_verification(target)
     typer.echo("\ndone")
 
 

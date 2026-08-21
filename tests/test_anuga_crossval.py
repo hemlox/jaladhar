@@ -6,8 +6,6 @@ External correctness evidence comparing ACC against ANUGA 3.3.10 and closed-form
 
 from __future__ import annotations
 
-import numpy as np
-import pytest
 
 from jaladhar.solver.analytical.anuga_crossval import (
     run_froude_sweep,
@@ -149,7 +147,6 @@ def test_froude_sweep_monotonic_degradation():
     h1_ratios = [0.95, 0.60, 0.30, 0.10, 0.05]
     rows = run_froude_sweep(h1_ratios=h1_ratios, dx=5.0, length_m=200.0, t_eval=4.0)
 
-    froudes = [r["froude"] for r in rows]
     l1_errors = [r["l1_acc_vs_anuga_m"] for r in rows]
 
     # Monotonic increase of ACC-vs-ANUGA difference with Froude

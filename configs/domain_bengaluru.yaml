@@ -25,6 +25,11 @@ boundary:
   # "BBMP" itself returning the HQ building instead of the boundary: check
   # the count/area, don't trust a successful read).
   path: "data/raw/boundary/bbmp_wards_2023_final.kml"
+  source_url: "https://data.opencity.in/dataset/87b978d1-352e-4b90-aa2c-9991e55d3425/resource/4dd58225-3ad2-4a99-9003-4e8d71e7f99f/download/e56d21e8-0c44-4c35-9e5d-c732f6f59c97.kml"
+  source_name: "OpenCity / BBMP Final Wards Map - 2023"
+  licence: "Public Domain"
+  expected_sha256: "861082859a7213ad2324ebaeb31109d6d21da8c06573b8a37267a55c80e39838"
+  expected_size_bytes: 2565106
   expected_feature_count: 225
   expected_area_km2: 717.0
   area_tolerance_km2: 1.0 # cross-check band (~0.14%), not a hard equality —
@@ -310,6 +315,15 @@ drains:
   # imply false precision. The one piece of REAL information this prior does
   # encode is distance to an actual mapped waterway=drain|ditch|stream
   # feature (real OSM geometry, not invented) via distance_decay below.
+  # Network source: 'bbmp' (BBMP SWD 2022 Rajakaluve KML network: Primary/Secondary/Tertiary)
+  # or 'osm' (Overpass waterway=drain|ditch|stream fetch).
+  source: "bbmp"
+  bbmp_raw_dir: "data/raw/bbmp_drains"
+  bbmp_files:
+    primary: "primary_drains_2022.kml"
+    secondary: "secondary_drains_2022.kml"
+    tertiary: "tertiary_drains_2022.kml"
+
   baseline_capacity_by_landuse_mm_per_hr:
     roads_paved: 10.0
     dense_urban: 10.0
@@ -328,15 +342,30 @@ drains:
   distance_decay:
     functional_form: "exponential"
     decay_m: 200.0
-  waterway_tags: [drain, ditch, stream] # PROMPT.md §6.1: "the primary
-  # rajakaluve channels"
+  waterway_tags: [drain, ditch, stream] # For legacy OSM Overpass source
+  overpass_timeout_s: 180
+
+water:
+  # Real OSM polygons, shared by depression classification and the SAR water
+  # reference.  This is deliberately separate from waterway=* drain lines:
+  # those represent conveyance; these represent standing-water evidence.
+  osm_tags:
+    natural: [water, wetland]
+    landuse: [reservoir, basin]
+    water: [lake, pond, reservoir, basin]
+    waterway: [riverbank]
+  quarry_tags:
+    landuse: [quarry]
+    man_made: [mineshaft]
+  landfill_tags:
+    landuse: [landfill]
   overpass_timeout_s: 180
 
 paths:
   raw_dem_dir: "data/raw/dem" # cached, never-re-download source tiles
   interim_dem_dir: "data/interim/dem" # mosaicked/reprojected DEM, pre-conditioning
   raw_osm_dir: "data/raw/osm" # cached Overpass responses (roads/buildings/
-  # landuse/waterways), never re-fetched if present
+  # landuse/waterways/water polygons), never re-fetched if present
   raw_microsoft_dir: "data/raw/microsoft_buildings" # cached MS quadkey CSV
   interim_terrain_dir: "data/interim/terrain" # per-layer vector/raster outputs
   # from roads.py/buildings.py/roughness.py/

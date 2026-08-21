@@ -26,7 +26,7 @@ import math
 import subprocess
 import time
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -108,7 +108,10 @@ class ContingencyTable:
 
 @dataclass(frozen=True)
 class ValidationScoreResult:
-    """Scoring result at a specific depth threshold, with and without permanent water exclusion."""
+    """Scoring result at a specific depth threshold.
+
+    Supports optional permanent water and density stratification.
+    """
 
     comparison_timestamp: datetime
     threshold_m: float
@@ -116,16 +119,25 @@ class ValidationScoreResult:
     masked: ContingencyTable | None
     excluded_water_cells: int
     is_masked: bool
+    stratified_unmasked: dict[str, ContingencyTable] | None = None
+    stratified_masked: dict[str, ContingencyTable] | None = None
+    is_stratified: bool = False
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        d: dict[str, Any] = {
             "comparison_timestamp_iso": self.comparison_timestamp.isoformat(),
             "threshold_m": self.threshold_m,
             "is_masked": self.is_masked,
+            "is_stratified": self.is_stratified,
             "excluded_water_cells": self.excluded_water_cells,
             "unmasked_scores": self.unmasked.to_dict(),
             "masked_scores": self.masked.to_dict() if self.masked is not None else "UNMASKED",
         }
+        if self.stratified_unmasked is not None:
+            d["stratified_unmasked"] = {k: v.to_dict() for k, v in self.stratified_unmasked.items()}
+        if self.stratified_masked is not None:
+            d["stratified_masked"] = {k: v.to_dict() for k, v in self.stratified_masked.items()}
+        return d
 
 
 def compute_contingency_counts(
@@ -169,6 +181,8 @@ def score_extent(
     comparison_timestamp: datetime,
     threshold_m: float = 0.1,
     permanent_water_mask: np.ndarray | None = None,
+    density_raster: np.ndarray | None = None,
+    density_classes: dict[str, int] | dict[int, str] | list[str] | None = None,
 ) -> ValidationScoreResult:
     """Score predicted depth against observed binary flooding at a specific instant.
 
@@ -176,11 +190,13 @@ def score_extent(
         predicted_depth: 2D array of water depths in meters.
         observed_flooded: 2D boolean array (True = observed flooded).
         comparison_timestamp: Explicit instant for comparison (no default).
-        threshold_m: Depth threshold above which a cell is classified as flooded.
-        permanent_water_mask: 2D boolean array (True = permanent water, excluded from masked evaluation).
+        permanent_water_mask: 2D boolean array (True = permanent water,
+            excluded from masked evaluation).
+        density_raster: Optional 2D integer array of urban density classes.
+        density_classes: Optional mapping or list of density class names/IDs.
 
     Returns:
-        ValidationScoreResult containing unmasked and masked contingency tables.
+        ValidationScoreResult containing unmasked, masked, and stratified contingency tables.
     """
     if comparison_timestamp is None or not isinstance(comparison_timestamp, datetime):
         raise TypeError(
@@ -203,9 +219,50 @@ def score_extent(
         # valid_mask is True for NON-permanent water cells
         valid_mask = ~permanent_water_mask
         excluded_count = int(np.sum(permanent_water_mask))
-        masked_table = compute_contingency_counts(
-            pred_flooded, obs_flooded, valid_mask=valid_mask
-        )
+        masked_table = compute_contingency_counts(pred_flooded, obs_flooded, valid_mask=valid_mask)
+
+    # 3. Density-stratified evaluation (PROMPT.md §8 item 3)
+    stratified_unmasked: dict[str, ContingencyTable] | None = None
+    stratified_masked: dict[str, ContingencyTable] | None = None
+    is_stratified = density_raster is not None
+
+    if is_stratified and density_raster is not None:
+        if density_raster.shape != pred_flooded.shape:
+            raise ValueError(
+                f"Density raster shape {density_raster.shape} != pred shape {pred_flooded.shape}"
+            )
+        # Normalize class dictionary
+        class_mapping: dict[str, int] = {}
+        if density_classes is None:
+            unique_ids = np.unique(density_raster)
+            default_names = {0: "OPEN", 1: "MODERATE", 2: "DENSE"}
+            for uid in unique_ids:
+                name = default_names.get(int(uid), f"CLASS_{uid}")
+                class_mapping[name] = int(uid)
+        elif isinstance(density_classes, list):
+            for idx, name in enumerate(density_classes):
+                class_mapping[name] = idx
+        elif isinstance(density_classes, dict):
+            # Could be {name: id} or {id: name}
+            for k, v in density_classes.items():
+                if isinstance(k, str) and isinstance(v, int):
+                    class_mapping[k] = v
+                elif isinstance(k, int) and isinstance(v, str):
+                    class_mapping[v] = k
+
+        stratified_unmasked = {}
+        stratified_masked = {} if is_masked else None
+
+        for class_name, class_id in class_mapping.items():
+            c_mask = density_raster == class_id
+            stratified_unmasked[class_name] = compute_contingency_counts(
+                pred_flooded, obs_flooded, valid_mask=c_mask
+            )
+            if is_masked and stratified_masked is not None:
+                c_valid_mask = c_mask & (~permanent_water_mask)
+                stratified_masked[class_name] = compute_contingency_counts(
+                    pred_flooded, obs_flooded, valid_mask=c_valid_mask
+                )
 
     return ValidationScoreResult(
         comparison_timestamp=comparison_timestamp,
@@ -214,6 +271,9 @@ def score_extent(
         masked=masked_table,
         excluded_water_cells=excluded_count,
         is_masked=is_masked,
+        stratified_unmasked=stratified_unmasked,
+        stratified_masked=stratified_masked,
+        is_stratified=is_stratified,
     )
 
 
@@ -223,6 +283,8 @@ def score_threshold_curve(
     comparison_timestamp: datetime,
     thresholds_m: list[float] | np.ndarray = (0.05, 0.1, 0.15, 0.2, 0.3, 0.5, 1.0),
     permanent_water_mask: np.ndarray | None = None,
+    density_raster: np.ndarray | None = None,
+    density_classes: dict[str, int] | dict[int, str] | list[str] | None = None,
 ) -> list[ValidationScoreResult]:
     """Evaluate validation scores across a sweep of depth thresholds."""
     results: list[ValidationScoreResult] = []
@@ -233,6 +295,8 @@ def score_threshold_curve(
             comparison_timestamp=comparison_timestamp,
             threshold_m=float(th),
             permanent_water_mask=permanent_water_mask,
+            density_raster=density_raster,
+            density_classes=density_classes,
         )
         results.append(res)
     return results
@@ -251,7 +315,7 @@ def main(
         "stage": "validation_scoring_harness",
         "status": "running",
         "git_sha": git_sha(),
-        "start_time_iso": datetime.now(timezone.utc).isoformat(),
+        "start_time_iso": datetime.now(UTC).isoformat(),
     }
     manifest_path.write_text(json.dumps(manifest, indent=2))
 
@@ -279,7 +343,7 @@ def main(
         water_mask = np.zeros(grid_shape, dtype=bool)
         water_mask.flat[0:2] = True
 
-        ts = datetime(2022, 9, 5, 0, 40, tzinfo=timezone.utc)  # 06:10 IST SAR pass
+        ts = datetime(2022, 9, 5, 0, 40, tzinfo=UTC)  # 06:10 IST SAR pass
         result = score_extent(
             predicted_depth=pred_depth,
             observed_flooded=obs_flooded,
@@ -309,14 +373,16 @@ def main(
 
         typer.echo("Validation Scoring Harness Demonstration:")
         typer.echo(f"  Comparison Instant: {ts.isoformat()} (06:10 IST SAR flood epoch)")
-        typer.echo(f"  Unmasked: Hits={result.unmasked.hits}, Misses={result.unmasked.misses}, FalseAlarms={result.unmasked.false_alarms}")
-        typer.echo(f"    CSI: {result.unmasked.csi:.4f} (Expected: 0.5217)")
-        typer.echo(f"    POD: {result.unmasked.pod:.4f} (Expected: 0.8000)")
-        typer.echo(f"    FAR: {result.unmasked.far:.4f} (Expected: 0.4000)")
+        u = result.unmasked
+        typer.echo(f"  Unmasked: Hits={u.hits}, Misses={u.misses}, FalseAlarms={u.false_alarms}")
+        typer.echo(f"    CSI: {u.csi:.4f} (Expected: 0.5217)")
+        typer.echo(f"    POD: {u.pod:.4f} (Expected: 0.8000)")
+        typer.echo(f"    FAR: {u.far:.4f} (Expected: 0.4000)")
         if result.masked is not None:
+            m = result.masked
             typer.echo(f"  Masked ({result.excluded_water_cells} permanent water cells excluded):")
-            typer.echo(f"    Hits={result.masked.hits}, Misses={result.masked.misses}, FalseAlarms={result.masked.false_alarms}")
-            typer.echo(f"    CSI: {result.masked.csi:.4f}, POD: {result.masked.pod:.4f}, FAR: {result.masked.far:.4f}")
+            typer.echo(f"    Hits={m.hits}, Misses={m.misses}, FalseAlarms={m.false_alarms}")
+            typer.echo(f"    CSI: {m.csi:.4f}, POD: {m.pod:.4f}, FAR: {m.far:.4f}")
         typer.echo(f"\nWrote manifest to {manifest_path}")
 
     except Exception as e:
