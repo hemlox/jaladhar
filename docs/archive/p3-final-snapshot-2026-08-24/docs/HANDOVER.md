@@ -1,42 +1,6 @@
 # HANDOVER — read this first
 
-## Current disposition — 2026-08-24, re-scoped to SIH 26085
-
-**Read [`SIH-26085-ALIGNMENT.md`](SIH-26085-ALIGNMENT.md) before anything else in this file.** The
-project moved onto **SIH 26085 — Urban Flood Nowcasting System (Drainage and Rainfall Coupling)**
-(MoES / NCMRWF). That document holds the gap analysis, the recorded Phase 3 result, and the signed
-replacement gate G1–G5.
-
-**Where the project stands in four lines:**
-
-1. **SPEC §8's Phase 3 gate is discharged as measured and NOT passed.** 0/16 depth in band, RMSE
-   0.9232 m against ~0.25 m bands, BBMP 239/399 = 59.90% (fail on rate, no rounding argument). Not
-   revised by the scope change.
-2. **The deficit is structural, and that is now measured rather than inferred.** The calibration
-   loop moved the depth term 1.3%; all levers at their bounds buy ≈ 0.11 of loss against 1.62
-   needed. Cause: the source DEM encodes lakes as flat plateaus (Varthur interior std **0.16 m**,
-   0.000 of interior below rim) — an acquisition-time water surface, not a basin.
-3. **26085's centrepiece — the drain graph with surcharge — is the biggest gap and the leading
-   candidate fix.** Drains removed 79.16 Mm³ (25.57% of inflow) one-way with no return path; real
-   surcharge pushes that back onto streets, which is the flooding. Labelled a **reading**, not a
-   finding: nothing may be sequenced on it (R1).
-4. **Three new blockers**, all in [`OPEN-ITEMS.md`](OPEN-ITEMS.md): N-1 drain capacity has no
-   measured source (rule 1 sensitive), N-2 the network is 370 disconnected components, N-3 DWR
-   nowcast access unknown (rule 5 — stop and report).
-
-**Workspace state 2026-08-24.** Reduced 51 GB → 28 GB. Twelve historical worktrees removed with all
-branches preserved; every run manifest archived to `runs/_archive_worktree_manifests/` (506 files)
-and p3-final's docs to `docs/archive/p3-final-snapshot-2026-08-24/`. Three worktrees remain:
-`clginternal` (master), `p3-integration` (Goal D evidence, branch `integration/phase3-final-d`),
-`p3-final` (protected docs). Cleanup log: `logs/cleanup_2026-08-24.log`.
-
-**First three actions for a resuming session**, ordered by information value per unit cost — all
-cheap, all gating something expensive: resolve N-3 (DWR availability), settle N-1's capacity rule
-with a citation, prototype N-2's DEM-based reach stitching.
-
----
-
-## Superseded — 2026-08-22 disposition, retained for the record
+## Current disposition — 2026-08-22, paused pending owner decisions
 
 Phase 3 engineering integration is complete. The merged terrain, provenance, validation,
 compute-budget, and replay paths pass the repository-wide CPU suite and a real-input wet GPU

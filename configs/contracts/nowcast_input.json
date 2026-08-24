@@ -1,0 +1,71 @@
+{
+  "name": "nowcast_input",
+  "version": "1.1.0-frozen (wave-2 adversarial review findings applied)",
+  "frozen": "2026-08-24",
+  "reviewed": "wave-1 adversarial review (deepseek-v4-flash); findings manually verified before adoption (never-blend docstring confirmed interface.py:10-16; KSNDMC capture-time anchoring confirmed ksndmc.py:250+)",
+  "path": "contract for src/jaladhar/forcing/nowcast.py (WF-3); config section configs/forcing.yaml: nowcast_input:",
+  "producer": "WF-3 ImdNowcastAdapter (reading-1 route) or any future adapter behind this contract",
+  "consumers": ["simulation drivers via RainfallAdapter ABC", "G4 latency scorer"],
+  "abc_compliance": {
+    "subclass": "jaladhar.forcing.interface.RainfallAdapter",
+    "mode": "ForcingMode.NOWCAST (no enum extension - THREE MODES NEVER BLENDED, interface.py docstring verified)",
+    "get_forcing": "def get_forcing(self, start_time: datetime, end_time: datetime) -> RainfallEvent",
+    "native_cell_ids": "instance attribute REQUIRED (consumer event_replay.py:303 reads it outside the ABC); set in __init__ like imerg.py; for the uniform-fill district product this is a SINGLE district native cell (id 0, distinct_native_cells=1) so the consumer rate loop reads the uniform band value"
+  },
+  "cadence": {
+    "interval_minutes": "enum[5,10,15] permitted; 30 legacy",
+    "interval_alignment_pinned": "intervals start on WALL-CLOCK UTC boundaries aligned to interval_minutes (00:00,00:05,...) NOT on poll time - KSNDMC's capture-time anchoring precedent explicitly rejected because variable interval_minutes corrupts the consumer rate conversion",
+    "consumer_hardcode_resolution_binding": "event_replay.py:314 hardcodes 30-min factor 2.0; WF-3 MUST parameterise it to interval_minutes (rate = depth_mm * (60/interval_minutes) / 3600 / 1000) as a PRECONDITION before any non-30 cadence ships; if unfixed, interval_minutes is const 30",
+    "vupto_truncation_boundary": "when valid_until falls mid-interval, last interval end == min(valid_until, next wall-clock interval boundary) and truncated_at_valid_until:true - never extend backfill or fabricate past validity"
+  },
+  "interval_payload": {
+    "rainfall_grid_mm": "INCREMENTAL mm per interval on canonical grid EXPLICITLY 3421x3515 @ 10 m EPSG:32643 (cell_resolution_m=10.0) - cumulative sources convert inside adapter (interface.py:6-8 incremental semantics); RainfallInterval.__post_init__ invariants inherited",
+    "application_geometry_pinned": "district polygon -> grid is UNIFORM FILL: every canonical cell inside the district MultiPolygon clipped to DEM bbox gets the band nominal mm/hr; outside cells 0.0; WFS GeoJSON is EPSG:4326 -> reproject to EPSG:32643 BEFORE clipping"
+  },
+  "timezone_rules": {
+    "blanket_rule": "ALL timestamps AWARE UTC - interval timestamps, provenance keys, poll_log.jsonl entries, logs; naive = CONTRACT VIOLATION",
+    "source_formats_named": "IMD toi/vupto are naive IST HHMM strings ('1900'=19:00 IST) -> convert via ZoneInfo('Asia/Kolkata') to aware UTC (1900 IST = 13:30 UTC); IMD update_time IS aware-UTC ISO and recorded VERBATIM as separate provenance key distinct from converted toi/vupto",
+    "hazard_inheritance_blocked": "open_meteo.py:158 labels naive IST as UTC today; this contract forbids repeating it"
+  },
+  "provenance_metadata_keys_required": [
+    "product_id enum[IMD_WFS_NowcastWarningDistrict, IMD_WFS_NowcastWarningStation]",
+    "issue_time aware UTC (converted toi)",
+    "valid_until aware UTC (converted vupto)",
+    "update_time verbatim IMD aware-UTC ISO",
+    "fetch_url",
+    "district_name const 'BANGLORE URBAN' (district product)",
+    "imd_category_code enum over VERIFIED IMD cat1-cat19 schema; cat2->light, cat7->moderate, cat12->heavy mapped; ANY other code fails closed rather than guessed - exact WFS JSON key names confirmed during WF-3",
+    "intensity_mapping STRUCTURED object {light:{nominal_mm_hr:2.5,lower:0,upper:5,is_lower_bound:false}, moderate:{nominal_mm_hr:10.0,lower:5,upper:15,is_lower_bound:false}, heavy:{nominal_mm_hr:15.0,lower:15,upper:null,is_lower_bound:true}, basis:'DECLARED ASSUMPTION - categorical bands not measured intensities'} - machine-readable for sensitivity sweeps",
+    "heavy band is UNBOUNDED ABOVE: nominal_mm_hr 15.0 is a STATED LOWER BOUND (is_lower_bound:true) - never presented as the intensity; sensitivity sweeps must treat heavy-band mass as a floor",
+    "truncated_at_valid_until bool"
+  ],
+  "fail_closed": {
+    "exceptions": "NowcastUnavailableError(ValueError) base TO BE DEFINED in interface.py BY WF-3 (grep-verified absent from repo 2026-08-24 - this contract mandates its creation, it does not claim it exists), with subclasses NowcastFetchError / NowcastStaleError / NowcastDistrictAbsentError so consumers distinguish retryable vs permanent",
+    "trigger_conditions": ["fetch fails", "payload stale: now > valid_until + one validity window", "district absent from payload"],
+    "forbidden_substitutions_absolute": "NO blending of any kind labelled or not (interface.py:10-16 structural prohibition); climatology and last-observed persistence forbidden; NWP/Open-Meteo may be a SEPARATE separately-labelled source in a DIFFERENT RUN never blended into the nowcast event; zero-interval events structurally impossible (RainfallEvent invariant)",
+    "vupto_mid_window_rule": "requested window extending past valid_until => TRUNCATE event at valid_until (last interval end == valid_until) + truncated_at_valid_until:true; never extend backfill or fabricate past validity"
+  },
+  "resolution_caveat_declared_open_axis": "categorical district/station bands are NOT a high-resolution gridded field; sub-district structure only from separately-labelled sources in separate runs; carried in OPEN-ITEMS N-3, never hidden by uniform fill",
+  "manifest_guarantees_producer_writes": [
+    "every produced RainfallEvent.metadata carries provenance keys above verbatim",
+    "poll log runs/forcing_nowcast/poll_log.jsonl fields fetch_time/http_status/issue_time/valid_until/freshness_seconds ALL aware UTC",
+    "RATE LIMIT + CACHE: adapter rate-limits WFS polls (respecting server courtesy intervals) and caches responses to disk so repeated runs/replays never re-fetch within one validity window; licence formalisation is OWNER ACTION, non-blocking for engineering",
+    "verify_mass_conservation() called inside get_forcing before return (interface.py:166 chain verification)",
+    "adapter asserts district_name=='BANGLORE URBAN' and freshness <= one validity window before returning"
+  ],
+  "consumer_assertions_at_load": [
+    "event.mode == ForcingMode.NOWCAST",
+    "all interval timestamps tz-aware UTC",
+    "event_replay rate conversion parameterised (no 30-min hardcode) precondition met - enforced via NAMED function assert_rate_conversion_parameterised(event) that reddens if a non-30 interval_minutes reaches the hardcoded factor-2.0 path",
+    "assert_nowcast_metadata_contract(event): NAMED function WF-3 must implement and call (in event_replay.py or new module) asserting product_id + valid_until present and valid_until >= last interval end - without a named enforcement point V8 checks are decorative",
+    "uniform grid shape across intervals; grid identity 3421x3515@10m EPSG:32643 asserted",
+    "mass conservation passes (adapter-side AND consumer-side today)"
+  ],
+  "rationale": "Both readings of N-3 fit unchanged behind the existing ABC: reading-1 (IMD WFS district/station nowcast, verified live keyless 2026-08-24, cat bands <5 / 5-15 / >15 mm/hr, toi/vupto validity) implements directly; future reading-2 radar-extrapolation swaps product_id + grid construction satisfying every other clause. Fail-closed chain reuses existing rejection patterns plus named exception hierarchy. Intensity mapping midpoints are structured declared assumptions - sensitivity free by varying mapping in replay.",
+  "open_questions": [
+    "Licence formalisation: api.imd.gov.in registration + nodal-officer contact - OWNER ACTION parallel track",
+    "Station-product fallback when district polygon clipped to bbox degenerates",
+    "G4 clock semantics: RESOLVED per owner adjudication 2026-08-24 - G4 measures PIPELINE LATENCY (rainfall input to published depth field), excluding poll wait; IMD poll cadence reported separately via freshness_seconds in poll_log.jsonl",
+    "WFS pagination behaviour on 764-district GetFeature - verify live during WF-3; exact WFS JSON key names for category code to confirm during WF-3"
+  ]
+}

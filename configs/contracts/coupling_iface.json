@@ -1,0 +1,93 @@
+{
+  "name": "coupling_iface",
+  "version": "1.1.0-frozen (wave-2 adversarial review findings applied)",
+  "frozen": "2026-08-24",
+  "reviewed": "wave-1 adversarial review (muse-spark-free) + composability review; findings manually verified against realized code before adoption",
+  "path": "configs/contracts/coupling_iface.json; implementation src/jaladhar/coupling/exchange.py (WF-2) against jaladhar.solver.acc.acc_step and jaladhar.solver.run.simulate",
+  "producer": "WF-2 src/jaladhar/coupling/exchange.py - couple_step OWNS the full exchange for each dt: (1) inlet capture surface->nodes, (2) intra-graph edge routing node->edge->node, (3) surcharge return nodes->surface. Graph object is read-only topology+capacity.",
+  "consumers": ["solver timestep loop run.simulate", "MassBudget via diagnostics", "G2 gate scorer via products/surcharge_events.csv + manifest"],
+  "exchange_call": {
+    "signature": "couple_step(h, qx, qy, static, node_state, graph, dt) -> CoupleResult",
+    "call_site_order": "host calls AFTER mass update h_new = h + div(fx)+div(fy)-b_out + rain*dt and BEFORE sink stage; returns h_new_coupled; infiltration applies after coupling return",
+    "surface_update_single_expression": "h_new_coupled = h_before_coupling - captured_depth_m + returned_depth_m (out-of-place)",
+    "CoupleResult_fields": {
+      "h_new": "(H,W) f32 out-of-place updated surface depth",
+      "node_state_new": "NodeState(h_node_m:(N,) f32 head above invert proxy, vol_in_m3_cum:(N,) f64, vol_out_m3_cum:(N,) f64) out-of-place; N=graph.num_nodes",
+      "diagnostics": {
+        "captured_depth_m": "(H,W) f32 detached >=0 water leaving surface to nodes this step",
+        "returned_depth_m": "(H,W) f32 detached >=0 surcharge re-entering surface this step",
+        "capture_m3": "float64 = sum(captured_depth_m)*cell_area_m2 EXACTLY (host does not re-multiply)",
+        "return_m3": "float64 = sum(returned_depth_m)*cell_area_m2 EXACTLY",
+        "surcharging_nodes": "int count nodes where returned contribution >0 this step",
+        "max_node_head_m": "float max(h_node_m)",
+        "cap_binding_this_step": "int 0|1 whether either stability cap bound",
+        "edge_flow_m3s": "(E,) f32 detached edge discharge positive downstream"
+      }
+    }
+  },
+  "edge_routing_pinned": {
+    "algorithm": "instantaneous capacity-limited transfer, zero delay within dt: Q_edge = min( available_vol_at_upstream_node/dt , q_capacity_nom_m3s[e] ); volume-conservative vol_up -= Q_edge*dt, vol_down += Q_edge*dt. NULL-capacity (synthetic connector) edges carry Q_edge=0 ALWAYS - topology only until owner assigns them capacity. MULTI-HOP PROPAGATION IS INTENDED: because routing follows topo_order within one host dt, captured water may traverse multiple edges per step (infinite-celerity abstraction, standard for capacity-limited instant routing); documented implication - surcharge timing at far nodes is not travel-time delayed",
+    "topology_order": "strict downstream topological order from drain_graph_adjacency.json topo_order; consumer asserts manifest.graph_is_dag==true else refuse",
+    "multi_edge_rules": "multiple inflows sum before outgoing capacity applied; multiple outgoing edges distribute proportional to q_capacity_nom over CAPACITY-BEARING outgoing edges ONLY (denominator excludes synthetic NULL edges); if the capacity-bearing denominator sum is 0, all outgoing Q_edge=0 (node retains volume)",
+    "no_substepping": "graph advances on host adaptive dt only"
+  },
+  "node_storage_pinned": {
+    "geometry_assumption_declared": "vertical shaft proxy: node_plan_area_m2[i] = mean(width_m over CAPACITY-BEARING incident edges only; synthetic NULL widths excluded) * 1.0 m shaft-length proxy; isolated := count(capacity-bearing incident edges)==0 (including synthetic-only nodes) -> use tertiary nominal width 2.285 m. LABELLED declared-assumption v1 in manifest (assumed_uncalibrated=true), NOT a citation",
+    "assumed_freeboard_m": 1.5,
+    "freeboard_basis": "DECLARED ASSUMPTION v1, unsourced, pinned not tuned, versioned via coupling_version - NOT attributed to any standard (rule 1 discipline)",
+    "invert_proxy": "elev_m from drain_nodes (DEM-sampled); head h_node_m = vol_m3/node_plan_area_m2",
+    "surcharge_activation": "surcharge iff h_node_m > assumed_freeboard_m; street return head_diff = h_node_m - assumed_freeboard_m"
+  },
+  "sign_conventions": {
+    "capture": "positive = water leaves SURFACE cell into node; mirrors drained=min(cap*dt,h_new) acc.py:313",
+    "surcharge_return": "positive = water leaves NODE onto SURFACE cell; added like rain_rate_m_s*dt acc.py:280",
+    "flow_direction": "positive edge discharge = downstream along topo_order; node balance vol_new = vol_old + capture_at_node + edge_inflow - edge_outflow - return_vol",
+    "diagnostics_sign": "captured_depth_m>=0, returned_depth_m>=0 always; drain_out_net_m3 = capture_m3 - return_m3 may be negative (net return)"
+  },
+  "units": {
+    "depth": "metres; rates m/s x dt inside step never pre-multiplied by caller; Q_weir/Q_orifice m3/s; capacities m3/s",
+    "conversion_formulas_both": "sink_mm_per_hr = q_capacity_m3s*3600000/contrib_area_m2 ; rate_m_s = q_capacity_m3s/contrib_area_m2 (contrib_area_m2 = contrib_area_cells*100.0 from drain_graph manifest)"
+  },
+  "mass_budget_entries": {
+    "new_keys": ["captured_to_drains_m3 cumulative", "surcharge_returned_m3 cumulative", "drain_out_net_m3 = captured_to_drains_m3 - surcharge_returned_m3"],
+    "backward_compat_alias": "when coupling_enabled=true MassBudget.as_dict() retains drain_out_m3 == drain_out_net_m3 so legacy queries/scripts do not break; uncoupled runs unchanged",
+    "closure_rule_exact": "residual = v_current - v_initial - rain_in + drain_out_net_m3 + infil_out_m3 + boundary_out_m3 - created_by_clamping_m3 ; relative_residual = |residual| / max(|rain_in|,|v_initial|,1e-12); tolerance 1e-3 unchanged; created_by_clamping EXACTLY 0",
+    "accumulation": "host passes diagnostics capture_m3/return_m3 (already volumes) into MassBudget.accumulate each accepted step"
+  },
+  "stability_constraints": {
+    "per_step_capture_cap": "captured_depth_m <= 0.9 * max(0, h_before_coupling - hf_floor_m) per cell via torch.minimum (extends acc.py sink-cap pattern with explicit margin)",
+    "h_eff_definition_pinned": "h_eff := max(0, h_before_coupling) - ponded depth at the cell feeding the inlet; regime switch: h_eff < 0.1 m -> weir equation, else orifice (inclusive lower bound weir)",
+    "per_step_return_cap": "node_available_vol_m3 := max(0, vol_m3 - assumed_freeboard_m * node_plan_area_m2) - the EXCESS above surcharge threshold only, so return can never drain a node below its activation head; returned volume at node <= 0.9 * node_available_vol_m3, distributed to street cell proportionally",
+    "dt_policy": "NO new CFL term; host TimestepController unchanged PROVIDED both caps enforced; cap bindings counted in cap_binding_steps (reported never silent)",
+    "clamp_before_nonlinearity": "all sqrt/pow heads floored at hf_floor_m=0.001 BEFORE evaluation - same discipline as solver hf clamp (acc.py hf_floor trap)"
+  },
+  "autograd_rules": {
+    "out_of_place_only": "no in-place mutation of h/qx/qy/node_state or frozen StaticFields; gradients MUST flow through capture+return for replay() calibration",
+    "differentiable_terms": ["Q_weir = Cw * L_weir * max(h_eff, hf_floor)^1.5 unsubmerged (h_eff per stability_constraints definition)", "Q_orifice = Cd * A_open * sqrt(2 g max(head_diff, hf_floor)) submerged", "regime switch h_eff < 0.1 m weir else orifice; Cw=1.7 Cd=0.65 (FHWA HEC-22 / EPA SWMM Ref Manual Vol II forms; page locators confirmed during WF-2)", "L_weir and A_open use width_m_mean := mean width over capacity-bearing incident edges, isolated fallback 2.285 m; A_open = width_m_mean * 0.1 inlet-opening proxy (declared assumption)"],
+    "v5_mutant_test_required": "WF-2 ships test_coupling_gradients.py: (a) >=512x512 tile, >=100 steps, surcharge active; (b) finite non-zero grads w.r.t. capacity scaling; (c) demonstrated RED by mutating capture cap to .detach() or dead torch.where branch -> grad zero/NaN, mutation recorded beside test; scope stated per V7"
+  },
+  "coupling_mode": {
+    "legacy_sink_replacement_binding": "coupling_enabled=true => host MUST zero StaticFields.drain_cap_m_s (load_domain path or explicit assert (static.drain_cap_m_s==0).all() at couple_step entry) - prevents double-count with legacy unconditional sink (state.py:247, acc.py:313); coupling_enabled=false => legacy behaviour byte-identical to today",
+    "manifest_flag": "coupling_enabled bool + coupling_version string pinning assumed_freeboard_m + capacity_rule_version + graph fingerprint; consumers refuse unflagged coupled runs"
+  },
+  "g2_anti_vacuity": {
+    "aggregated_condition": "manifest carries total_surcharging_steps = count(steps with surcharging_nodes>0) and total_returned_m3 = sum(return_m3); coupled run FAILS G2 if total_surcharging_steps==0 OR total_returned_m3 < 1.0 m3 - regardless of all other scores",
+    "per_node_table": "products/surcharge_events.csv columns [node_id,total_returned_m3,first_step,last_step,max_head_m]; G2 consumes exactly this file; zero-row file allowed but then G2 fails per condition above",
+    "scope_statement_v7": "evaluated at design condition (buffered domain, duration>=7200 s, design storm per configs/solver.yaml); smoke runs exempt but labelled PARTIAL naming the gap",
+    "timed_tile_run_amendment_owner_2026_08_24": "the G4 feasibility tile run must use the COUPLED solver at ITS OWN realized dt schedule - prior arithmetic (28.1 min worst-window) assumed dt~0.69 s from the replay#2 sidecar; owner notes realized dt 0.48 s on the promoted Phase-3 surface and coupling may lower dt further; treat all pre-measurement G4 numbers as scenario-dependent bands, never point estimates"
+  },
+  "manifest_guarantees_producer_writes": [
+    "coupling_enabled + coupling_version (pins freeboard assumption version + capacity_rule_version + graph_fingerprint)",
+    "captured_to_drains_m3, surcharge_returned_m3, drain_out_net_m3 (+ alias drain_out_m3), relative_residual recomputed with extended formula, tolerance 1e-3",
+    "total_surcharging_steps, total_returned_m3, products/surcharge_events.csv",
+    "cap_binding_steps total count",
+    "graph_is_dag + topo_order sha256",
+    "legacy_drain_disabled bool",
+    "node_geometry_assumption block {node_plan_area rule, assumed_freeboard_m:1.5, basis:'declared assumption v1', assumed_uncalibrated:true}"
+  ],
+  "rationale": "Every integration surface quoted from realized code (verified this session): sink min(cap_m_s*dt,h_new) sits OUTSIDE any local no_grad block INSIDE acc_step (acc.py:312-316) - the host wraps simulate() in torch.no_grad() during recording and differentiability comes via replay() over the recorded schedule, so coupling terms must likewise be replay-safe out-of-place ops; mass.py residual formula extended verbatim with alias preserving cross-run comparability; legacy sink unconditional => replace-not-compete is forced, competition would double-count drainage ~2x; clamp-before-nonlinearity extends existing hf_floor discipline to sqrt heads; DAG assertion closes the cycle hole D8-through-basins could open; SWMM rejected on data grounds (.inp needs pipe inverts we lack - rule 1) and differentiability grounds (external stepping breaks replay).",
+  "open_questions": [
+    "Capture allocation among multiple nodes sharing one cell (121 P+S crossing candidates): nearest-node-wins with stable tie-break by node_id - pinned here as default, revisit only if WF-2 evidence shows misallocation",
+    "A_open = width_mean*0.1 inlet opening proxy is a declared assumption - sensitivity swept via coupling_version bump if G2 timing proves sensitive"
+  ]
+}

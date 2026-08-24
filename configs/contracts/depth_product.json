@@ -1,0 +1,62 @@
+{
+  "name": "depth_product",
+  "version": "1.1.0-frozen (wave-2 adversarial review findings applied)",
+  "frozen": "2026-08-24",
+  "reviewed": "wave-1 adversarial review (deepseek-v4-flash); findings manually verified before adoption (PRIMARY_RULE lines confirmed; 7047/4735/2312 split arithmetic reconciled from roads.json)",
+  "path": "runs/<run_id>/products/segment_status.csv (+ .json twin for API) consumed read-only by dashboard + routing API",
+  "producer": "src/jaladhar/validation/segment_status.py (WF-3, GREENFIELD - does not exist yet) calling realized evaluate_segments_from_mask machinery PLUS mandatory synthesis of no_data rows",
+  "consumers": ["web dashboard (rule 3: hardcodes no number)", "routing API R6", "G1 gate scorer"],
+  "schema_fields": {
+    "run_id": "string - runs/<run_id>/ directory name that produced this row; dashboard displays it, never parses from path",
+    "segment_id": "int32 dense key 1..176171 stable-sorted by OSM way id (roads.py:88-102 assign_segment_ids), CRS EPSG:32643; lookup data/interim/terrain/roads_segment_lookup.csv (176171 rows)",
+    "band_low_cm band_high_cm": "MIN and MAX depth over the segment's canonical-raster cells, integer cm FLOOR-ROUNDED from float m. PINNED: min/max, NOT percentiles (percentile upgrade would be a NEW versioned field, never a redefinition)",
+    "confidence": "enum[modeled_direct, modeled_interpolated, no_data]; modeled_direct = >=1 canonical cell with directly-modeled depth; modeled_interpolated = RESERVED, never produced in v1.0.0 (matrix row is forward-design, not live); no_data = ZERO canonical cells",
+    "flood_status": "enum[flooded, not_flooded, unknown] reusing PRIMARY_RULE D=0.15 m F=20% N=3-contiguous-cells semantics from segment_validation.evaluate_segments_from_mask (:52-54, :80-90) - ONE rule everywhere; computed from float-m cell mask (depth>=0.15 m per :762), NEVER inferred from the integer-cm band (14.9 cm floors to 14 AND is not flooded; multi-cell segment can have band_low>=15 yet fail F/N rule - consumers read flood_status, never derive it)",
+    "valid_time_utc": "SIMULATION VALID TIME the depth state represents; ISO8601 aware UTC mandated",
+    "issue_time_utc": "ISSUE WALL TIME when row was written; aware UTC; routing lead derived by API as issue_time_utc - now; assertion: issue_time_utc >= valid_time_utc ONLY for forecast_lead_minutes==0 (nowcast rows); forecast rows (lead>0) carry a FUTURE valid time and must satisfy issue_time_utc <= valid_time_utc",
+    "forecast_lead_minutes": "FORECAST lead of the driving rainfall: 0 = nowcast analysis moment (water on ground, near-certain); >0 = forecast rain, CONDITIONAL. NEVER conflated with routing lead (CLAUDE.md reporting rules)",
+    "source_manifest_path": "relative path from repo root of producing run manifest; must exist"
+  },
+  "nullability_matrix": {
+    "modeled_direct": {"flooded": "LEGAL", "not_flooded": "LEGAL", "unknown": "ILLEGAL"},
+    "modeled_interpolated": {"flooded": "LEGAL", "not_flooded": "LEGAL", "unknown": "ILLEGAL"},
+    "no_data": {"flooded": "ILLEGAL", "not_flooded": "ILLEGAL", "unknown": "LEGAL"},
+    "band_rules": {
+      "unknown_rows": "band [0,0] always",
+      "not_flooded_all_cells_dry": "also [0,0] - indistinguishable from unknown by band alone; flood_status disambiguates",
+      "flooded_implies": "band_high_cm >= 15 ALWAYS (at least one cell >= 0.15 m); band [0,0]+flooded is a SCHEMA VIOLATION"
+    }
+  },
+  "no_data_segments_measured_split": {
+    "total_canonical_absent": 7047,
+    "buffered_margin_only": 4735,
+    "fully_clipped_no_cells_anywhere": 2312,
+    "derivation": "176171 lookup ids - 169124 canonical unique = 7047; 176171 - 173859 buffered unique = 2312; 173859-169124 = 4735 (roads.json measured)",
+    "producer_obligation": "ALL 7047 appear as confidence=no_data flood_status=unknown band=[0,0] - realized scorer returns only raster-present segments so synthesis is MANDATORY not optional"
+  },
+  "manifest_guarantees_producer_writes": [
+    "source_manifest_path per file (single manifest covers CSV; each row repeats it)",
+    "depth_convention 'PRIMARY_RULE D0.15 F0.20 N3' + grid identity EPSG:32643 3421x3515 10m matching road_segment_id.tif + input depth tif sha256 + coupling state declaration (depth field is POST-couple_step h_new when coupling_enabled=true in source run manifest)",
+    "n_segments_expected 176171 (consumer asserts len(product)==manifest.n_segments_expected==len(lookup ids) - never hardcoded consumer-side)",
+    "n_no_data_segments 7047 split {buffered_margin_only:4735, fully_clipped:2312}",
+    "band_convention 'min_max_over_canonical_cells_floor_cm'",
+    "valid_time_utc and issue_time_utc producer-stamped both",
+    "surcharge_events.csv present in source run dir IFF source manifest coupling_enabled=true (cross-product consistency)"
+  ],
+  "consumer_assertions_at_load": [
+    "len(product) == manifest.n_segments_expected == set(lookup ids) size",
+    "set(segment_id) == set(lookup csv ids)",
+    "band_low_cm <= band_high_cm, both >= 0",
+    "both timestamps parse aware-UTC (naive reject); lead==0 rows: issue_time_utc >= valid_time_utc; lead>0 rows: issue_time_utc <= valid_time_utc",
+    "full 3x3 confidence x flood_status matrix enforced (4 ILLEGAL combos refuse: modeled_direct+unknown, modeled_interpolated+unknown [forward-design cell], no_data+flooded, no_data+not_flooded)",
+    "flood_status=='flooded' implies band_high_cm >= 15",
+    "flood_status=='unknown' iff confidence=='no_data' with band [0,0]",
+    "source_manifest_path exists; run_id matches path; surcharge_events.csv presence matches coupling flag"
+  ],
+  "rationale": "Segment scheme quoted from realized code and uniqueness verified; lattice shared so joins are direct indexing; measured 7047 gap turned into explicit schema states with corrected 4735/2312 provenance split (draft's original claim that all 7047 were buffered-margin was wrong for 2312); G1 scores the same flood_status the dashboard renders - UI can never show a number the gate did not produce (rules 2/3); timestamp split kills sim-vs-issue ambiguity; forecast-vs-routing lead separation is CLAUDE.md-mandated.",
+  "open_questions": [
+    "Dashboard poll cadence vs product write cadence under G4 budget - recommended producer-stamps/API-serves-immutable, owner sign-off pending",
+    "Routing API scope: segments ONLY recommended (per-square-metre depth is a metric claim we cannot support at 10 m)",
+    "Gate verdict fields (G1 pass/fail, hit rate, lift, null CI) deliberately NOT in this product - separate gate_verdict artefact if dashboard must render gate status"
+  ]
+}

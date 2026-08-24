@@ -1,41 +1,23 @@
 # JALADHAR
 
-> To design a high-resolution, real-time Urban Flood Nowcasting System (0–3 hour lead time) capable
-> of predicting street-level inundation before it happens, by coupling rainfall nowcasts with a 2D
-> high-resolution terrain model and a graph-based hydraulic model of the city's stormwater drain
-> network, including surcharge and backflow onto streets.
+> To develop a real-time digital twin of Bengaluru's urban terrain that predicts street-level flood
+> depths before they occur, using physics-informed neural surrogates and live rainfall telemetry.
 
-**Smart India Hackathon 2026 — problem statement 26085** (MoES / NCMRWF, Software, Disaster
-Management). Bengaluru. Private repository.
-
-Re-scoped 2026-08-24 from the project's own earlier statement; see
-[`docs/SIH-26085-ALIGNMENT.md`](docs/SIH-26085-ALIGNMENT.md) for what changed and why.
+Smart India Hackathon 2026. Private repository.
 
 ---
 
 ## Start here
 
-**New agent or collaborator → [`docs/SIH-26085-ALIGNMENT.md`](docs/SIH-26085-ALIGNMENT.md), then
-[`docs/HANDOVER.md`](docs/HANDOVER.md).** Do not start from `SPEC.md` — it is the spec, not the
-state, and its §8 thresholds are retired.
+**New agent or collaborator → [`docs/HANDOVER.md`](docs/HANDOVER.md).** It explains where the project
+actually is, what is established with evidence, and what the open engineering problem is. Do not
+start from `SPEC.md` — it is the spec, not the state.
 
 | file | what it is |
 |---|---|
-| [`docs/SIH-26085-ALIGNMENT.md`](docs/SIH-26085-ALIGNMENT.md) | **current scope, measured Phase 3 result, the signed gate G1–G5, work remaining** |
 | [`docs/HANDOVER.md`](docs/HANDOVER.md) | orientation, current state, the open problem |
-| [`docs/OPEN-ITEMS.md`](docs/OPEN-ITEMS.md) | live blockers — N-1 drain capacity, N-2 network connectivity, N-3 DWR access |
 | [`docs/BOOTSTRAP.md`](docs/BOOTSTRAP.md) | how to get a runnable checkout — `data/` does not ship |
 | [`CLAUDE.md`](CLAUDE.md) | standing rules — binding on every agent. Each rule cites the incident that earned it |
-
-## Status in one table
-
-| | |
-|---|---|
-| Terrain, 2D solver, forcing, validation harness | **built** — ~60% of the system |
-| SPEC §8 Phase 3 gate | **discharged as measured, not passed** — 0/16 depth, BBMP 59.90% |
-| Depth deficit | **structural, measured** — all parametric levers at bounds buy <10% of what's needed |
-| Drain graph + surcharge (26085 centrepiece) | **not built** — the research contribution |
-| Nowcast ingestion, dashboard, routing API | **not built** |
 | [`docs/OPEN-ITEMS.md`](docs/OPEN-ITEMS.md) | live ledger, open items only |
 | [`docs/SPEC.md`](docs/SPEC.md) | the full 8-phase spec |
 | [`docs/phases/`](docs/phases/) | phase writeups |

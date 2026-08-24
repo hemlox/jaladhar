@@ -1,0 +1,25 @@
+{
+  "witnessed_utc": "2026-08-24",
+  "purpose": "independent pre-promotion fingerprint of the elevation surface ALL Phase 3 evidence consumed (replay1, replay2, calibration). Recorded by the reviewer BEFORE any promotion, so the promoted copy can be verified against a baseline the reviewer did not produce (V3).",
+  "path_at_witness": "/home/darshil/Desktop/sih/p3-final/scratch/phase3_final_terrain/interim_terrain/dem_conditioned_postbreach.tif",
+  "sha256": "46dff442a73945f4bb8d7ee01352eefe4bdfb801b88ac0fa6b5c97d830f56fe7",
+  "size_bytes": 36920652,
+  "width": 3615,
+  "height": 3521,
+  "crs": "EPSG:32643",
+  "dtype": "float32",
+  "transform": [
+    10.0,
+    0.0,
+    766440.0,
+    0.0,
+    -10.0,
+    1454850.0
+  ],
+  "nodata": -9999.0,
+  "valid_cells": 12728415,
+  "min_m": 725.1617431640625,
+  "max_m": 969.4940795898438,
+  "mean_m": 883.2341157952502,
+  "consumed_by": "runs/goal_d_replay2_final_config input_identity.elevation_stack.sha256 == 46dff442a73945f4bb8d7ee01352eefe4bdfb801b88ac0fa6b5c97d830f56fe7"
+}

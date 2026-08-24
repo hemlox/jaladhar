@@ -1,91 +1,23 @@
 # OPEN ITEMS — live ledger
 
-**Last reconciled: 2026-08-24.** This file contains only live blockers, unresolved axes, and owner
+**Last reconciled: 2026-08-22.** This file contains only live blockers, unresolved axes, and owner
 decisions. Historical items and withdrawn claims remain in
 [`archive/open-items-full-2026-08-18.md`](archive/open-items-full-2026-08-18.md).
 
-## Project disposition — re-scoped to SIH 26085 on 2026-08-24
+## Phase 3 disposition — active hard gate, not passed
 
-The project moved onto **SIH 26085 — Urban Flood Nowcasting System (Drainage and Rainfall
-Coupling)** (MoES / NCMRWF). Gap analysis, the recorded Phase 3 result, and the signed replacement
-gate are in [`SIH-26085-ALIGNMENT.md`](SIH-26085-ALIGNMENT.md).
+The engineering replay path is integrated and has completed a wet real-input GPU smoke. The
+scientific gate has not yet produced the defensible city-wide match required by
+[`SPEC.md`](SPEC.md) §8. Phases 4–8 remain unauthorized. Work is paused at the exact continuation
+point described in `HANDOVER.md`; Luna review and history squashing are deliberately deferred.
 
-**SPEC §8's Phase 3 gate is discharged as measured and NOT passed** — 0/16 depth in band, RMSE
-0.9232 m against ~0.25 m bands, BBMP 239/399 = 59.90% (fail on rate). That result is not revised by
-the scope change. The live gate is now **G1–G5** in the alignment document §6.
-
----
-
-## NEW blocking items — SIH 26085
-
-### N-1 — Drain hydraulic capacity has no measured source **(rule 1 sensitive)**
-
-**State: BLOCKED pending a cited assignment rule.** `data/raw/bbmp_drains/` carries geometry and
-length only — `OBJECTID`, `Length`, `SHAPE_Leng`, `Shape.STLength()`. **No width, depth, invert
-level, cross-section, material, or gradient**, across all 1,033 primary+secondary features. Every
-descriptive KML field (`Name`, `description`, `icon`) is null.
-
-26085 requires "calculate hydraulic capacity". Under rule 1 and rule 2 these numbers may **not** be
-invented. The admissible path is a documented capacity rule keyed to drain order and upstream
-catchment area, drawn from published design standards (CPHEEO manual), carrying its citation and a
-reported sensitivity band — an assumption with provenance, never presented as measured geometry.
-
-Corroborates the existing `assumed_uncalibrated: true` flag in `runs/terrain_drains/manifest.json`.
-
-### N-2 — Drain network is not topologically connected
-
-**State: OPEN, tractable.** Primary + secondary (1,033 features, 767.3 km) form **370–373
-disconnected components** at endpoint-snap tolerances from 0.5 m to 10 m; the largest holds 57 nodes
-(4.1%). Raising tolerance 20× removes 3 components, so this is **not** coordinate precision — the
-polylines genuinely do not share endpoints.
-
-Resolution path: stitch reaches into a connected directed graph using the conditioned DEM's D8 flow
-direction (available, 0 pits, seam-verified). Counted as ~1 week in the alignment document §7.
-
-### N-3 — DWR / rainfall nowcast access unknown **(rule 5 — stop and report)**
-
-**State: BLOCKED, must be resolved before any nowcast work is sequenced.** 26085 requires
-"high-resolution rainfall nowcasts (from Doppler Weather Radars)". IMERG is a satellite product and
-IMERG *Final* is a reanalysis that cannot nowcast at all.
-
-Two readings, and which one holds changes the cost by weeks:
-1. **Consume IMD's published nowcast product** — the statement says nowcasts *from* DWR, i.e. DWR is
-   the provenance and the nowcast is the input. Cheap if the product is accessible.
-2. **Build nowcasting from volumetric reflectivity** (Z–R, optical-flow extrapolation; pySTEPS).
-   Requires raw radar access that may not be public.
-
-Establish availability **before** choosing. Do not work around silently.
-
-### N-4 — `tertiary_drains_2022.kml` fails to parse
-
-**State: OPEN, low priority.** 24.7 MB file raises `ParseException: Unexpected EOF parsing WKB`.
-Primary and secondary parse cleanly. Tertiary is ~5,800 features and matters only if the coupling
-extends below secondary order.
-
-### N-5 — Extent instrument invalid for urban flooding **(carried forward, R2)**
-
-**State: UNCLOSED — declared, not omitted.** Goal A validated the SAR instrument on **lakes** (open
-water, high contrast). It is being used to score city-wide urban street flooding at 0.10 m — a
-different detection problem. No CSI figure is admissible as a gate number until an instrument is
-validated on urban flooding. Gate G5 records this as an open axis.
-
----
-
-## Blocking items — carried from Phase 3
+## Blocking items
 
 ### P3-1 — Scientific closure sequence
 
-**State: CLOSED 2026-08-24 — discharged as measured, not passed.** All four paused owner decisions
-were delegated and executed (2026-08-22): anchored forcing, budget 13.0, gate rubric signed, both
-falsifier corrections authorized. Goals A/B/C/D ran to completion; the measured result is recorded
-in [`SIH-26085-ALIGNMENT.md`](SIH-26085-ALIGNMENT.md) §2 and is **not revised** by the scope change.
-
-Key outcome — **the parametric levers are measurably dead**: the SPEC §8 calibration loop ran for
-the first time (`4c13f4f`, 18.61 GPU-h) and moved the depth term by **1.3%**; extrapolating every
-coordinate's measured gradient to its bound buys ≈ 0.11 of loss against the **1.62** needed. The
-deficit is structural, not parametric.
-
-Luna review and history squashing remain deliberately deferred until Darshil resumes them.
+**State: PAUSED, owner decisions required.** The Sentinel, telemetry/alert, GT-curation and
+preflight investigations are terminal. Luna review and history squashing remain deliberately
+deferred. No implementation agent may silently weaken any acceptance axis.
 
 ### P3-2 — KSNDMC event forcing
 
@@ -100,16 +32,10 @@ Varthuru 128 mm, Marathahalli 129 mm, Cholanayakanahalli 135 mm and Tavarekere 1
 that the event occurred in the model's city cluster, but those messages are threshold-crossing lower
 bounds rather than a complete interval field.
 
-**RESOLVED 2026-08-22 → executed 2026-08-23.** Decision taken: **KSNDMC-alert-anchored IMERG**,
-labelled as such and never as "actual gauge forcing". Realized in replay #2 (`b96dc97`): domain
-amplification **2.66×** (278.53 → measured against raw), and at the Varthur cell **351.13 mm over
-48 h against a 128 mm alert = 2.74× over-supplied**. Combined with infiltration disabled, the model
-was over-supplied and 15/16 points still read below band — which is what makes the structural
-diagnosis in §2.3 of the alignment document hard to dispute.
-
-Residual axis left open (V11): **sub-interval timing is IMERG's temporal pattern, not a gauge
-field.** Scalar anchoring fixes totals, not shape. Never manufacture a sub-hourly storm from alerts,
-news, or totals.
+Darshil must choose: preserve IMERG and record actual KSNDMC city-gauge forcing as unavailable
+(recommended), or explicitly authorize an experimental nearest-gauge IDW from the two remote
+stations. The latter may not be reported as actual Bengaluru gauge forcing. Never manufacture a
+sub-hourly storm from alerts, news, or totals.
 
 ### P3-3 — Underpass lower-road geometry
 

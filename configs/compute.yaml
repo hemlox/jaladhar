@@ -14,6 +14,11 @@
 # flags below and OPEN-ITEMS.md Question D's "honesty flags on this table".
 
 benchmark_manifest: "runs/bench_phase0/manifest.json"
+# UNANCHORED 2026-08-24 (owner adjudication): runs/bench_phase0/manifest.json is
+# ABSENT from the tree - the anchor figures below exist only as this config copy,
+# with no realized manifest behind them (V1). Do not restore the old manifest;
+# label stands UNANCHORED until the timed 1/16-tile run (coupled solver, its own
+# realized dt schedule) re-benchmarks and writes a fresh manifest.
 # Single source of truth for kernel cost. The figures immediately below are
 # copied from that file's git-SHA-stamped results[] entry for resolution_m
 # 10.0 for convenience (so a config consumer doesn't need to parse another

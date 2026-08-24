@@ -1,9 +1,28 @@
 # CLAUDE.md — JALADHAR standing rules
 
-Bengaluru urban flood digital twin. Full spec in [`docs/SPEC.md`](docs/SPEC.md); unresolved external unknowns in [`docs/OPEN-ITEMS.md`](docs/OPEN-ITEMS.md).
+Bengaluru urban flood nowcasting system. Full spec in [`docs/SPEC.md`](docs/SPEC.md); scope change
+and current gate in [`docs/SIH-26085-ALIGNMENT.md`](docs/SIH-26085-ALIGNMENT.md); unresolved external
+unknowns in [`docs/OPEN-ITEMS.md`](docs/OPEN-ITEMS.md).
 
-**Problem statement (fixed, do not reword):**
-> To develop a real-time digital twin of Bengaluru's urban terrain that predicts street-level flood depths before they occur, using physics-informed neural surrogates and live rainfall telemetry.
+**Problem statement — SIH 26085 (fixed, do not reword):**
+> To design a high-resolution, real-time Urban Flood Nowcasting System (0–3 hour lead time) capable
+> of predicting street-level inundation before it happens, by coupling rainfall nowcasts with a 2D
+> high-resolution terrain model and a graph-based hydraulic model of the city's stormwater drain
+> network, including surcharge and backflow onto streets.
+
+> **Scope change 2026-08-24 — AWAITING OWNER CONFIRMATION.** The project moved from its
+> self-authored statement onto SIH 26085 (MoES / NCMRWF). This is a replacement from a new source,
+> not a rewording, which is why it is flagged rather than edited silently. The original stands
+> below for the record and is superseded on confirmation:
+>
+> > *To develop a real-time digital twin of Bengaluru's urban terrain that predicts street-level
+> > flood depths before they occur, using physics-informed neural surrogates and live rainfall
+> > telemetry.*
+>
+> What the change does **not** do: it does not retire any V- or R-rule, does not soften the recorded
+> Phase 3 result, and does not authorize building ahead of the new gate in
+> `docs/SIH-26085-ALIGNMENT.md` §6. SPEC §8's thresholds are *retired as superseded*, never
+> *failed-forward*.
 
 ---
 
@@ -12,7 +31,7 @@ Bengaluru urban flood digital twin. Full spec in [`docs/SPEC.md`](docs/SPEC.md);
 1. **No fabricated data. Ever.** If a data source is unavailable, say so and stop. Do not generate plausible-looking synthetic elevation, rainfall, or validation data and continue as if it were real. A demo built on invented inputs is worthless to us.
 2. **No placeholder physics.** Do not write a function that "approximates" flooding with a blur filter or a distance transform to make the UI look alive. If the solver isn't ready, the UI shows nothing.
 3. **Every numeric claim must be traceable** to a file in `data/` or a logged run in `runs/`. No hardcoded metrics in the frontend.
-4. **Validate before you scale.** Phase 3 is a hard go/no-go gate. Do not build the frontend, the surrogate, or anything cosmetic before it passes.
+4. **Validate before you scale.** The live gate is **G1–G5 in [`docs/SIH-26085-ALIGNMENT.md`](docs/SIH-26085-ALIGNMENT.md) §6**, signed 2026-08-24 before any number existed. SPEC §8's Phase 3 gate is *discharged as measured and not passed* — the result is recorded in that document §2 and is not revised by the scope change. Dashboard and API work may proceed in parallel with G1–G4 **only** if they render realized model state and hardcode no metric (rule 3); they may not ship a number the gate has not produced. The surrogate stays behind the gate.
 5. **When blocked on an external unknown** (licence terms, API access, dataset availability), STOP and report it in `OPEN-ITEMS.md`. Do not work around it silently.
 6. **Log everything.** Every solver run writes a JSON manifest: inputs, parameters, git SHA, wall clock, output path. **The manifest is written at run start** — git SHA, config snapshot, `status: "running"` — **and updated in place on completion.** Provenance that only exists if nothing goes wrong is not provenance; that was the third consecutive provenance casualty. Reproducibility is a grading criterion for us, not just good practice.
 7. **Resolve every config key at startup.** A `_resolve_config()`-style pre-flight touches every key the run will ever need — including post-simulation reporting and output paths — and fails in the first second with an aggregated error listing all missing keys, not the first one. A `KeyError` on `buffer_m` in `write_depth_series()` destroyed 37.8 minutes of GPU because that line only executes after a complete simulation.

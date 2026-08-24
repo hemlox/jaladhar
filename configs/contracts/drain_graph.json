@@ -1,0 +1,98 @@
+{
+  "name": "drain_graph",
+  "version": "1.1.0-frozen (wave-2 adversarial review findings applied)",
+  "frozen": "2026-08-24",
+  "reviewed": "wave-1 adversarial review x2 (muse-spark + deepseek-v4-flash); findings manually verified against realized code before adoption",
+  "path": "data/processed/drain_graph.gpkg (layers drain_nodes, drain_edges) + data/processed/drain_graph_adjacency.json + runs/drain_graph_build/manifest.json",
+  "producer": "WF-1 src/jaladhar/drainage/graph.py::stitch_components (deterministic, CPU-only); config keys in configs/drainage.yaml resolved at startup (rule 7)",
+  "consumers": ["WF-2 coupling (node_state, edge routing, surcharge return)", "dashboard segment join sanity", "G2 scorer (surcharge node traceability)"],
+  "grid": {
+    "crs": "EPSG:32643",
+    "buffered_grid": "3615x3521 @10m transform [10,0,766440,0,-10,1454850] - matches pntr_d8.tif + waterways_bbmp.gpkg",
+    "canonical_grid": "3515x3421 @10m - rasterized exports cropped via Grid.assert_aligned, exact crop no resampling",
+    "cell_area_m2": 100.0,
+    "rasterization_rule": "burn cells whose CENTER is within 5 m of geometry, buffered grid only"
+  },
+  "stitcher_rules_pinned": {
+    "entrypoint": "src/jaladhar/drainage/graph.py::stitch_components",
+    "snap_tolerance_m": 10.0,
+    "snap_tolerance_adjudication": "pinned to 10.0 m (= 1 cell) matching the realized census basis 365 comps / 1376 nodes @10 m reproduced by two independent implementations; sensitivity recorded: 372 @0.5 m. Tolerance IS part of graph identity - manifest records it.",
+    "snap_rule": "endpoints within Euclidean distance <= snap_tolerance_m (UTM metres) form one node; union-find over snapped endpoints",
+    "d8_hit_definition": "observed reaches rasterized to buffered grid; walk hits when entering a cell of a DIFFERENT component's footprint; re-entering own reach footprint = self-hit abort",
+    "d8_walk_stop_conditions": [
+      "pointer code 0 or nodata -> outfall(outfall_reason=pit), connector written",
+      "cell outside buffered grid -> outfall(outfall_reason=domain_exit), connector written",
+      "entry into different component footprint -> junction node at entry cell, connector written",
+      "re-entry into same reach footprint -> abort, self_hit_count++",
+      "walk length > max_connector_steps=10000 -> abort, dropped_connector_count++, NO edge written"
+    ],
+    "direction_rule": "per observed reach walk D8 from BOTH endpoints; from_node = endpoint whose walk reaches the other; if neither reaches, from_node = higher elev_m at snapped cell; tie -> lexicographic (x_m, y_m); connector direction = walk direction; direction_confidence=low if walk traversed synthetic flat cells (wang-and-liu 0.001 m increments inside retained basins)",
+    "parallel_edge_dedup": "dedupe on (from_node,to_node,order): keep observed over synthesised; among observed keep longer reach; record dropped_edge_count + dropped_edge_ids in manifest",
+    "degenerate_edge_policy": "self-loops (from==to) dropped+counted (self_loop_dropped_count); post-snap length < 0.05 m or null slope dropped+counted (zero_length_dropped_count); consumers refuse load if either count nonzero",
+    "topology": "final directed graph MUST be acyclic; stitcher applies documented break rule (drop lowest slope synthetic in cycle) until acyclic; manifest carries graph_is_dag=true + cycle_break_count"
+  },
+  "determinism": {
+    "node_id_sort_key": "(round(x_m,3), round(y_m,3)) ascending, ids 1..N contiguous after sort",
+    "edge_id_sort_key": "(from_node, to_node, order, length_m, sha256(wkb)) ascending",
+    "adjacency_json": "keys and neighbor lists sorted; explicit schema {nodes:{node_id:{x_m,y_m}}, edges:{edge_id:{from,to,order,edge_source}}, topo_order:[...], cycles:[], dropped:{self_loops:[],zero_length:[],duplicates:[]}}",
+    "rerun_stability": "identical inputs (sha256) + git SHA + configs/drainage.yaml => byte-identical gpkg+adjacency; manifest records node_id_map_sha256 + graph_fingerprint (sha256 over sorted edge list)"
+  },
+  "layers_schema": {
+    "drain_nodes": {
+      "geometry": "Point EPSG:32643",
+      "required_fields": ["node_id:int64 PK", "node_type:enum[junction,inlet,outfall]", "outfall_reason:enum[domain_exit,pit,lake_boundary] null unless outfall", "x_m,y_m:float rounded 3dp", "elev_m:float DEM-sampled at node cell from data/interim/terrain/dem_conditioned_postbreach.tif BUFFERED grid - invert PROXY, derived, labelled, never null", "contrib_area_cells:int64 D8 upstream count", "contrib_area_m2:float = contrib_area_cells*100.0 derived", "contrib_area_ha:float = contrib_area_cells*0.01 derived"]
+    },
+    "drain_edges": {
+      "geometry": "LineString EPSG:32643",
+      "required_fields": ["edge_id:int64 PK", "from_node:int64 FK upstream end", "to_node:int64 FK downstream end", "order:enum[primary,secondary,tertiary,synthetic_connector]", "edge_source:enum[observed,synthesised] (bidirectional assertion with order)", "direction_confidence:enum[high,medium,low]", "direction_basis:text naming which rule fired"],
+      "capacity_bearing_fields_observed_only": ["width_m:float primary 6.71 secondary 4.88 tertiary 2.285 nominal midpoint of [1.83,2.74]", "width_low_m width_high_m band corners", "width_basis:text embedding ft->m derivation chain incl exact rounded width ('primary 22 ft = 6.71 m' etc, BBMP norm via Times of India 2016-08-02 chain)", "n_manning:float allowed values {0.013,0.015,0.030} only", "n_basis:text paired via allowed table {0.013:'CPHEEO 2019 Ch5 concrete as-new low', 0.015:'CPHEEO 2019 Ch5 open-concrete design', 0.030:'CPHEEO 2019 Ch5 unlined/grass high'}", "depth_m_solved:float rational+Manning solution", "depth_basis:'solved:rational+Manning'", "q_capacity_nom_m3s:float = safety_factor * q_capacity_full_m3s, safety_factor in [0.85,0.95] CPHEEO Ch5", "q_capacity_low_m3s q_capacity_high_m3s:min/max over joint parameter box {n in [0.013,0.030], C in [0.65,0.80], width in band, climate_uplift in [1.10,1.30]} at corners", "capacity_basis:text JSON object with keys {width,shape,side_slope,assumption,n,slope,depth,design_return_period_yr,climate_uplift,runoff_C,safety_factor,sources[]} every value non-empty sources[] entries contain http-or-document-name; declared assumptions use key 'assumption' with one-colon values 'assumption:<label>' e.g. 'assumption:side_slope_1H1V'"],
+      "measured_geometry_all_edges": ["length_m:float>0 measured walk/reach geometry - REQUIRED on ALL edges including synthetic connectors (NOT part of the NULL set)", "slope_m_per_m:float>=0 finite measured from conditioned DEM endpoints post-snap - REQUIRED on ALL edges (null-slope drop policy applies to observed edges only; synthetic connectors always carry measured slope from their D8 path)"],
+      "synthetic_connectors": "ALL capacity fields NULLABLE and NULL for synthetic_connector edges - a D8 walk is a routing conduit only, carrying invented hydraulics violates rule 1. capacity_basis text = 'synthetic connector: no surveyed cross-section; routing conduit only, no capacity claim'. Consumers skip NULL-capacity edges for capture."
+    }
+  },
+  "units_and_conversion": {
+    "graph_stores": "q_capacity in m3/s; areas in m2 and ha; NEVER mm/hr",
+    "conversion_ownership": "WF-2 coupling adapter owns conversion; both formulas contractual: sink_mm_per_hr = q_capacity_m3s * 3600000 / contrib_area_m2 ; rate_m_s = q_capacity_m3s / contrib_area_m2",
+    "contrib_area_pin": "depth-solve contributing area = contrib_area_cells at edge from_node (headwater), resolving research-vs-schema desync"
+  },
+  "manifest_guarantees_producer_writes": {
+    "connectivity": "D8_stitched AND component_count_post_stitch == 1 else refuse load (>=1 was vacuous - any non-empty graph passes, the exact Phase-1 #15a class; producer STOPS and reports for owner adjudication if post-stitch > 1 rather than shipping a disconnected graph)",
+    "component_count_pre_stitch": "int census at snap_tolerance_m=10.0 exactly (realized P+S: 365)",
+    "stitcher_params_recorded": ["snap_tolerance_m","max_connector_steps","rasterization_rule"],
+    "input_sha256": ["pntr_d8.tif","waterways_bbmp.gpkg"],
+    "elevation_surface_sha256_binding": "WF-1 MUST load data/processed/buffered/elevation.tif with sha256 == 46dff442a73945f4bb8d7ee01352eefe4bdfb801b88ac0fa6b5c97d830f56fe7 (the surface ALL Phase-3 evidence consumed: replay1, replay2, calibration; promoted 2026-08-24 from p3-final scratch per owner adjudication; witness docs/elevation-surface-witness-2026-08-24.json @ c0a4fa3). DO NOT build D8 flow direction on any other elevation bytes - the superseded 1430eed3... surface would put the drain graph on a different surface from every existing finding. V1 rationale: a manifest-status field is DECLARATION; the SHA is REALIZED state. SILENT-SWAP WARNING: the two surfaces share dims/CRS/transform/nodata/valid-count and differ only in values (328,441 cells / mean 1.761 m / max 4.504 m) - only the SHA catches it.",
+    "dem_source_manifest_status": "REPLACED by elevation_surface_sha256_binding per owner adjudication 2026-08-24 (V1: manifest status is declaration, SHA is realized state). Terrain-conditioning adjudication RESOLVED: ACCEPT the interim postbreach artefact (failed conditioning run wrote nothing - fail-closed working as designed); the separate question of whether the 349-cell retained-basin guard is a real defect or too strict is investigated OFF the critical path (run cost ~59.6 s)",
+    "pointer_provenance_caveat": "pointer predates its stage-manifest overwrite; provenance code-path+mtime - recorded as known_gap",
+    "counts": ["synthesised_fraction_of_total_length float[0,1] RULE-1 HEADLINE if >0.5 owner informed pre-presentation","self_hit_count","dropped_connector_count","dropped_edge_count","self_loop_dropped_count","zero_length_dropped_count","cycle_break_count","flat_flagged_edge_count","negative_slope_edge_count reported-not-asserted"],
+    "units_block": {"q_capacity_units":"m3/s","contrib_area_units":"m2=cells*100.0","conversion_formulas":"both, verbatim"},
+    "capacity_rule_version": "'rational+Manning design v1: Q=C.i.A/360, A=contrib_area_ha at from_node, i per CPHEEO Ch1 return-period x uplift 1.10-1.30, C in [0.65,0.80], Manning n=0.015, nom=safety_factor(0.85-0.95) x q_full'",
+    "assumed_uncalibrated_flag": "coexists deliberately: legacy prior flag stays on the LEGACY drain_capacity artefact; THIS manifest declares capacity_basis instead - solver assert_drain_manifest_contract amended (WF-1 task) to accept either legacy prior OR new basis form",
+    "deterministic_ids": true,
+    "graph_fingerprint_serialization_pinned": "sha256 over UTF-8 JSON array, one entry per edge sorted by edge_id: [from_node, to_node, order, round(length_m,6), sha256(wkb_hex)] with json.dumps(..., separators=(',',':')) - byte-exact recomputable by consumer",
+    "node_geometry_assumption_note": "elev_m is DEM proxy not surveyed invert - consumers must not treat as pipe invert",
+    "enum_forward_design_note": "node_type 'inlet' and outfall_reason 'lake_boundary' are forward-design enum members: wave-1 stitcher rules produce only junction and outfall(pit|domain_exit); producers must not emit inlet/lake_boundary until WF-2 boundary-exchange agreement lands"
+  },
+  "consumer_assertions_at_load": [
+    "manifest.connectivity=='D8_stitched' AND component_count_post_stitch>=1 else refuse",
+    "edge_source=='synthesised' <=> order=='synthetic_connector' both directions else refuse",
+    "no from_node==to_node; length_m>0 all edges; self_loop_dropped_count==0; zero_length_dropped_count==0 else refuse",
+    "graph_fingerprint recomputes over loaded edges else refuse; deterministic_ids==true",
+    "on capacity-bearing edges: (n_manning,n_basis) in allowed pairs; width_low<=width_m<=width_high; width_basis contains exact rounded width_m 2dp (V10 numeric-basis consistency); q_low<=q_nom<=q_high all finite >0",
+    "capacity_basis parses as JSON object, all values non-empty, CASE-INSENSITIVE check: no value v satisfies 'assumed' in v.lower() UNLESS its key starts with 'assumption' and value matches one-colon form 'assumption:<label>' (catches Assumed/ASSUMED/assumed_uncalibrated while allowing declared assumption:side_slope_1H1V); sources[] non-empty with http-or-doc-name each; depth=='solved:rational+Manning'; safety_factor in [0.85,0.95]",
+    "contrib_area_m2 == contrib_area_cells*100.0 within 1e-6",
+    "manifest.graph_is_dag==true else refuse",
+    "data/processed/buffered/elevation.tif sha256 == 46dff442a73945f4bb8d7ee01352eefe4bdfb801b88ac0fa6b5c97d830f56fe7 else refuse (elevation surface identity is REALIZED state per owner adjudication 2026-08-24; the superseded 1430eed3... surface is NOT what Phase-3 evidence consumed; witness docs/elevation-surface-witness-2026-08-24.json)",
+    "Grid.assert_aligned(rasterized exports, pntr_d8.tif)"
+  ],
+  "rationale": "Grounded in realized recon: P+S=1033 reaches (163+870), 372 comps @0.5 m / 365 @10 m two independent implementations agree; vertex order 50.05% downhill coin-flip so direction exclusively D8 under pinned rule with confidence grading; tertiary default EXCLUDED pending owner adjudication (5815 geoms in 4443 components, only 121 junction candidates into P+S) but enum supports additive inclusion; widths cited BBMP norm via ToI 2016-08-02 chain; n cited CPHEEO 2019 Ch5 with numeric-text pairing enforced; depth solved not assumed; slope measured; connectors capacity-less (rule 1); V8 seam mechanical via manifest fields + load assertions, every assertion has a red path (V5) and named observable (V2).",
+  "open_questions": [
+    "Tertiary inclusion: RESOLVED EXCLUDED per owner adjudication 2026-08-24 (4,443 components / 121 junction candidates = >97% of tertiary graph would be invented); enum stays additive if ever revisited",
+    "Lake-boundary outfalls: provisional node_type=outfall/outfall_reason=lake_boundary, discharge target deferred to WF-2 boundary-exchange agreement",
+    "Terrain conditioning: RESOLVED per owner adjudication 2026-08-24 - ACCEPT interim postbreach artefact (sha 46dff442..., promoted with manifest runs/promote_phase3_elevation/manifest.json); 349-cell retained-basin guard defect-vs-too-strict question investigated SEPARATELY, off the critical path (~59.6 s run)",
+    "wf1-drain-graph.js quotes stale census figures ('373 @0.5 m ... 370 @10 m') - repoint at pinned 365@10m / 372@0.5m before WF-1 dispatch"
+  ],
+  "capacity_confidence_semantics": {
+    "width_provenance_grade": "BELOW CPHEEO confidence - width norm is a news-sourced BBMP survey figure (single ToI-origin chain), NOT a design-manual table; width_basis carries this downgrade explicitly; every capacity number inherits it",
+    "undetermined_rule": "capacity sensitivity band spans x[0.45,1.9] = factor 4.2; ANY downstream verdict (gate pass/fail, surcharge vs not, segment flooded/not) that flips within this band is reported as UNDETERMINED, never as a point result"
+  }
+}
