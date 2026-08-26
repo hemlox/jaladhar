@@ -86,6 +86,35 @@ agent said exactly that, and it was read as independent confirmation. It was an 
 **A negative result is a valid and valuable outcome.** If surcharge does not close the gap, that is a
 real finding about a real city's drainage, and it is far more presentable than a fudge.
 
+## 3a. The scheduled-vs-realized audit — run this after EVERY workflow
+
+A workflow's report describes what it *thinks* it did. The script describes what it was *told* to do.
+Auditing one against the other is mechanical, takes five minutes, and has already caught both a
+badly-undersold report and an R3 violation. Do it every time, before reading the prose.
+
+1. **Extract the spec.** Open the workflow script and list every concrete deliverable each track was
+   given — file paths it owns, named features, required properties. The `task:` strings are the
+   checklist; they were written to be checkable.
+2. **Check existence against disk.** `ls`/`wc -c` every promised path. A track reporting PARTIAL with
+   40 KB of code on disk is a reporting problem, not a build problem — and the reverse is worse.
+3. **Grep each named feature.** For every "must have X" in the spec, grep for X in the files that
+   would contain it. **Grep the file that would actually hold the feature**, not the nearest one — a
+   UI requirement lives in `static/`, not in `app.py`, and getting that wrong produces false alarms.
+4. **Run the rule-3 audit yourself.** Do not accept a track's own report that it has no hardcoded
+   metrics. Grep for numeric literals that look like depths, thresholds, counts, or scores, then
+   filter out legitimate constants (pixels, timeouts, unit conversions). What survives is the finding.
+5. **Check ownership.** `git diff --numstat` every changed file against the track's declared `owns`.
+   Edits outside it are deviations for owner adjudication, not bug fixes — even when they are
+   correct, and even when you decide to keep them.
+6. **Read for absence.** Anything in the spec with no corresponding artefact is the finding. It will
+   not appear in the report, by definition.
+
+**Before accepting any BLOCKED status, apply R3: inventory what is already on disk.** A track is not
+blocked on an input that already exists somewhere in the repo. Completed run directories, cached
+fetches, and prior replay outputs are all products. This is the single most common false blocker
+here, and CLAUDE.md records the precedent — `data/fetched_articles.json` sat unread for a day while
+forcing was declared resolved and an acquisition goal was written to go find what was already there.
+
 ## 4. How to read what the agents send back
 
 Most of what you receive is a **report**, not code you wrote. In this order:

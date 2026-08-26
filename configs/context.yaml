@@ -1,0 +1,21 @@
+# Ward/locality context configuration — WF-6 M3 (owner adjudication item 4).
+#
+# Relocated here from code constants in src/jaladhar/web/wards.py per the
+# owner's direction: this file is the single source of truth for which BBMP
+# ward-boundary vintage a product resolves to. wards.py loads and validates it
+# at startup (rule 7): every key below is resolved before any build work
+# starts, a missing file or missing/corrupt key fails fast with an aggregated
+# error naming ALL missing keys. There is deliberately NO code fallback — if
+# this file is absent or incomplete, the build refuses.
+
+ward_layer_rule: "ward layer vintage matches the product's event window"
+
+# Product kind -> BBMP ward-boundary vintage. Keys match the product payloads'
+# forcing_kind values (see /api/state snapshots[].forcing_kind).
+ward_vintage_by_product_kind:
+  historical_replay: "2022"
+  live_nowcast: "2023"
+
+# Vintage used when no product-kind mapping applies (the September 2022 replay
+# product is canonical for locality labels).
+default_vintage: "2022"

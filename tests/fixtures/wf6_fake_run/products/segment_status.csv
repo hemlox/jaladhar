@@ -1,0 +1,3 @@
+run_id,segment_id,band_low_cm,band_high_cm,confidence,flood_status,valid_time_utc,issue_time_utc,forecast_lead_minutes,source_manifest_path
+wf6_fake_run,1,0,0,no_data,unknown,2022-09-04T00:00:00Z,2022-09-04T00:00:00Z,0,tests/fixtures/wf6_fake_run/manifest.json
+wf6_fake_run,2,10,40,modeled_direct,flooded,2022-09-04T00:00:00Z,2022-09-04T00:00:00Z,0,tests/fixtures/wf6_fake_run/manifest.json

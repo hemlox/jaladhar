@@ -1,0 +1,8 @@
+{
+  "run_id": "wf6_fake_run_declared",
+  "stage": "fake_dashboard_fixture",
+  "series_kind": "instantaneous_solver_frames",
+  "status": "running",
+  "note": "Declares series_kind but is not a completed frame series (status=running, no frames array). Exercises the 'unless manifest declares series_kind' branch of detect_series: it may be RETURNED as a rejected candidate, but must never be ready or own the store.",
+  "start_time_iso": "1970-01-01T00:00:00+00:00"
+}

@@ -6,7 +6,8 @@ PROMPT.md §8 & CLAUDE.md:
 - Evaluates uncalibrated baseline against three independent label sets:
   1. BBMP flood-prone locations (399 raw points across 3 KMLs: 70 + 129 + 200) -> hit rate and FAR
   2. Sentinel-1 SAR flood extent (06:10 IST 5 Sept 2022 SAR pass), STRATIFIED BY URBAN DENSITY,
-     with and without permanent-water exclusion (basin_class 1, 2, 3), across a depth threshold sweep.
+     with and without permanent-water exclusion (basin_class 1, 2, 3), across a depth threshold
+     sweep.
   3. Ground-truth geolocated flood points (24 points) -> depth as a band and depth RMSE.
 - Evaluates against published bar (CSI ≈ 0.73, RMSE ≈ 0.17 m; Water 17(8):1239, 2025).
 - Enforces strict anti-fabrication and Rule 6/7 provenance requirements.
@@ -15,18 +16,11 @@ PROMPT.md §8 & CLAUDE.md:
 from __future__ import annotations
 
 import math
-import sys
 import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
-
-REPO = Path(__file__).resolve().parents[3]
-if str(REPO) not in sys.path:
-    sys.path.insert(0, str(REPO))
-if str(REPO / "src") not in sys.path:
-    sys.path.insert(0, str(REPO / "src"))
 
 import geopandas as gpd
 import numpy as np
@@ -43,6 +37,12 @@ from scipy.interpolate import Rbf, RegularGridInterpolator
 from scipy.spatial import cKDTree
 
 from jaladhar.forcing.imerg import ImergHistoricalAdapter
+from jaladhar.forcing.interface import (
+    ForcingMode,
+    assert_nowcast_metadata_contract,
+    assert_rate_conversion_parameterised,
+    interval_depth_mm_to_rate_m_s,
+)
 from jaladhar.provenance import RunManifest
 from jaladhar.solver.acc import SolverParams, acc_step
 from jaladhar.solver.mass import MassBudget
@@ -297,22 +297,45 @@ def run_phase3_simulation(
 
     event = adapter.get_forcing(st, et)
     event.verify_mass_conservation()
+    if event.mode is ForcingMode.NOWCAST:
+        assert_nowcast_metadata_contract(event)
 
     # Buffer native cell ids to match buffered solver domain (pad 50 cells)
     buf_cells = round(float(solver_cfg["_domain"]["dem"]["buffer_m"]) / dx)
     native_ids_canon = adapter.native_cell_ids
-    native_ids_buf = np.pad(native_ids_canon, buf_cells, mode="edge")
-    native_ids_tensor = torch.as_tensor(native_ids_buf, dtype=torch.long, device=device)
+    has_uncovered_cells = bool(np.any(native_ids_canon < 0))
+    native_ids_buf = (
+        np.pad(native_ids_canon, buf_cells, mode="constant", constant_values=-1)
+        if has_uncovered_cells
+        else np.pad(native_ids_canon, buf_cells, mode="edge")
+    )
+    native_ids_lookup = np.where(
+        native_ids_buf >= 0,
+        native_ids_buf,
+        event.distinct_native_cells,
+    )
+    native_ids_tensor = torch.as_tensor(native_ids_lookup, dtype=torch.long, device=device)
 
     # Pre-extract interval rates on GPU (m/s)
     interval_rates_gpu: list[torch.Tensor] = []
+    interval_rates_native_m_s: list[np.ndarray] = []
     for iv in event.intervals:
         rate_16 = np.zeros(iv.distinct_native_cells, dtype=np.float32)
-        # Depth in 30 min (mm) -> rate in mm/hr = depth * 2 -> rate in m/s = (depth * 2) / 3600 / 1000
         for cid in range(iv.distinct_native_cells):
             mask = adapter.native_cell_ids == cid
-            rate_16[cid] = float(iv.rainfall_grid_mm[mask][0]) * 2.0 / 3600.0 / 1000.0
-        interval_rates_gpu.append(torch.as_tensor(rate_16, dtype=torch.float32, device=device))
+            values = iv.rainfall_grid_mm[mask]
+            if values.size == 0 or not np.all(values == values[0]):
+                raise AssertionError(
+                    f"native rainfall cell {cid} is absent or non-uniform in interval"
+                )
+            rate_16[cid] = interval_depth_mm_to_rate_m_s(float(values[0]), iv.interval_minutes)
+        interval_rates_native_m_s.append(rate_16.copy())
+        rate_with_dry_sentinel = np.concatenate((rate_16, np.zeros(1, dtype=np.float32)))
+        interval_rates_gpu.append(
+            torch.as_tensor(rate_with_dry_sentinel, dtype=torch.float32, device=device)
+        )
+    if event.mode is ForcingMode.NOWCAST:
+        assert_rate_conversion_parameterised(event, interval_rates_native_m_s)
 
     # 4. Compute budget estimate before launch (CLAUDE.md §Compute)
     band = tuple(solver_cfg["compute_estimate"]["h_max_band_m"])
@@ -353,7 +376,8 @@ def run_phase3_simulation(
     typer.echo("=================================================================")
     typer.echo("Forcing Mode: HISTORICAL (GPM IMERG v07 Final 30-min granules)")
     typer.echo(
-        f"Simulation Window: {event_start_iso} to {event_end_iso} ({sim_duration_s / 3600:.1f} hours)"
+        f"Simulation Window: {event_start_iso} to {event_end_iso} "
+        f"({sim_duration_s / 3600:.1f} hours)"
     )
     typer.echo(f"Distinct IMERG cells over domain: {event.distinct_native_cells}")
     typer.echo(f"Domain Areal Mean Rainfall: {event.areal_mean_total_mm:.2f} mm")
@@ -371,7 +395,9 @@ def run_phase3_simulation(
         {
             "device": device,
             "elevation_override": (
-                str(elevation_override.relative_to(REPO)) if elevation_override is not None else None
+                str(elevation_override.relative_to(REPO))
+                if elevation_override is not None
+                else None
             ),
             "event_window": {
                 "start": event_start_iso,
@@ -591,7 +617,9 @@ def run_phase3_simulation(
                 "units": "m",
                 "dtype": "float64",
                 "grid_role": "buffered_solver_cell_grid",
-                "quantity": "sum_of_accepted_post_limiter_div_x_fx_plus_div_y_fy_minus_domain_outflow",
+                "quantity": (
+                    "sum_of_accepted_post_limiter_div_x_fx_plus_div_y_fy_minus_domain_outflow"
+                ),
                 "includes": ["internal_cell_face_transport", "domain_boundary_outflow"],
                 "excludes": ["rain", "drain", "infiltration"],
             },
@@ -629,7 +657,8 @@ def run_phase3_simulation(
     typer.echo(f"  Simulated Duration: {t / 3600:.2f} hours")
     typer.echo(f"  Wall Clock: {wall_clock:.1f} s ({wall_clock / 60:.2f} min)")
     typer.echo(
-        f"  Mass Relative Residual: {budget.relative_residual():.3e} (Tolerance: {budget.relative_tolerance:.1e})"
+        f"  Mass Relative Residual: {budget.relative_residual():.3e} "
+        f"(Tolerance: {budget.relative_tolerance:.1e})"
     )
     typer.echo(f"  Max Realized Courant: {max_courant:.3f}")
     typer.echo(f"  Event Max Depth (P99): {float(np.percentile(h_canonical_max, 99)):.3f} m")

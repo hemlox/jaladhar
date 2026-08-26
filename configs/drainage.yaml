@@ -1,0 +1,80 @@
+# WF-1 drain-graph build configuration.
+# Created by the orchestrator per the frozen contract configs/contracts/drain_graph.json
+# and the synthesized stitching specification (runs/drain_graph_build/design_phase/spec.md).
+# Rule 7: every key below is resolved at startup by each module's _resolve_config(); a missing
+# or invalid key fails in the first second with ONE aggregated error listing ALL problems.
+
+drainage:
+  crs: "EPSG:32643"
+  grid:
+    width: 3615
+    height: 3521
+    transform: [10.0, 0.0, 766440.0, 0.0, -10.0, 1454850.0]
+    cell_area_m2: 100.0
+    canonical_width: 3515
+    canonical_height: 3421
+
+  inputs:
+    kml_primary: data/raw/bbmp_drains/primary_drains_2022.kml
+    kml_secondary: data/raw/bbmp_drains/secondary_drains_2022.kml
+    kml_tertiary_report_only: data/raw/bbmp_drains/tertiary_drains_2022.kml
+    waterways_gpkg: data/interim/terrain/waterways_bbmp.gpkg
+    elevation_surface: data/processed/buffered/elevation.tif
+    elevation_sha256: "46dff442a73945f4bb8d7ee01352eefe4bdfb801b88ac0fa6b5c97d830f56fe7"
+    retained_basins_csv: data/interim/terrain/retained_basins.csv
+    osm_water_gpkg: data/raw/osm/osm_water.gpkg
+    scratch_pntr_probe: runs/analysis/water_tracing/routing_scratch/pntr_d8.tif
+
+  diagnostics:
+    max_invalid_fraction: 0.01
+
+  stitch:
+    snap_tolerance_m: 10.0
+    burn_buffer_m: 5.0
+    quad_segs: 8
+    max_connector_steps: 10000
+    flat_increment_m: 0.001
+    tie_break_order: [E, NE, N, NW, W, SW, S, SE]
+    self_hit_granularity: reach
+    stub_max_length_m: 25.0  # retired by split-at-projection (D21); kept for schema stability
+    split_max_distance_m: 15.0
+    corridor_merge_min_jaccard: 0.35
+
+  capacity:
+    shape: trapezoidal_1H1V_width_is_bed_width
+    n_nominal: 0.015
+    C_low: 0.65
+    C_high: 0.80
+    C_nominal: 0.725
+    safety_factor_low: 0.85
+    safety_factor_high: 0.95
+    safety_factor_nominal: 0.90
+    climate_uplift_low: 1.10
+    climate_uplift_high: 1.30
+    climate_uplift_nominal: 1.20
+    width_band_pct: 0.10
+    # Rule-1 boundary RESOLVED 2026-08-25 (owner adjudication M11): cited city value,
+    # reported to owner BEFORE computing. Chain recorded in capacity_basis.sources[].
+    design_return_period_yr: 25
+    intensity_mm_hr: 62.5
+    idf_source: "Bangalore 60-min 25-yr intensity 55-70 mm/hr (midpoint 62.5 applied); InfraLens CPHEEO Manual on Storm Water Drainage Systems 2019 Ch.2 companion table, infralens.in/cpheeo/cpheeo-sw-02; method corroboration: IRJET V4(I6) 2017 'A Study on Intensity of Rainfall in Urban Bangalore Areas', 17 IMD stations 1972-2011, log-normal best fit; climate uplift band [1.10,1.30] per frozen contract = CPHEEO/AMRUT 10-30%"
+    idf_table_path: ""
+
+  outputs:
+    run_dir: runs/drain_graph_build
+    gpkg: runs/drain_graph_build/drain_graph_candidate.gpkg
+    adjacency: runs/drain_graph_build/drain_graph_adjacency_candidate.json
+    manifest: runs/drain_graph_build/manifest.json
+    publish_gpkg: data/processed/drain_graph.gpkg
+    publish_adjacency: data/processed/drain_graph_adjacency.json
+
+  consumer:
+    allow_disconnected_load: false
+    owner_adjudication_ref: ""
+    # Owner adjudication WF-1b (2026-08-25): outfall-terminating fraction 0.7365
+    # ACCEPTED; the >=95% bar is relaxed because Bengaluru's flooding is caused by
+    # encroached and truncated rajakaluve - dead-end drains are real and cannot be
+    # distinguished from a digitisation gap. Non-outfall reaches are modelled as
+    # terminating.
+    component_policy_accepted: true
+    component_policy_acceptance_reason: "Owner adjudication 2026-08-25: outfall fraction 0.7365 ACCEPTED, >=95% bar relaxed - encroached/truncated rajakaluve make dead-end drains real, indistinguishable from digitisation gaps; non-outfall reaches modelled as terminating"

@@ -1,0 +1,33 @@
+# M2 routing configuration — cited-wading policy + operational snap gate.
+#
+# ┌─ PROVENANCE & RATIFICATION STATUS (read before editing any value) ────────┐
+# │ basis:            repo internal precedent, no external standard located  │
+# │                   (the repo's causal-proximity tolerance of 25 m —       │
+# │                   jaladhar/web/drains.py CAUSAL_PROXIMITY_M).            │
+# │ provenance_grade: D-internal — graded BELOW the CPHEEO-class cited       │
+# │                   figures exactly as width provenance is: an internal    │
+# │                   precedent is weaker than an external citation, and     │
+# │                   that grade must never be hidden. Not every threshold   │
+# │                   can have a published source; the requirement is the    │
+# │                   visible grade.                                         │
+# │ sensitivity:      [15, 50] m — the gate stays honest anywhere in this    │
+# │                   band; 25 m sits mid-band. Moving outside the band      │
+# │                   changes snap-refusal behaviour materially.             │
+# │ RATIFIED: owner statement 2026-08-26 ratifies the 25 m operational      │
+# │                   value WITH its grade stated. Ratification does not     │
+# │                   convert internal precedent into an external standard;  │
+# │                   any external claim built on 25 m carries grade         │
+# │                   D-internal explicitly.                                 │
+# └──────────────────────────────────────────────────────────────────────────┘
+
+vehicle_policy_path: "data/curation/vehicle_wading_policy.json"
+server_max_snap_distance_m: 25.0
+server_max_snap_distance_basis: "repo internal precedent, no external standard located (causal-proximity tolerance, drains.py CAUSAL_PROXIMITY_M); provenance_grade D-internal; RATIFIED 2026-08-26 with grade stated"
+
+# Scientific-gate report binding (audit fix F7, 2026-08-26): binds the realized
+# post-exclusion G1 rescore so /health surfaces the TRUE routing blocker —
+# scientific_readiness.status=not_accepted with report_path+sha256 — instead of
+# a generic "unavailable". This makes the failure MORE visible, never less:
+# the G1 rescore is FAIL (104/399 hits, lift ~1.30 under the frozen >=0.60/>=3.0
+# thresholds) and routing execution stays refused while it stands.
+gate_report_path: "runs/wf3_replay2_gates_v7_excluded/g1_score.json"

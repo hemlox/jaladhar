@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="JALADHAR Bengaluru urban flood nowcast — realized product view">
+    <link rel="icon" href="data:,">
+    <title>JALADHAR · Bengaluru Urban Flood Nowcast</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <div class="app">
+      <header class="topbar">
+        <div class="brand">
+          <span class="brand-name">JALADHAR</span>
+          <span class="brand-sub">Bengaluru · Urban Flood Nowcast</span>
+        </div>
+        <div class="run-label">
+          <span id="status-dot" class="status-dot"></span>
+          <span id="run-label">loading run state</span>
+          <span id="gate-note" class="gate-note"></span>
+        </div>
+      </header>
+
+      <section id="map-area" class="map-area" aria-label="Flood nowcast map">
+        <canvas id="cv-static"></canvas>
+        <canvas id="cv-dyn"></canvas>
+        <canvas id="cv-ui"></canvas>
+
+        <div id="map-overlay" class="map-overlay">
+          <div id="overlay-card" class="overlay-card hidden">
+            <h2 id="overlay-title"></h2>
+            <p id="overlay-message"></p>
+          </div>
+        </div>
+
+        <aside id="legend" class="legend hidden" aria-label="Depth band legend">
+          <span class="legend-title">Depth</span>
+          <div class="legend-row"><i class="swatch" style="background: var(--d1)"></i>passable<span class="legend-range" id="range-d1"></span></div>
+          <div class="legend-row"><i class="swatch" style="background: var(--d2)"></i>caution<span class="legend-range" id="range-d2"></span></div>
+          <div class="legend-row"><i class="swatch" style="background: var(--d3)"></i>hazardous<span class="legend-range" id="range-d3"></span></div>
+          <div class="legend-row"><i class="swatch" style="background: var(--d4)"></i>impassable<span class="legend-range" id="range-d4"></span></div>
+          <div class="legend-row"><i class="swatch lake"></i>lakes</div>
+          <div class="legend-row"><i class="swatch drain-solid"></i>drain — observed reach</div>
+          <div class="legend-row"><i class="swatch drain-dashed"></i>drain — synthesised connector</div>
+          <p class="legend-note" id="legend-note">
+            Depth is a per-segment band in cm over the segment's cells, never a
+            point depth. Surcharging nodes pulse only where a coupled run
+            measured them.
+          </p>
+        </aside>
+      </section>
+
+      <aside class="rail" aria-label="Nowcast details">
+        <section class="panel">
+          <h3 class="panel-heading now-heading">STATUS <span id="now-lead" class="now-lead">—</span></h3>
+          <div class="hero-value"><span id="stat-flooded">—</span></div>
+          <p class="hero-caption">segments flooded</p>
+        </section>
+
+        <section class="panel">
+          <div class="hero-value"><span id="stat-deepest">—</span><span class="hero-unit">cm</span></div>
+          <p class="hero-caption">deepest reading</p>
+          <p class="hero-location" id="stat-deepest-loc"></p>
+        </section>
+
+        <section class="panel hidden" id="peak-panel">
+          <h3 class="panel-heading">Peak of the series</h3>
+          <div id="peak-claim"></div>
+        </section>
+
+        <section class="panel">
+          <h3 class="panel-heading">Selected segment</h3>
+          <div id="selected-body">
+            <p class="hero-caption">Click a street to inspect its realized product row.</p>
+          </div>
+        </section>
+
+        <section class="panel">
+          <h3 class="panel-heading">Drain network</h3>
+          <p class="drain-note" id="drain-status">loading drain snapshot…</p>
+          <p class="fingerprint" id="drain-fingerprint"></p>
+        </section>
+      </aside>
+
+      <footer class="bottombar">
+        <button id="btn-play" class="play-btn" aria-label="Play the nowcast horizon" disabled title="Play needs more than one realized lead">▶</button>
+        <div class="timeline">
+          <input id="scrubber" type="range" min="0" max="0" step="any" value="0"
+                 aria-label="Scrub the realized forecast leads" disabled>
+          <span class="tick" id="tick-start">now</span>
+          <span class="tick" id="tick-end">+3h</span>
+        </div>
+        <div class="layers">
+          <label id="toggle-roads" class="layer-toggle on">
+            <input type="checkbox" checked data-layer="roads"><span class="glyph">⬢</span>roads
+          </label>
+          <label id="toggle-drains" class="layer-toggle">
+            <input type="checkbox" data-layer="drains"><span class="glyph">⬡</span>drains
+          </label>
+          <label id="toggle-lakes" class="layer-toggle on">
+            <input type="checkbox" checked data-layer="lakes"><span class="glyph">≈</span>lakes
+          </label>
+        </div>
+      </footer>
+    </div>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

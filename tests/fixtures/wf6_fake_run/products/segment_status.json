@@ -1,0 +1,4 @@
+[
+  {"run_id": "wf6_fake_run", "segment_id": 1, "band_low_cm": 0, "band_high_cm": 0, "confidence": "no_data", "flood_status": "unknown", "valid_time_utc": "2022-09-04T00:00:00Z", "issue_time_utc": "2022-09-04T00:00:00Z", "forecast_lead_minutes": 0, "source_manifest_path": "tests/fixtures/wf6_fake_run/manifest.json"},
+  {"run_id": "wf6_fake_run", "segment_id": 2, "band_low_cm": 10, "band_high_cm": 40, "confidence": "modeled_direct", "flood_status": "flooded", "valid_time_utc": "2022-09-04T00:00:00Z", "issue_time_utc": "2022-09-04T00:00:00Z", "forecast_lead_minutes": 0, "source_manifest_path": "tests/fixtures/wf6_fake_run/manifest.json"}
+]

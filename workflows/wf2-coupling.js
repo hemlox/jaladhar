@@ -60,6 +60,53 @@ const CONTRACTS = `
 The coupling interface contract was frozen by WF-0 (configs/contracts/). The drain graph artefact and
 its reader were produced by WF-1. Build exactly to both. Report contract problems as deviations for
 owner adjudication; do not silently reinterpret them.
+
+MEASURED FACTS FROM THE WF-0 RECON AND THE WF-1/WF-3 RUNS (2026-08-25). These are realized state,
+verified against disk. Build against them, not against assumptions:
+
+DRAIN CONSUMPTION AS IT EXISTS TODAY (the code you are replacing):
+- Loaded ONLY via state.load_domain() from data/processed/buffered/drain_capacity.tif
+  (state.py:240-247). The config key data/processed/drain_capacity.tif is NOT what is read.
+- Converted ONCE at static-field build: MM_PER_HR_TO_M_PER_S = 1/1000/3600 (state.py:35) into
+  StaticFields.drain_cap_m_s (m/s). The hot path multiplies by dt only.
+- Applied at acc.py:312-316, AFTER the flux update and AFTER the negative-depth guard, in fixed
+  order drain then infiltration:
+      drained = torch.minimum(static.drain_cap_m_s * dt, h_new); h_new = h_new - drained
+  The min-cap means drainage can never invert depth.
+- Mass budget: drained.sum(float64) at acc.py:337, times cell_area at mass.py:104.
+
+THREE THINGS THAT WILL BITE YOU IF YOU ASSUME OTHERWISE:
+1. sinks.drain.enabled GATES ONLY A MANIFEST ASSERTION (state.py:275). The raster is read and
+   applied UNCONDITIONALLY. Setting it false does NOT disable drainage. The coupling must remove the
+   legacy sink IN CODE at acc.py:312-316. If you assume the flag works you get DOUBLE COUNTING -
+   legacy sink and coupled capture both removing the same water.
+2. The mass-residual tolerance is 1e-3 relative, but replay #2 realized 1.79e-05 - the guard is 56x
+   looser than reality, so a coupling defect leaking 0.1% of mass passes silently. Check against the
+   realized historical residual, not the tolerance.
+3. drain_capacity.tif has min 1.94e-31 with ALL 12,728,415 cells non-zero. "Capacity zero everywhere"
+   for the uncoupled-equivalence invariant is NOT reachable from the existing raster; zero it
+   explicitly.
+Also: StaticFields is a frozen dataclass and drain_cap_m_s is a live calibration parameter, so any
+coupling modification must be OUT-OF-PLACE.
+
+THE GRAPH YOU ARE COUPLING TO (as WF-1 left it, status stopped_owner_adjudication):
+- Synthesised connector trajectories total 2,732.86 km against 767.3 km observed (3.56x), BUT unique
+  footprint is only 364.5-515.5 km (0.48-0.67x observed) because connectors converge into shared
+  corridors at ~7.5 crossings per cell. TREAT THIS AS A DEFECT TO HANDLE, NOT A STATISTIC: many
+  parallel connector edges represent the SAME physical flow path, so naive routing double-counts
+  conveyance. State how your scheme avoids that.
+- capacity_status is blocked_missing_design_intensity - ZERO hydraulic numbers were written, per
+  rule 1. If capacity is still absent when you start, you cannot compute surcharge and you say so
+  rather than inventing an intensity.
+- Whitebox fill was found VALUE-NONDETERMINISTIC (3 runs, 3 fingerprints) and was replaced with an
+  in-repo deterministic priority-flood. Do not reintroduce a nondeterministic terrain step.
+
+THE BASELINE YOU MUST BEAT (WF-3, uncoupled, measured on replay #2):
+- G1 segment-mediated: 182/399 = 45.61%, seeded toroidal null (10,000 draws, seed 42) mean rate
+  32.34%, lift 1.41. Both signed conditions unmet - as EXPECTED for an uncoupled baseline.
+- Note the metric gap: replay #2's manifest reports 239/399 = 59.90% POINT-mediated at 0.10 m. The
+  segment-mediated G1 rule (D=0.15 m, F=20%, N=3) is structurally harsher and loses 57 hits. Compare
+  coupled-vs-uncoupled on the SAME metric; never mix the two.
 `
 
 // --------------------------------------------------------------- Phase: Design

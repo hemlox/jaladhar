@@ -19,7 +19,7 @@ def _git(repo_root: Path, *args: str) -> str:
     try:
         return subprocess.check_output(
             ["git", *args], cwd=repo_root, text=True, stderr=subprocess.PIPE
-        ).strip()
+        ).rstrip("\r\n")
     except (OSError, subprocess.CalledProcessError) as exc:
         raise RuntimeError(f"cannot establish Git provenance for {repo_root}: {exc}") from exc
 

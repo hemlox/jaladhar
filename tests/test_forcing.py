@@ -16,7 +16,8 @@ Enforces:
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+import os
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -99,12 +100,14 @@ def test_forcing_mode_exclusivity() -> None:
 def test_synthetic_event_mass_conservation() -> None:
     """Invariant: domain integral over event equals reported total volume to float tolerance.
 
-    Observable: direct sum(depth * area) matches event.total_volume_m3 within 1e-4 relative tolerance.
+    Observable: direct sum(depth * area) matches event.total_volume_m3 within
+    1e-4 relative tolerance.
+    relative tolerance.
     """
     h, w = 100, 100
     res = 10.0  # 10 m resolution -> 100 m^2 per cell
     native_ids = np.zeros((h, w), dtype=np.int32)
-    t0 = datetime(2022, 9, 5, 0, 0, tzinfo=timezone.utc)
+    t0 = datetime(2022, 9, 5, 0, 0, tzinfo=UTC)
 
     # 3 intervals with known rainfall depths
     grid1 = np.full((h, w), 5.0, dtype=np.float32)  # 5 mm
@@ -168,8 +171,8 @@ def test_imerg_historical_adapter_sept5_event() -> None:
             f"found {len(granules)} in {imerg_dir}"
         )
     adapter = ImergHistoricalAdapter(REPO / "configs/forcing.yaml")
-    st = datetime(2022, 9, 5, 0, 0, tzinfo=timezone.utc)
-    et = datetime(2022, 9, 5, 23, 30, tzinfo=timezone.utc)
+    st = datetime(2022, 9, 5, 0, 0, tzinfo=UTC)
+    et = datetime(2022, 9, 5, 23, 30, tzinfo=UTC)
 
     event = adapter.get_forcing(st, et)
 
@@ -227,7 +230,18 @@ def test_open_meteo_forecast_adapter_mock() -> None:
 
 
 def test_open_meteo_forecast_adapter_live() -> None:
-    """Invariant: live Open-Meteo fetch succeeds, adheres to interval semantics, and verifies mass."""
+    """Invariant: live Open-Meteo fetch succeeds, adheres to interval semantics, and verifies mass.
+
+    Opt-in: set JALADHAR_ALLOW_LIVE_NETWORK=1 to run this against the real endpoint.
+    The focused WF-3 suite must stay deterministic offline (Auditor A finding F1), so
+    without that flag this test skips with its reason stated rather than making a
+    network call whose transient failure flips suite counts.
+    """
+    if os.environ.get("JALADHAR_ALLOW_LIVE_NETWORK") != "1":
+        pytest.skip(
+            "BLOCKED by policy: live-network probe is opt-in via JALADHAR_ALLOW_LIVE_NETWORK=1 "
+            "so offline suite counts stay deterministic"
+        )
     _require_boundary()
     adapter = OpenMeteoForecastAdapter(REPO / "configs/forcing.yaml")
     try:
@@ -250,12 +264,12 @@ def test_open_meteo_forecast_adapter_live() -> None:
 def test_ksndmc_geolocation_and_forbidden_join_check() -> None:
     """Invariant: live HOBLINAME -> KML TM_RainGauge_LocationName join yields >= 235/266 matches.
 
-    Forbidden join check: RAINGAUGE -> KGISTM_RainGauge_LocationID produces 100% station name mismatch.
+    Forbidden join check: RAINGAUGE -> KGISTM_RainGauge_LocationID produces 100% station
+    name mismatch.
     """
     kml_path = REPO / "data/raw/ksndmc/stations/rain_gauges.kml"
     rain_jsons = [
-        REPO / f"data/raw/ksndmc/getCurrentRainData_d0{i}_2026-08-14.json"
-        for i in range(1, 4)
+        REPO / f"data/raw/ksndmc/getCurrentRainData_d0{i}_2026-08-14.json" for i in range(1, 4)
     ]
     _require_artifacts(kml_path, *rain_jsons, stage="KSNDMC geolocation audit")
     bbox = [77.0, 12.3, 78.0, 13.6]
@@ -272,7 +286,7 @@ def test_ksndmc_geolocation_and_forbidden_join_check() -> None:
     live_gauges = {int(r["RAINGAUGE"]): r for r in (d01 + d02 + d03)}
 
     matched = 0
-    for gid, r in live_gauges.items():
+    for _gid, r in live_gauges.items():
         h = str(r.get("HOBLINAME", "")).strip().lower()
         if h in name_to_coords:
             matched += 1
@@ -307,8 +321,8 @@ def test_ksndmc_nowcast_adapter_execution() -> None:
         stage="KSNDMC nowcast",
     )
     adapter = KsndmcNowcastAdapter(REPO / "configs/forcing.yaml")
-    st = datetime(2026, 8, 16, 12, 0, tzinfo=timezone.utc)
-    et = datetime(2026, 8, 16, 22, 0, tzinfo=timezone.utc)
+    st = datetime(2026, 8, 16, 12, 0, tzinfo=UTC)
+    et = datetime(2026, 8, 16, 22, 0, tzinfo=UTC)
 
     event = adapter.get_forcing(st, et)
 

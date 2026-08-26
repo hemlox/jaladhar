@@ -50,3 +50,6 @@ dist/
 .vscode/
 .agents/
 .opencode/
+
+# Goal-session state (per-session working notes; never project history)
+.goal/

@@ -8,7 +8,7 @@ domain_config: "configs/domain_bengaluru.yaml"
 
 # Ground truth validation points
 groundtruth:
-  points_csv: "data/raw/groundtruth/sept2022_points.csv"
+  points_csv: "data/raw/groundtruth/sept2022_points_v3.csv"
   event_window_start: "2022-08-30"
   event_window_end: "2022-09-06"
   # The simulation/scoring event is narrower than the evidence collection window.
@@ -20,10 +20,23 @@ groundtruth:
   bbmp_bbox_wgs84: [77.4, 12.8, 77.9, 13.3]
   road_segment_id_path: "data/processed/road_segment_id.tif"
   runs_dir: "runs/groundtruth"
+  depth_convention_path: "data/curation/goal_d_depth_convention.json"
 
 segment_validation:
   roads_segment_lookup_path: "data/interim/terrain/roads_segment_lookup.csv"
   underpass_register_csv: "data/interim/terrain/unrepresentative_underpass_register.csv"
+
+# Signed SIH-26085 G1 gate (docs/SIH-26085-ALIGNMENT.md §6).
+g1:
+  hit_rate_minimum: 0.60
+  null_lift_minimum: 3.0
+  null_draws: 10000
+  seed: 42
+  expected_raw_bbmp_points: 399
+
+# Signed SIH-26085 G3 gate (docs/SIH-26085-ALIGNMENT.md §6).
+g3:
+  in_band_minimum: 0.40
 
 # Urban density stratification for SAR scoring (PROMPT.md §8 item 3)
 density_stratification:

@@ -15,7 +15,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from jaladhar.provenance import DirtyTreeError, RunManifest
+from jaladhar.provenance import DirtyTreeError, RunManifest, require_clean_git
 from jaladhar.validation import event_replay
 
 
@@ -47,6 +47,19 @@ def test_dirty_tree_refuses_before_manifest_write(clean_repo: Path) -> None:
         run.start()
 
     assert not path.exists()
+
+
+def test_dirty_tree_message_preserves_first_tracked_path_character(clean_repo: Path) -> None:
+    """V5 red: stripping porcelain output first reported ``racked.txt``.
+
+    If broken: the first character of the first modified tracked path is absent
+    from the refusal diagnostic. Scope: one modified tracked file whose
+    porcelain status begins with a leading space.
+    """
+    (clean_repo / "tracked.txt").write_text("modified\n")
+
+    with pytest.raises(DirtyTreeError, match=r"dirty tree: tracked\.txt$"):
+        require_clean_git(clean_repo)
 
 
 def test_realized_manifest_lifecycle_and_snapshot(clean_repo: Path) -> None:

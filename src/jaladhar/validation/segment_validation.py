@@ -36,7 +36,7 @@ from scipy.sparse import coo_matrix
 from scipy.sparse.csgraph import connected_components
 from scipy.spatial import cKDTree
 
-from jaladhar.provenance import require_clean_git, write_json_atomic
+from jaladhar.provenance import RunManifest, require_clean_git, write_json_atomic
 from jaladhar.terrain.grid import build_grid, load_config
 from jaladhar.validation.density import run_density_pipeline
 from jaladhar.validation.event_replay import compute_s1_sigma0_db
@@ -139,9 +139,10 @@ class SegmentScoreResult:
                 "pu_labeling_defect_rationale": (
                     self.pu_caveat
                     or (
-                        "Positive-Unlabeled (PU) dataset: absence from positive list is unlabelled, "
-                        "not a true negative. Reported 'false alarms' include genuinely flooded segments "
-                        "not in the list. CSI and FAR require true negatives and are not interpretable. "
+                        "Positive-Unlabeled (PU) dataset: absence from the positive list is "
+                        "unlabelled, not a true negative. Reported 'false alarms' include "
+                        "genuinely flooded segments not in the list. CSI and FAR require "
+                        "true negatives and are not interpretable. "
                         "POD and Lift over random null (TP / E[TP]) survive."
                     )
                 ),
@@ -190,8 +191,9 @@ class SegmentScoreResult:
             "far": None if (self.far is None or math.isnan(self.far)) else round(self.far, 6),
             "csi": None if (self.csi is None or math.isnan(self.csi)) else round(self.csi, 6),
             "reference_inventory_caveat": (
-                "Domain-wide microwave change-detection reference. Subject to layover/double-bounce "
-                "miss rate in dense urban and single -16 dB backscatter cut."
+                "Domain-wide microwave change-detection reference. Subject to "
+                "layover/double-bounce miss rate in dense urban and single -16 dB "
+                "backscatter cut."
             ),
             "null_tp_mean": (
                 None
@@ -449,7 +451,7 @@ def compute_contingency_and_null(
     is_positive_unlabeled: bool = False,
     pu_caveat: str | None = None,
 ) -> SegmentScoreResult:
-    """Compute 2x2 contingency metrics, exact statistical tests, and Monte Carlo null model comparison."""
+    """Compute contingency metrics, exact tests, and a Monte Carlo null comparison."""
     p = np.asarray(pred_mask, dtype=bool)
     o = np.asarray(obs_mask, dtype=bool)
     n_tot = len(p)
@@ -601,6 +603,16 @@ def resolve_segment_validation_config(
     return {key: repo_root / str(value) for key, value in required.items()}
 
 
+def _check_segment_output_collision(phase3_run_dir: Path, output_dir: Path) -> None:
+    """Fail fast if read-only solver input and writable output collide (Rule 7)."""
+    p = Path(phase3_run_dir).resolve()
+    o = Path(output_dir).resolve()
+    if p == o:
+        raise KeyError(f"phase3_run_dir and output_dir must be distinct (both resolve to {p})")
+    if p.is_relative_to(o) or o.is_relative_to(p):
+        raise KeyError(f"phase3_run_dir ({p}) and output_dir ({o}) must not be nested/colliding")
+
+
 def load_phase3_closing_water_budget(manifest_path: Path) -> dict[str, Any]:
     """Build the closing account only from the completed Phase 3 manifest."""
     manifest = json.loads(manifest_path.read_text())
@@ -749,7 +761,8 @@ def _run_segment_validation_impl(
     depth_sar_instant_path = phase3_run_dir / "depth_sar_instant_20220905_004028Z.tif"
     if not depth_event_max_path.exists() or not depth_sar_instant_path.exists():
         raise FileNotFoundError(
-            f"Modeled depth rasters missing in {phase3_run_dir}. Required: depth_event_maximum.tif and depth_sar_instant_20220905_004028Z.tif"
+            f"Modeled depth rasters missing in {phase3_run_dir}. Required: "
+            "depth_event_maximum.tif and depth_sar_instant_20220905_004028Z.tif"
         )
 
     with rasterio.open(depth_event_max_path) as src:
@@ -1056,7 +1069,8 @@ def _run_segment_validation_impl(
         seed=seed,
         is_positive_unlabeled=True,
         pu_caveat=(
-            f"Replay-date-eligible ground-truth points with snap distance <= {max_snap_distance_m} m."
+            "Replay-date-eligible ground-truth points with snap distance <= "
+            f"{max_snap_distance_m} m."
         ),
     )
 
@@ -1230,12 +1244,16 @@ def _run_segment_validation_impl(
         "verdict_for_adjudication": {
             "status": "FLAGGED_FOR_ADJUDICATION",
             "findings": [
-                "Ground-truth scoring uses only records eligible on both replay date and configured snap distance; see headline_results for realized metrics.",
+                "Ground-truth scoring uses only records eligible on both replay date and "
+                "configured snap distance; see headline_results for realized metrics.",
                 f"Sentinel-1 change metrics are realized in this report: {sar_headline.to_dict()}.",
                 f"Trunk-road metrics are realized in this report: {trunk_score.to_dict()}.",
-                "Underpass co-location is descriptive evidence only; it does not establish a causal mechanism.",
+                "Underpass co-location is descriptive evidence only; it does not establish "
+                "a causal mechanism.",
             ],
-            "recommendation": "Flag for adjudication. Do not calibrate friction or drain parameters.",
+            "recommendation": (
+                "Flag for adjudication. Do not calibrate friction or drain parameters."
+            ),
         },
     }
 

@@ -19,15 +19,37 @@ prohibited by design.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Sequence
 from dataclasses import dataclass, field
-from datetime import datetime
-from enum import Enum
+from datetime import UTC, datetime, timedelta
+from enum import StrEnum
 from typing import Any
+from urllib.parse import urlparse
 
 import numpy as np
 
 
-class ForcingMode(str, Enum):
+class NowcastUnavailableError(ValueError):
+    """Base error for unavailable or contract-invalid nowcast input."""
+
+    def __init__(self, message: str, *, axis: str = "N-3 DWR/rainfall nowcast access") -> None:
+        super().__init__(message)
+        self.axis = axis
+
+
+class NowcastFetchError(NowcastUnavailableError):
+    """The configured nowcast source could not be fetched or supplied."""
+
+
+class NowcastStaleError(NowcastUnavailableError):
+    """The source validity window cannot cover the requested nowcast."""
+
+
+class NowcastDistrictAbsentError(NowcastUnavailableError):
+    """The source response has no unambiguous Bengaluru Urban feature."""
+
+
+class ForcingMode(StrEnum):
     """Mutually exclusive forcing modes. Blending is strictly prohibited."""
 
     HISTORICAL = "historical"
@@ -174,6 +196,199 @@ class RainfallEvent:
                 f"!= reported volume {reported_vol:.4f} m^3 (diff: {diff:.4e})"
             )
         return True
+
+
+def interval_depth_mm_to_rate_m_s(depth_mm: float, interval_minutes: float) -> float:
+    """Convert one incremental interval depth to a rate without a cadence hardcode."""
+
+    duration = float(interval_minutes)
+    if not np.isfinite(duration) or duration <= 0.0:
+        raise ValueError("interval_minutes must be finite and positive")
+    depth = float(depth_mm)
+    if not np.isfinite(depth) or depth < 0.0:
+        raise ValueError("depth_mm must be finite and non-negative")
+    return depth * (60.0 / duration) / 3600.0 / 1000.0
+
+
+def assert_rate_conversion_parameterised(
+    event: RainfallEvent, native_rates_m_s: Sequence[np.ndarray]
+) -> bool:
+    """Assert realized consumer rates integrate back to each source interval depth."""
+
+    if len(native_rates_m_s) != event.num_intervals:
+        raise AssertionError("consumer rate conversion count does not match event intervals")
+    for number, (interval, native_rates) in enumerate(
+        zip(event.intervals, native_rates_m_s, strict=True), start=1
+    ):
+        rates = np.asarray(native_rates, dtype=np.float64)
+        if rates.shape != (interval.distinct_native_cells,):
+            raise AssertionError(
+                f"consumer rate conversion {number} has shape {rates.shape}, expected "
+                f"({interval.distinct_native_cells},)"
+            )
+        ids = np.asarray(interval.native_cell_ids)
+        if ids.size == 0 or ids.min() < -1 or ids.max() >= interval.distinct_native_cells:
+            raise AssertionError(f"consumer rate conversion {number} has invalid native-cell IDs")
+        covered = ids >= 0
+        if set(int(value) for value in np.unique(ids[covered])) != set(
+            range(interval.distinct_native_cells)
+        ):
+            raise AssertionError(
+                f"consumer rate conversion {number} does not realize every declared native cell"
+            )
+        if np.any(np.asarray(interval.rainfall_grid_mm)[~covered] != 0.0):
+            raise AssertionError(
+                f"consumer rate conversion {number} has rainfall outside native coverage"
+            )
+        realized_depth_mm = np.zeros(interval.shape, dtype=np.float64)
+        realized_depth_mm[covered] = rates[ids[covered]] * interval.interval_minutes * 60.0 * 1000.0
+        if not np.allclose(
+            realized_depth_mm,
+            np.asarray(interval.rainfall_grid_mm, dtype=np.float64),
+            rtol=1e-6,
+            atol=1e-7,
+        ):
+            raise AssertionError(
+                f"consumer rate conversion {number} does not integrate to the realized "
+                f"{interval.interval_minutes}-minute source depth"
+            )
+    return True
+
+
+def _aware_utc(value: Any, field: str) -> datetime:
+    if not isinstance(value, datetime):
+        raise AssertionError(f"{field} must be a datetime")
+    if value.tzinfo is None or value.utcoffset() != timedelta(0):
+        raise AssertionError(f"{field} must be timezone-aware UTC")
+    return value.astimezone(UTC)
+
+
+def assert_nowcast_metadata_contract(event: RainfallEvent) -> bool:
+    """Enforce the frozen nowcast producer/consumer seam on a realized event."""
+
+    if event.mode is not ForcingMode.NOWCAST:
+        raise AssertionError(f"expected nowcast event, got {event.mode!r}")
+    required = {
+        "product_id",
+        "issue_time",
+        "valid_until",
+        "update_time",
+        "fetch_url",
+        "district_name",
+        "imd_category_code",
+        "intensity_mapping",
+        "truncated_at_valid_until",
+        "source_response",
+        "lead_times_minutes",
+        "grid_shape",
+        "grid_crs",
+        "cell_resolution_m",
+    }
+    missing = sorted(required.difference(event.metadata))
+    if missing:
+        raise AssertionError(f"nowcast provenance missing keys: {missing}")
+    if event.metadata["product_id"] not in {
+        "IMD_WFS_NowcastWarningDistrict",
+        "IMD_WFS_NowcastWarningStation",
+    }:
+        raise AssertionError("nowcast product_id is not a frozen IMD product enum")
+    if (
+        event.metadata["product_id"] == "IMD_WFS_NowcastWarningDistrict"
+        and event.metadata["district_name"] != "BANGLORE URBAN"
+    ):
+        raise AssertionError("district nowcast is not BANGLORE URBAN")
+    if event.metadata["imd_category_code"] not in {"cat2", "cat7", "cat12"}:
+        raise AssertionError("nowcast category has no frozen intensity mapping")
+    mapping = event.metadata["intensity_mapping"]
+    if not isinstance(mapping, dict) or not all(
+        key in mapping for key in ("light", "moderate", "heavy", "basis")
+    ):
+        raise AssertionError("nowcast intensity_mapping is incomplete")
+    if type(event.metadata["truncated_at_valid_until"]) is not bool:
+        raise AssertionError("nowcast truncated_at_valid_until must be boolean")
+    fetch_url = event.metadata["fetch_url"]
+    if not isinstance(fetch_url, str) or urlparse(fetch_url).scheme not in {"http", "https"}:
+        raise AssertionError("nowcast fetch_url must be a non-empty HTTP(S) URL")
+    update_time = event.metadata["update_time"]
+    if not isinstance(update_time, str):
+        raise AssertionError("nowcast update_time must preserve the source timestamp string")
+    try:
+        parsed_update = datetime.fromisoformat(update_time.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise AssertionError("nowcast update_time is not ISO-8601") from exc
+    _aware_utc(parsed_update, "event.metadata.update_time")
+    source_response = event.metadata["source_response"]
+    required_source = {
+        "path",
+        "sha256",
+        "fetch_time",
+        "http_status",
+        "cache_decision",
+        "cache_dir",
+        "poll_log_path",
+        "courtesy_interval_seconds",
+        "freshness_seconds",
+    }
+    if not isinstance(source_response, dict) or not required_source.issubset(source_response):
+        raise AssertionError("nowcast source_response provenance envelope is incomplete")
+    if not isinstance(source_response["sha256"], str) or len(source_response["sha256"]) != 64:
+        raise AssertionError("nowcast source_response sha256 is invalid")
+    fetch_time = datetime.fromisoformat(str(source_response["fetch_time"]).replace("Z", "+00:00"))
+    _aware_utc(fetch_time, "event.metadata.source_response.fetch_time")
+    if type(source_response["http_status"]) is not int:
+        raise AssertionError("nowcast source_response http_status must be integer")
+    issue_time = _aware_utc(event.metadata["issue_time"], "event.metadata.issue_time")
+    valid_until = _aware_utc(event.metadata["valid_until"], "event.metadata.valid_until")
+    if valid_until < issue_time:
+        raise AssertionError("nowcast valid_until precedes issue_time")
+    if event.metadata["grid_shape"] != [3421, 3515]:
+        raise AssertionError("nowcast grid shape is not the frozen 3421x3515 identity")
+    if event.metadata["grid_crs"] != "EPSG:32643":
+        raise AssertionError("nowcast grid CRS is not EPSG:32643")
+    if float(event.metadata["cell_resolution_m"]) != 10.0:
+        raise AssertionError("nowcast grid resolution is not 10 m")
+    leads = event.metadata["lead_times_minutes"]
+    if not isinstance(leads, list) or len(leads) != event.num_intervals:
+        raise AssertionError("lead-time provenance length does not match intervals")
+    expected_shape = (3421, 3515)
+    for interval, lead in zip(event.intervals, leads, strict=True):
+        timestamp = _aware_utc(interval.timestamp, "interval.timestamp")
+        if interval.shape != expected_shape:
+            raise AssertionError("nowcast interval shape is not the frozen grid identity")
+        expected_lead = (timestamp - issue_time).total_seconds() / 60.0
+        if abs(float(lead) - expected_lead) > 1e-6:
+            raise AssertionError("interval lead-time provenance does not match timestamps")
+        interval_end = timestamp + timedelta(minutes=interval.interval_minutes)
+        if interval_end > valid_until + timedelta(microseconds=1):
+            raise AssertionError("nowcast interval extends beyond source valid_until")
+        ids = np.asarray(interval.native_cell_ids)
+        covered = ids >= 0
+        if ids.min() < -1 or ids.max() >= interval.distinct_native_cells:
+            raise AssertionError("nowcast native-cell IDs are outside sentinel/declared range")
+        if set(int(value) for value in np.unique(ids[covered])) != set(
+            range(interval.distinct_native_cells)
+        ):
+            raise AssertionError("nowcast native-cell count does not match realized IDs")
+        if np.any(np.asarray(interval.rainfall_grid_mm)[~covered] != 0.0):
+            raise AssertionError("nowcast rainfall exists outside district native-cell coverage")
+        for native_id in range(interval.distinct_native_cells):
+            values = np.asarray(interval.rainfall_grid_mm)[ids == native_id]
+            if values.size == 0 or not np.all(values == values[0]):
+                raise AssertionError("one nowcast native-cell ID maps to non-uniform rainfall")
+        for key in (
+            "product_id",
+            "issue_time",
+            "valid_until",
+            "update_time",
+            "fetch_url",
+            "district_name",
+            "imd_category_code",
+            "source_response",
+        ):
+            if interval.metadata.get(key) != event.metadata.get(key):
+                raise AssertionError(f"interval nowcast metadata {key} differs from event")
+    event.verify_mass_conservation()
+    return True
 
 
 class RainfallAdapter(ABC):
