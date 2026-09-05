@@ -23,8 +23,33 @@ import * as states from "./js/states.js";
 // causal panel is driven explicitly after every segment selection below.
 import "./js/watchlist.js";
 import "./js/search.js";
-import "./js/routing.js";
+// GAP-1 deferred routing: avoid ERR_CONNECTION_REFUSED on standalone dashboard
+// routing.js auto-fetches http://127.0.0.1:8502/policies on import; defer until user interaction
+let _routingLoaded = false;
+let _routingLoadPromise = null;
+async function _ensureRouting(){
+  if(_routingLoaded) return;
+  if(_routingLoadPromise) return _routingLoadPromise;
+  _routingLoaded = true;
+  _routingLoadPromise = import("./js/routing.js").catch(e=>{ console.warn("[routing] lazy load failed", e?.message ?? e); });
+  return _routingLoadPromise;
+}
+// Defer fetch until user opens routing affordance: first click on watchlist or explicit route-request
+document.addEventListener("wf6:route-request", (e)=>{
+  if(!_routingLoaded){
+    e.stopImmediatePropagation();
+    _ensureRouting().then(()=> document.dispatchEvent(new CustomEvent("wf6:route-request",{detail:e.detail})));
+  }
+}, true);
+document.addEventListener("click", (e)=>{
+  const w = document.getElementById("watchlist");
+  if(w && w.contains(e.target)) _ensureRouting();
+}, {capture:true});
+// Also trigger on first interaction anywhere that hints at routing (route button)
+// GAP-1: no auto-load observer — routing stays deferred until explicit user interaction (click or route-request)
 import { CausalPanel } from "./js/causal.js";
+import "./js/comparison.js";
+import "./js/live.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -51,6 +76,73 @@ const rail = new Rail(elements);
 // Chromium, which would silently degrade every causal payload to its empty
 // state (observed live: predicted hits rendered as none_measured).
 const causalPanel = new CausalPanel({ fetchImpl: fetch.bind(globalThis) });
+
+// ---- B7 mode: LIVE default, explicit toggle, localStorage persist only after click ----
+const MODE_KEY = "jaladhar_mode";
+const DEMO_CHIP = "DEMO \u00b7 Sept 2022 event";
+const DEMO_SUB = "Sept 2022 event \u00b7 3-hour forecast issued 00:10 IST";
+const LIVE_CHIP = "LIVE";
+const LIVE_SUB = "no live forecast run yet";
+
+function getStoredMode(){
+  try{ const v=localStorage.getItem(MODE_KEY); if(v==="demo"||v==="live") return v; }catch{}
+  return null;
+}
+function persistMode(m){ try{ localStorage.setItem(MODE_KEY,m);}catch{} }
+function currentMode(){ return globalThis.__JALADHAR_MODE || "live"; }
+function updateChip(mode){
+  const main=document.getElementById("mode-chip-main");
+  const sub=document.getElementById("mode-chip-sub");
+  if(main) main.textContent = mode==="demo" ? DEMO_CHIP : LIVE_CHIP;
+  if(sub){
+    if(mode==="demo"){
+      sub.textContent = "";
+      sub.classList.add("hidden");
+      sub.setAttribute("aria-hidden","true");
+    } else {
+      sub.textContent = LIVE_SUB;
+      sub.classList.remove("hidden");
+      sub.removeAttribute("aria-hidden");
+    }
+  }
+  document.body.classList.toggle("mode-live", mode==="live");
+  document.body.classList.toggle("mode-demo", mode==="demo");
+  const demoBtn=document.getElementById("btn-demo-toggle");
+  const liveBtn=document.getElementById("btn-live-return");
+  const restartBtn=document.getElementById("btn-demo-restart");
+  // exactly ONE opposite-mode toggle visible
+  if(demoBtn) demoBtn.classList.toggle("hidden", mode!=="live");
+  if(liveBtn) liveBtn.classList.toggle("hidden", mode!=="demo");
+  if(restartBtn) restartBtn.classList.toggle("hidden", mode!=="demo");
+  if(elements.gateNote){ elements.gateNote.textContent=""; elements.gateNote.classList.add("hidden"); }
+  // runLabel only in demo mode — single line, ellipsis, no overflow
+  if(elements.runLabel){
+    if(mode==="live"){
+      elements.runLabel.textContent = "";
+      elements.runLabel.classList.add("hidden");
+      elements.runLabel.removeAttribute("title");
+      elements.runLabel.setAttribute("aria-hidden","true");
+    } else {
+      elements.runLabel.textContent = DEMO_SUB;
+      elements.runLabel.title = "Demo 8-frame forecast 18:40\u201321:40Z (+30min over-run)";
+      elements.runLabel.classList.remove("hidden");
+      elements.runLabel.removeAttribute("aria-hidden");
+    }
+  }
+  // status dot: hide demo provenance dot in LIVE
+  if(elements.statusDot){
+    if(mode==="live") elements.statusDot.classList.add("hidden");
+    else elements.statusDot.classList.remove("hidden");
+  }
+  // LIVE FORECAST card is a live-mode affordance only (owner 2026-08-27):
+  // hidden entirely in demo mode where the demo play-out owns the rail.
+  const livePanel = document.getElementById("live-panel");
+  if (livePanel) livePanel.classList.toggle("hidden", mode !== "live");
+  globalThis.__JALADHAR_MODE = mode;
+  globalThis.__JALADHAR_STATE = globalThis.__JALADHAR_STATE || {};
+  globalThis.__JALADHAR_STATE.mode = mode;
+}
+
 const timeline = new Timeline({
   slider: elements.scrubber,
   playBtn: elements.playBtn,
@@ -60,6 +152,10 @@ const timeline = new Timeline({
 });
 
 const engine = new Engine($("cv-static"), $("cv-dyn"), $("cv-ui"));
+// WF7 comparison integration: expose the shared render environment through a
+// single global so comparison.js can return via the SAME state flow (timeline
+// slider + onFrameChange) without cloning logic. No new state is introduced.
+globalThis.__JALADHAR_ENGINE = engine;
 
 // Swap level of detail after the view settles — full geometry at street
 // zoom, coarse at city zoom. Cached after first fetch of each level.
@@ -109,6 +205,8 @@ const env = {
   ready: { basemap: false },
 };
 engine.env = env;
+globalThis.__JALADHAR_ENV = env;
+globalThis.__JALADHAR_TIMELINE = timeline;
 
 // Depth boundaries are DATA: the first band edge must equal the frozen
 // contract's flood threshold served by the backend. Mismatch refuses to
@@ -436,121 +534,327 @@ timeline.onFrameChange = ({ leadIndex, frac }) => {
       })
     );
   }
+  // GAP-4 restart proof observable
+  try{
+    const idx = leadIndex ?? 0;
+    globalThis.__JALADHAR_DEMO_TICK = {i: idx, frac, ts: Date.now(), lead};
+    globalThis.__JALADHAR_STATE = globalThis.__JALADHAR_STATE || {};
+    globalThis.__JALADHAR_STATE.demoTick = globalThis.__JALADHAR_DEMO_TICK;
+  }catch{}
 };
+
+
+// GAP-3 over-run honesty: annotate beyond-horizon valid times (last frame 22:10Z)
+// Presentation-only; horizon derived from realized series frames (offset diff), NOT from comparison payload.
+// Dims timeline tick and watchlist rows for valid_time == last frame's valid_time_utc, suffix '· beyond horizon (+30m)' or fallback '· verified beyond-horizon run state'
+function _beyondInfo(){
+  try{
+    const frames = timeline.seriesFrames ?? globalThis.__JALADHAR_TIMELINE?.seriesFrames ?? null;
+    if(!frames || frames.length<2) return null;
+    const last = frames[frames.length-1];
+    const prev = frames[frames.length-2];
+    const lastValid = last?.valid_time_utc ?? last?.valid_time ?? null;
+    const prevValid = prev?.valid_time_utc ?? null;
+    if(!lastValid) return null;
+    // compute +30m if offsets available, else fallback without time claim
+    let mins = 30;
+    try{
+      if(Number.isFinite(last.offset_seconds) && Number.isFinite(prev.offset_seconds)){
+        mins = Math.round((last.offset_seconds - prev.offset_seconds)/60);
+      }
+    }catch{}
+    const suffix = mins ? `\u00b7 beyond horizon (+${mins}m)` : "\u00b7 verified beyond-horizon run state";
+    const fallbackSuffix = "\u00b7 verified beyond-horizon run state";
+    // Prefer time-derived suffix if mins>0 else fallback
+    const chosen = mins>0 ? suffix : fallbackSuffix;
+    return {lastValid, prevValid, suffix: chosen, lastTag: last.tag ?? null};
+  }catch{ return null; }
+}
+function _annotateTimelineBeyond(){
+  try{
+    const info = _beyondInfo();
+    if(!info) return;
+    const tickEnd = document.getElementById("tick-end");
+    if(tickEnd){
+      const base = Timeline.formatValidTime(info.lastValid);
+      // avoid duplicating suffix if already present
+      if(!tickEnd.textContent.includes("beyond")){
+        const suffixSpan = document.createElement("span");
+        suffixSpan.className = "beyond-hint";
+        suffixSpan.textContent = " " + info.suffix;
+        suffixSpan.style.cssText = "font-size:10px;color:var(--ink-faint);margin-left:6px;font-style:italic;";
+        // tickEnd currently holds formatted time; append suffix
+        tickEnd.textContent = base;
+        tickEnd.appendChild(suffixSpan);
+        tickEnd.classList.add("tick-beyond");
+        tickEnd.title = "beyond-horizon over-run ("+info.suffix+")";
+        tickEnd.style.opacity = "0.55";
+      }
+    }
+    const leadEl = document.getElementById("now-lead");
+    // nowLead shows VALID time; when last frame is held, it already shows last time — add dim via class
+  }catch{}
+}
+function _annotateWatchlistBeyond(){
+  try{
+    const info = _beyondInfo();
+    if(!info) return;
+    const rows = document.querySelectorAll("#watchlist .wf6-row, #watchlist .wf6-lead");
+    // watchlist rows use .wf6-lead text containing formatted valid time
+    const targetText = Timeline.formatValidTime(info.lastValid);
+    document.querySelectorAll("#watchlist .wf6-row").forEach(row=>{
+      const leadEl = row.querySelector(".wf6-lead");
+      if(leadEl && leadEl.textContent.trim()===targetText && !leadEl.textContent.includes("beyond")){
+        const hint = document.createElement("span");
+        hint.className = "beyond-hint";
+        hint.textContent = " " + info.suffix;
+        hint.style.cssText = "font-size:10px;color:var(--ink-faint);margin-left:4px;font-style:italic;";
+        leadEl.appendChild(hint);
+        leadEl.classList.add("beyond-horizon");
+        leadEl.style.opacity = "0.55";
+        leadEl.title = info.suffix;
+        row.classList.add("beyond-horizon");
+        row.style.opacity = "0.55";
+      }
+    });
+    // also dim intersection rows if any with same time (rare)
+  }catch{}
+}
+// Observe watchlist body for row renders
+function _installBeyondObserver(){
+  try{
+    const info = _beyondInfo();
+    if(!info) return;
+    _annotateTimelineBeyond();
+    const host = document.getElementById("watchlist");
+    if(!host) return;
+    const body = host.querySelector(".wf6-body") ?? host;
+    const obs = new MutationObserver(()=>{ _annotateTimelineBeyond(); _annotateWatchlistBeyond(); });
+    obs.observe(body, {childList:true, subtree:true});
+    // also poll after series loads
+    setTimeout(()=>{ _annotateTimelineBeyond(); _annotateWatchlistBeyond(); }, 800);
+    setTimeout(()=>{ _annotateTimelineBeyond(); _annotateWatchlistBeyond(); }, 2000);
+    setTimeout(()=>{ _annotateTimelineBeyond(); _annotateWatchlistBeyond(); }, 5000);
+  }catch{}
+}
+// hook after series loads: wrap bootSeries to install observer
 
 async function boot() {
   states.loading();
   env.reducedMotion = engine.reducedMotion();
   window.__bootStage = "state";
+  let basemapMeta=null;
   try {
-    const [statePayload, basemapMeta] = await Promise.all([
-      loadState(),
-      loadBasemapMeta(),
-    ]);
-    // Ward-vintage resolution (configs/context.yaml ward_vintage_by_product_kind):
-    // a historical-replay product labels with the 2022 layer. Set BEFORE any
-    // engine/wards fetch — the toggle reads this global when first enabled.
-    const forcingKind =
-      statePayload.series?.forcing_kind ?? statePayload.snapshots?.[0]?.forcing_kind;
-    globalThis.__CONTEXT_VINTAGE = forcingKind === "historical_replay" ? "2022" : "2023";
-    window.__bootStage = "basemap";
+    basemapMeta = await loadBasemapMeta();
     assertDepthRule(basemapMeta.depth_rule);
     syncLegendRanges();
-
     env.view = new View(basemapMeta.bbox);
     env.dpr = engine.dpr;
     env.width = engine.width;
     env.height = engine.height;
     env.view.fit(engine.width, engine.height);
     await ensureBasemap(basemapMeta);
-    window.__bootStage = "series-or-lead";
-
-    rail.setRunLabel(statePayload);
     engine.invalidateStatic();
-    window.__bootStage = "timeline";
-
-    if (statePayload.status === "empty") {
-      states.showOverlay({
-        title: "No run loaded",
-        message: statePayload.message,
-      });
-      elements.nowLead.textContent = "NO PRODUCT";
+    window.__bootStage = "mode";
+    // Decide mode: stored explicit -> use it, else LIVE default WITHOUT persisting
+    const stored=getStoredMode();
+    const hasExplicit= stored!==null;
+    let mode = hasExplicit ? stored : "live";
+    updateChip(mode);
+    wireModeToggles(basemapMeta);
+    if(mode==="live"){
+      await enterLive(basemapMeta);
+      window.__bootStage="done";
+      try{ const dm=await (await fetch("/api/drains/meta",{cache:"no-store"})).json(); if(!env.drains) rail.setDrainStatus(dm); }catch{}
+      if(elements.gateNote) elements.gateNote.textContent="";
       return;
     }
-    if (statePayload.status === "error") {
-      states.showOverlay({
-        title: "Product rejected",
-        message: statePayload.message,
-        error: true,
-      });
+    // DEMO path
+    window.__bootStage="series-or-lead";
+    const statePayload = await loadState();
+    // B9 strip G1 badge immediately after rail writes it
+    rail.setRunLabel(statePayload);
+    if(elements.gateNote){ elements.gateNote.textContent=""; elements.gateNote.classList.add("hidden"); }
+    if(elements.runLabel){ elements.runLabel.textContent=DEMO_SUB; elements.runLabel.title="Demo 8-frame forecast 18:40–21:40Z (+30min over-run)"; }
+    if(statePayload.status==="empty"){
+      states.showOverlay({title:"No run loaded", message: statePayload.message});
+      elements.nowLead.textContent="NO PRODUCT";
       return;
     }
-
-    if (statePayload.mode === "series") {
+    if(statePayload.status==="error"){
+      states.showOverlay({title:"Product rejected", message: statePayload.message, error:true});
+      return;
+    }
+    if(statePayload.mode==="series"){
       await bootSeries(statePayload);
+      // annotate beyond-horizon last tick honestly
+      try{
+        const ticks=document.getElementById("tick-end");
+        if(ticks) { ticks.classList.add("tick-beyond"); ticks.title="beyond-horizon over-run (+30 min)"; }
+      }catch{}
       return;
     }
-
+    // Fallback flat (should not happen in wf8, but keep honest without 48h wording)
     const leads = statePayload.leads ?? [];
-    // Item-2 residual (owner adjudication): a flat product realises a single
-    // event-maximum frame — a hindcast window, never a forecast lead. Lead-mode
-    // words ("NOW", "+3h", "now") are therefore banned from its display path:
-    // the hero reads STATUS 48 H EVENT MAXIMUM and the ticks name the event
-    // window instead of formatLead(0)="now".
-    const temporalAggregation =
-      statePayload.snapshots?.[0]?.temporal_aggregation ?? null;
-    const singleEventMaximum =
-      temporalAggregation === "event_maximum" && leads.length === 1;
-    const firstFrame = await timeline.configure(
-      leads,
-      loadProductFrame,
-      singleEventMaximum
-        ? {
-            horizonLabel: "48 H EVENT MAXIMUM",
-            tickStartLabel: "EVENT WINDOW START",
-            tickEndLabel: "48 h EVENT MAXIMUM",
-          }
-        : {}
-    );
-    if (singleEventMaximum) {
-      // Re-asserted after configure() so the label survives any future
-      // reordering inside configure's branch logic.
-      elements.nowLead.textContent = "48 H EVENT MAXIMUM";
-    }
-    // Forecast products (producer run ids carry "forecast"; label field may be
-    // absent): name the stream honestly instead of the generic single-frame
-    // fallback. Lead value comes from the realized snapshot, never typed.
-    const snap0 = statePayload.snapshots?.[0] ?? {};
-    const isForecastRun = /forecast/i.test(String(snap0.run_id ?? ""));
-    if (!singleEventMaximum && leads.length === 1 && isForecastRun) {
-      elements.nowLead.textContent =
-        "FORECAST · lead " + (snap0.lead_minutes ?? 0) + " min";
-    }
+    const firstFrame = await timeline.configure(leads, loadProductFrame, { horizonLabel: leads.length>1 ? DEMO_SUB : "Single realized frame" } );
     env.frameA = firstFrame;
-    rail.updateStats(firstFrame, env.roads);
+    if(firstFrame) rail.updateStats(firstFrame, env.roads);
     states.hideOverlay();
-    window.__bootStage = "done";
-    if (leads.length > 1) {
-      await timeline.ensureFrames(loadProductFrame);
-      timeline.play(); // auto-play once on load, then hold at +3h (guide §6)
-    }
-
-    // Drain snapshot meta for the rail panel (blobs stay lazy until toggled).
-    try {
-      const drainMeta = await (await fetch("/api/drains/meta", { cache: "no-store" })).json();
-      if (!env.drains) rail.setDrainStatus(drainMeta);
-    } catch (err) {
-      rail.setDrainStatus({ available: false, reason: String(err.message ?? err) });
-    }
+    window.__bootStage="done";
+    if(leads.length>1){ await timeline.ensureFrames(loadProductFrame); timeline.play(); }
+    try{ const dm=await (await fetch("/api/drains/meta",{cache:"no-store"})).json(); if(!env.drains) rail.setDrainStatus(dm); }catch(err){ rail.setDrainStatus({available:false, reason: String(err.message ?? err)}); }
   } catch (err) {
-    states.showOverlay({
-      title: "Dashboard failed closed",
-      message: err instanceof Error ? err.message : String(err),
-      error: true,
+    states.showOverlay({title:"Dashboard failed closed", message: err instanceof Error ? err.message : String(err), error:true});
+  }
+}
+
+async function enterLive(basemapMeta){
+  updateChip("live");
+  // timeline/hyeto disabled visible
+  try{ timeline.stop(); }catch{}
+  if(elements.scrubber){ elements.scrubber.disabled=true; elements.scrubber.value="0"; }
+  if(elements.playBtn){ elements.playBtn.disabled=true; elements.playBtn.textContent="▶"; elements.playBtn.title="Live mode — no forecast frames"; }
+  if(elements.tickStart) elements.tickStart.textContent="—";
+  if(elements.tickEnd){ elements.tickEnd.textContent="—"; elements.tickEnd.classList.remove("tick-beyond"); }
+  if(elements.nowLead) elements.nowLead.textContent=LIVE_CHIP;
+  const peakPanel=document.getElementById("peak-panel");
+  if(peakPanel) peakPanel.classList.add("hidden");
+  if(elements.statFlooded) elements.statFlooded.textContent="—";
+  if(elements.statDeepest) elements.statDeepest.textContent="—";
+  if(elements.statDeepestLoc) elements.statDeepestLoc.textContent="";
+  // D1+D2+D3: hide LIVE demo leakage — timeline KPI and watchlist
+  try{
+    const kpi=document.getElementById("wf6tl-kpi");
+    if(kpi){ kpi.style.display="none"; kpi.setAttribute("aria-hidden","true"); }
+    const kpiCluster=document.getElementById("wf6tl-cluster");
+    if(kpiCluster){ /* keep cluster but hide kpi text */ }
+    // watchlist honest empty — dispatch so panel can react
+    document.dispatchEvent(new CustomEvent("jaladhar:live-enter"));
+    const wl=document.getElementById("watchlist");
+    if(wl){
+      const body=wl.querySelector(".wf6-body");
+      const chip=wl.querySelector(".wf6-chip");
+      const statusLine=wl.querySelector(".wf6-statusline");
+      if(chip) chip.textContent="—";
+      if(statusLine) statusLine.style.display="none";
+      if(body){
+        body.replaceChildren();
+        const empty=document.createElement("div");
+        empty.className="wf6-empty";
+        empty.textContent="no live run — streets at risk appear after the first live forecast";
+        body.appendChild(empty);
+      }
+    }
+    // ensure timeline length label hidden in LIVE (demo-only)
+    const len=document.getElementById("wf6tl-length");
+    if(len) len.style.display="none";
+  }catch{}
+  // clear any flood frame
+  env.frameA=null; env.frameB=null; env.interpFrac=0;
+  engine.invalidateDynamic();
+  engine.invalidateStatic();
+  // honest empty-state over still-visible basemap
+  states.showOverlay({title: LIVE_CHIP, message: "no live forecast run yet — the map shows Bengaluru streets and lakes. Use Demo: Sept 2022 event to view the 8-frame 3-hour forecast (18:40–21:40Z, +30min beyond-horizon) until a real run exists."});
+  // honest live probe
+  try{
+    const r=await fetch("/api/forecast/latest",{cache:"no-store"});
+    if(r.status===404){
+      // remain empty
+    }else if(r.ok){
+      const payload=await r.json();
+      const mp=payload.manifest_path || payload.manifestPath || "";
+      const wc=payload.wall_clock_s ?? payload.wall_clock_min ?? "";
+      states.showOverlay({title:"LIVE forecast available", message: "job "+(payload.job_id||"")+" "+(payload.status||"")+(mp?" manifest "+mp:"")+(wc?" wall "+wc:"")});
+      globalThis.__JALADHAR_LIVE_PAYLOAD=payload;
+    }
+  }catch{}
+  globalThis.__JALADHAR_STATE={mode:"live", liveEmpty:true, frameIndex:null};
+  globalThis.__JALADHAR_TIMELINE = timeline;
+  if(elements.gateNote) elements.gateNote.textContent="";
+}
+
+async function reloadForMode(mode, basemapMeta){
+  updateChip(mode);
+  if(mode==="live"){
+    await enterLive(basemapMeta);
+    return;
+  }
+  // demo reload
+  states.loading();
+  try{
+    // restore LIVE-hidden elements for demo
+    try{
+      const kpi=document.getElementById("wf6tl-kpi");
+      if(kpi){ kpi.style.display=""; kpi.removeAttribute("aria-hidden"); }
+      const statusLine=document.querySelector("#watchlist .wf6-statusline");
+      if(statusLine) statusLine.style.display="";
+      const len=document.getElementById("wf6tl-length");
+      if(len) len.style.display="";
+      document.dispatchEvent(new CustomEvent("jaladhar:demo-enter"));
+    }catch{}
+    const statePayload=await loadState();
+    rail.setRunLabel(statePayload);
+    if(elements.gateNote){ elements.gateNote.textContent=""; elements.gateNote.classList.add("hidden"); }
+    if(elements.runLabel){ elements.runLabel.textContent=DEMO_SUB; elements.runLabel.classList.remove("hidden"); }
+    if(statePayload.status!=="ready" || statePayload.mode!=="series"){
+      states.showOverlay({title:"Demo unavailable", message: statePayload.message ?? "series error", error:true});
+      return;
+    }
+    await bootSeries(statePayload);
+    try{ const ticks=document.getElementById("tick-end"); if(ticks){ticks.classList.add("tick-beyond"); ticks.title="beyond-horizon over-run (+30 min)";}}catch{}
+  }catch(err){
+    states.showOverlay({title:"Dashboard failed closed", message: String(err), error:true});
+  }
+}
+
+function wireModeToggles(basemapMeta){
+  const demoBtn=document.getElementById("btn-demo-toggle");
+  const liveBtn=document.getElementById("btn-live-return");
+  const restartBtn=document.getElementById("btn-demo-restart");
+  if(demoBtn && !demoBtn._wired){
+    demoBtn._wired=true;
+    demoBtn.addEventListener("click", async ()=>{
+      const cur=globalThis.__JALADHAR_MODE;
+      if(cur==="demo"){
+        // B10 re-triggerable restart from 0
+        try{ timeline.stop(); }catch{}
+        try{
+          timeline.slider.value="0";
+          const p=timeline.interpolated();
+          // _emit expects leadIndex/frac
+          timeline._emit(p.leadIndex, p.frac);
+          // small delay then play
+          timeline.play();
+        }catch{}
+        return;
+      }
+      persistMode("demo");
+      await reloadForMode("demo", basemapMeta);
+    });
+  }
+  if(liveBtn && !liveBtn._wired){
+    liveBtn._wired=true;
+    liveBtn.addEventListener("click", async ()=>{
+      persistMode("live");
+      await reloadForMode("live", basemapMeta);
+    });
+  }
+  if(restartBtn && !restartBtn._wired){
+    restartBtn._wired=true;
+    restartBtn.addEventListener("click", ()=>{
+      if(globalThis.__JALADHAR_MODE!=="demo") return;
+      try{ timeline.stop(); }catch{}
+      try{
+        timeline.slider.value="0";
+        const p=timeline.interpolated();
+        timeline._emit(p.leadIndex, p.frac);
+        timeline.play();
+      }catch{}
     });
   }
 }
 
+// Frame-series path
 // Frame-series path (WF-3b replay series): values are series indices, labels
 // are valid times, play sweeps the whole realized event.
 async function bootSeries(statePayload) {
@@ -593,6 +897,7 @@ async function bootSeries(statePayload) {
     horizonLabel: describe(indices[indices.length - 1]),
   });
   timeline.seriesFrames = series.frames;
+  try{ _installBeyondObserver(); }catch{}
   env.frameA = firstFrame;
   rail.updateStats(firstFrame, env.roads);
   states.hideOverlay();
@@ -676,7 +981,7 @@ function animateViewTo(worldXy, ms = 420) {
   engine.animate(anim);
 }
 
-// Ward centroids come from the served meta sidecar of the ACTIVE vintage —
+// Ward context comes from the served meta sidecar of the ACTIVE vintage —
 // fetched once, by name only; a miss or failure flies nowhere (no guessed
 // coordinate).
 let wardCentroidsPromise = null;
@@ -694,7 +999,7 @@ function wardCentroids() {
       .then((meta) => {
         const map = new Map();
         for (const ward of meta.wards ?? []) {
-          if (ward?.name && Array.isArray(ward.centroid_m)) map.set(ward.name, ward.centroid_m);
+          if (ward?.name && Array.isArray(ward.centroid_m)) map.set(ward.name, ward);
         }
         return map;
       });
@@ -702,14 +1007,144 @@ function wardCentroids() {
   return wardCentroidsPromise;
 }
 
+// Per-ward geographic extent, decoded from the realized ward blob (same file
+// the ward layer renders). One fetch per session, cached; the bbox is computed
+// over the ward's own rings — never guessed from area or centroid.
+let wardBlobPromise = null;
+function wardBlob() {
+  if (!wardBlobPromise) {
+    const vintage =
+      String(globalThis.__CONTEXT_VINTAGE ?? "2022").replace(/[^0-9]/g, "") || "2022";
+    wardBlobPromise = fetch(`/api/context/wards_${vintage}.bin`, { cache: "no-store" }).then(
+      (res) => {
+        if (!res.ok) throw new Error(`wards bin failed (${res.status})`);
+        return res.arrayBuffer();
+      }
+    );
+  }
+  return wardBlobPromise;
+}
+
+async function wardBbox(name) {
+  const [wards, buffer] = await Promise.all([wardCentroids(), wardBlob()]);
+  const ward = wards.get(name);
+  // Meta semantics (verified against served bytes): ring_ranges hold
+  // VERTEX-index ranges — e.g. Varthuru [60050,60050+657] with vertex_count
+  // 657 — not ring indices. Iterate vertices directly.
+  if (!ward || !Array.isArray(ward.ring_ranges)) return null;
+  // Blob layout (assertWardsBundle contract): u32 nRings, u32 offsets[nRings+1]
+  // (ring -> first vertex), then interleaved f32 x,y per vertex. Ranges index
+  // vertices directly, so only the coords table base matters here.
+  const nRings = new DataView(buffer, 0, 4).getUint32(0, true);
+  const coords = new Float32Array(buffer, 4 + (nRings + 1) * 4);
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity, found = 0;
+  for (const range of ward.ring_ranges) {
+    if (!Array.isArray(range) || range.length !== 2) continue;
+    for (let v = range[0]; v < range[1]; v++) {
+      const x = coords[v * 2];
+      const y = coords[v * 2 + 1];
+      if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+      if (x < x0) x0 = x; if (x > x1) x1 = x;
+      if (y < y0) y0 = y; if (y > y1) y1 = y;
+      found++;
+    }
+  }
+  if (!found || !(x1 > x0) || !(y1 > y0)) return null;
+  return [x0, y0, x1, y1];
+}
+
+// Tight bbox for flown-to segment (C13): compute from realized LOD buffers
+function segmentBbox(roads, segmentId){
+  try{
+    const idx = roads?.indexOfSegment(segmentId);
+    if(idx==null || idx<0 || idx >= (roads.nSegments ?? 0)) return null;
+    for(const [lod, ranges] of roads.segPartCache ?? []){
+      const lines = roads.lods.get(lod);
+      if(!lines || !ranges) continue;
+      if(idx+1 >= ranges.segOffsets.length) continue;
+      if(ranges.segOffsets[idx+1] === ranges.segOffsets[idx]) continue;
+      let x0=Infinity,y0=Infinity,x1=-Infinity,y1=-Infinity;
+      let found=false;
+      for(let p=ranges.segOffsets[idx]; p < ranges.segOffsets[idx+1]; p++){
+        const part = ranges.partIds[p];
+        const start = lines.offsets[part];
+        const end = lines.offsets[part+1];
+        for(let v=start; v < end; v++){
+          const x = lines.coords[v*2];
+          const y = lines.coords[v*2+1];
+          if(!Number.isFinite(x) || !Number.isFinite(y)) continue;
+          if(x<x0) x0=x; if(x>x1) x1=x; if(y<y0) y0=y; if(y>y1) y1=y;
+          found=true;
+        }
+      }
+      if(found) return [x0,y0,x1,y1];
+    }
+  }catch{}
+  return null;
+}
+function animateViewToBbox(bbox, ms=420){
+  const view = env.view;
+  if(!view || !Array.isArray(bbox) || bbox.length!==4) return false;
+  let [x0,y0,x1,y1] = bbox;
+  if(!(x1>x0) || !(y1>y0)){ // point-like: fall back to midpoint pan at tight zoom
+    const cx=(x0+x1)/2, cy=(y0+y1)/2;
+    if(!Number.isFinite(cx) || !Number.isFinite(cy)) return false;
+    // derive small padding box ~ 300m square around point
+    const pad = 150;
+    x0=cx-pad; x1=cx+pad; y0=cy-pad; y1=cy+pad;
+  }
+  const dx = Math.max(1, x1 - x0);
+  const dy = Math.max(1, y1 - y0);
+  const pad = 24; // small padding per spec
+  const W = env.width, H = env.height;
+  if(!(W>0) || !(H>0)) return false;
+  const fitScale = Math.min((W - pad*2)/dx, (H - pad*2)/dy, view.maxScale);
+  const targetScale = Math.min(Math.max(fitScale, view.minScale), view.maxScale);
+  const cx = (x0 + x1)/2, cy = (y0 + y1)/2;
+  const toTx = W/2 - cx * targetScale;
+  const toTy = H/2 + cy * targetScale;
+  // save target then clamp through existing logic, restore origin
+  const fromScale = view.scale, fromTx = view.tx, fromTy = view.ty;
+  view.scale = targetScale; view.tx = toTx; view.ty = toTy;
+  view.clampToBbox();
+  const clampedScale = view.scale, clampedTx = view.tx, clampedTy = view.ty;
+  view.scale = fromScale; view.tx = fromTx; view.ty = fromTy;
+  if(engine.reducedMotion() || (Math.abs(clampedTx-fromTx)<0.5 && Math.abs(clampedTy-fromTy)<0.5 && Math.abs(clampedScale-fromScale)<0.001)){
+    view.scale = clampedScale; view.tx = clampedTx; view.ty = clampedTy;
+    engine.invalidateStatic(); engine.invalidateDynamic(); engine.invalidateUI();
+    engine.onViewChanged?.();
+    return true;
+  }
+  if(viewFlyAnim) viewFlyAnim.done = true;
+  const start = performance.now();
+  const anim = {
+    done: false, continuous: false,
+    tick(now){
+      const t = Math.min(1, (now-start)/ms);
+      const e = t*t*(3 - 2*t);
+      view.scale = fromScale + (clampedScale - fromScale)*e;
+      view.tx = fromTx + (clampedTx - fromTx)*e;
+      view.ty = fromTy + (clampedTy - fromTy)*e;
+      engine.invalidateStatic(); engine.invalidateDynamic(); engine.invalidateUI();
+      if(t>=1){ anim.done=true; engine.onViewChanged?.(); }
+      return !anim.done;
+    }
+  };
+  viewFlyAnim = anim;
+  engine.animate(anim);
+  return true;
+}
 document.addEventListener("wf6:select-street", (event) => {
   const detail = event.detail ?? {};
   const segmentId = Number(detail.segment_id);
   if (!env.ready.basemap || !Number.isFinite(segmentId)) return;
-  // Street midpoint via the road network's own LOD buffers — same approach
-  // as rail.js's N10 context line; no second geometry source is invented.
-  const midpoint = rail.segmentMidpoint(env.roads, segmentId);
-  if (midpoint) animateViewTo(midpoint);
+  const bbox = segmentBbox(env.roads, segmentId);
+  if(bbox){
+    animateViewToBbox(bbox);
+  } else {
+    const midpoint = rail.segmentMidpoint(env.roads, segmentId);
+    if (midpoint) animateViewTo(midpoint);
+  }
   selectSegmentLikePick(segmentId);
 });
 
@@ -732,14 +1167,43 @@ document.addEventListener("wf6:select-intersection", (event) => {
 document.addEventListener("wf6:select-ward", (event) => {
   const name = event.detail?.name;
   if (!env.ready.basemap || typeof name !== "string") return;
-  wardCentroids()
-    .then((centroids) => {
-      const xy = centroids.get(name);
-      if (xy) animateViewTo(xy);
+  // Owner 2026-08-27: selecting a ward (search pick or press) flies OUT to the
+  // ward's vicinity — fit the ward's realized ring extent with a comfortable
+  // margin, not a centroid pan at whatever zoom the map was left at.
+  wardBbox(name)
+    .then((bbox) => {
+      if (bbox) {
+        // Expand ~25% linearly per side so the ward reads as an area in
+        // context, not a screen-filling polygon.
+        const [x0, y0, x1, y1] = bbox;
+        const mx = (x1 - x0) * 0.25;
+        const my = (y1 - y0) * 0.25;
+        animateViewToBbox([x0 - mx, y0 - my, x1 + mx, y1 + my]);
+      } else {
+        // Honest fallback: centroid pan at current zoom when the ward's ring
+        // extent is unavailable from the served context.
+        wardCentroids()
+          .then((wards) => {
+            const ward = wards.get(name);
+            const xy = ward?.centroid_m;
+            if (Array.isArray(xy)) animateViewTo(xy);
+          })
+          .catch((err) => {
+            console.warn("[wf6] ward fly-to unavailable:", err instanceof Error ? err.message : err);
+          });
+      }
     })
     .catch((err) => {
-      console.warn("[wf6] ward fly-to unavailable:", err instanceof Error ? err.message : err);
+      console.warn("[wf6] ward extent fly-to failed:", err instanceof Error ? err.message : err);
     });
+});
+
+// Escape restores hero: clear street/ward selection, reset highlight
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") {
+    try { env.selectedSeg = null; engine.invalidateUI(); } catch {}
+    try { rail.clearSelection(); } catch {}
+  }
 });
 
 boot();

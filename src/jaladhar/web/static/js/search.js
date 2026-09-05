@@ -57,7 +57,7 @@ function normalizeEntry(entry) {
 
 const SEARCH_CSS = `
 .wf6-search{
-  position:absolute; top:12px; z-index:40; width:min(${SEARCH_WIDTH}px, calc(100% - 24px));
+  position:absolute; top:12px; z-index:50; width:min(${SEARCH_WIDTH}px, calc(100% - 24px));
   font-size:13px; transition:left var(--base,240ms) var(--ease,ease);
 }
 .wf6-search input{
@@ -66,6 +66,7 @@ const SEARCH_CSS = `
 }
 .wf6-search input::placeholder{ color:var(--ink-faint); }
 .wf6-search input:focus{ border-color:var(--accent); }
+.wf6-search input:focus-visible{ outline:1px solid var(--accent); outline-offset:2px; }
 .wf6-search-list{
   position:absolute; left:0; right:0; top:calc(100% + 4px); margin:0; padding:4px;
   list-style:none; background:rgba(16,21,31,0.97); border:1px solid var(--line);
@@ -73,9 +74,10 @@ const SEARCH_CSS = `
 }
 .wf6-search-list[hidden]{ display:none; }
 .wf6-search-opt{
-  display:flex; align-items:center; gap:8px; padding:6px 9px; border-radius:7px;
-  cursor:pointer; color:var(--ink);
+  display:flex; align-items:center; gap:8px; padding:6px 9px; border-radius:6px;
+  cursor:pointer; color:var(--ink); transition:background var(--fast) var(--ease);
 }
+.wf6-search-opt:hover{ background:var(--panel-hi); }
 .wf6-search-opt.active{ background:var(--panel-hi); }
 .wf6-search-kind{
   flex:none; min-width:42px; text-align:center; border:1px solid var(--line);
@@ -113,7 +115,7 @@ export class LocationSearch {
 
   mount() {
     ensureStyles();
-    const host = document.getElementById("map-area") ?? document.body;
+    const host = document.querySelector(".app") ?? document.getElementById("map-area") ?? document.body;
     const root = el("div", "wf6-search");
     root.setAttribute("role", "search");
 

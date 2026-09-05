@@ -1,0 +1,94 @@
+# WF-2 coupling config — runs/wf2_design_phase/spec.md §5, verbatim.
+# EVERY key below is touched by resolve_config or refused (CLAUDE.md rule 7).
+# ‡ = declared assumption v1 (unsourced, pinned, versioned, never tuned).
+
+coupling:
+  enabled: true                       # bool; false => stock solver path, byte-identical behaviour
+  coupling_version: "wf2-coupling-v1.0.0"   # str; pins freeboard + capacity_rule_version + graph fingerprint
+  device: "cpu"                       # str; DEFAULT AND REQUIRED "cpu" for this workflow (V12: no GPU hours)
+  legacy_sink_replacement: true       # bool; must be true when enabled (guard b declaration)
+
+solver_ref:
+  config: "configs/solver.yaml"       # path; host solver/domain/compute config chain (storm, physics, timestep, mass)
+
+graph:                                # V8 seam inputs
+  gpkg: "runs/drain_graph_build/drain_graph.gpkg"                 # path
+  adjacency: "runs/drain_graph_build/drain_graph_adjacency.json"  # path
+  # Spec §5 recorded a rename here ("drain_graph_build manifest.json" ->
+  # "manifest.json"); the realized target on disk is what ships:
+  manifest: "runs/drain_graph_build/manifest.json"                # path
+  # WF-2 M1 (owner directive): visible terminal/outfall definition, v2-lake-boundary.
+  # Consumer-side seed derivation only — no producer artefact is rewritten.
+  terminal_definition: "configs/terminal_definition.yaml"         # path; loaded at run START
+  require_dag: true                   # bool; consumer asserts manifest.graph_is_dag else refuse
+  expected_counts: {nodes: 1721, edges: 1587}                     # ints; asserted at load
+  expected_partition: {capacity_bearing: 1208, zero_slope: 61, area_capped: 32, synthetic: 286}  # ints; asserted
+
+exchange:
+  # Physics keys below are PINNED to the module constants jaladhar.coupling.exchange
+  # executes — parity is enforced by resolve_config pass 4(d). They are NOT free-
+  # tunable: changing one requires editing the exchange.py constant AND bumping
+  # coupling_version together. ‡ declared-assumption keys stay declared-assumption
+  # but must EQUAL the pinned constants under the same rule.
+  hf_floor_m: 0.001                   # float; MUST equal solver physics.hf_floor_m AND exchange.HF_FLOOR_M (both asserted)
+  regime_switch_m: 0.1                # float; == exchange.REGIME_SWITCH_M (pinned); h_eff < this -> weir (inclusive lower bound weir)
+  cw: 1.7                             # float; == exchange.WEIR_COEFF_CW (pinned); cited (§6)
+  cd: 0.65                            # float; == exchange.ORIFICE_COEFF_CD (pinned); cited (§6)
+  capture_cap_fraction: 0.9           # float; == exchange.CAPTURE_CAP_FRACTION (pinned); per-step per-cell capture cap multiplier
+  return_cap_fraction: 0.9            # float; == exchange.RETURN_CAP_FRACTION (pinned); per-step per-node return cap multiplier
+  capture_radius_m: 20.0              # ‡ float; cells beyond radius from every node never capture
+  a_open_width_fraction: 0.1          # ‡ float; == exchange.A_OPEN_WIDTH_FRACTION (pinned); A_open = width_mean_m * this
+
+router:
+  null_edge_policy: "q_zero_always"   # const; ONLY legal value (D-C pin). Any other value refuses.
+  denominator: "capacity_bearing_only"# const; outgoing split denominator excludes null/synthetic edges
+  no_substepping: true                # const; graph advances on host adaptive dt only
+
+storage:
+  assumed_freeboard_m: 1.5            # ‡ float; == exchange.ASSUMED_FREEBOARD_M (pinned); surcharge activation head; DECLARED ASSUMPTION v1
+  isolated_node_width_m: 2.285        # float; tertiary nominal width fallback (contract-pinned)
+  shaft_length_proxy_m: 1.0           # float; node_plan_area = width_mean * this (contract-pinned proxy)
+
+budget:
+  relative_tolerance: 1.0e-3          # float; contract tolerance, unchanged, REPORTED
+  judged_bar_relative: 1.0e-4         # float; invariant mass-closes HARD bar (total-water form)
+  realized_reference_residual: 1.79e-05  # float; replay#2 reference [F], reported beside, NOT a gate
+  total_water_judged: true            # bool; the judged residual is the total-water form (§10.3)
+
+dt:
+  min_fraction_of_uncoupled: 0.5      # float; K1 kill threshold: coupled steps <= 2x uncoupled steps; MUST be > 0 (K1 divides by it — resolver-refused at 0)
+  indirect_cfl_alarm_factor: 0.902    # float; sqrt(1/1.23): +23% h_max <=> -10% dt alarm (§10.5)
+
+diagnostics:
+  falsifier_set: "runs/wf2_falsifier_preregistration/surcharge_prediction_set.json"  # path; loaded at run START
+  refuse_start_on_missing_falsifier: true   # bool
+  suspicious_deadend_share: 0.5       # float; dead-end share of GT-matched returned volume above this => SUSPICIOUS
+  ground_truth_manifest: "runs/groundtruth/manifest.json"  # path; 24 points [F]
+  # D-GT owner ruling 2026-08-26: attribute each GT point to the NEAREST drain EDGE and report
+  # that edge's DOWNSTREAM NODE as responsible ("water surcharges at a node and runs along the
+  # reach"). 'node' mode is RETAINED but SUPERSEDED-BY-RULING (regression/A-B evidence only).
+  attribution_mode: "edge"            # enum node|edge; default per D-GT ruling 2026-08-26
+  attribution_radius_m: 40.0          # ‡ float; GT matched iff within INCLUSIVE radius of nearest edge polyline
+  # C2/D2 fix (round 3): node-mode attribution radius as its OWN leaf. Node mode's
+  # historical pinned value was 100.0 m since v1 (declared assumption ‡, never tuned);
+  # sharing attribution_radius_m (now the EDGE-mode 40 m) into node dispatch silently
+  # confounded any A/B against history.
+  attribution_radius_node_m: 100.0    # historical node-mode radius (pinned round-2); separated from edge radius 40.0 per D-GT ruling 2026-08-26
+  attribution_radius_basis: "D-GT owner ruling 2026-08-26: attribute each GT point to the NEAREST drain EDGE within a radius justified by drain-catchment geometry and report that edge's DOWNSTREAM NODE as responsible ('water surcharges at a node and runs along the reach'); radius chosen anti-tuning as ceil-to-10m(min(2 x exchange.capture_radius_m=20m, half median internode spacing=172.7m)) = 40m, anchors + choice rule PRE-REGISTERED in runs/wf2_gt_edges/manifest.json BEFORE any match count existed (runs/wf2_gt_edges/edge_distribution_summary.json); match rate reported honestly AS A FINDING, never tuned upward to raise matches (threshold-shopping banned)"  # provenance string, verbatim-intent citation
+  g2_min_returned_m3: 1.0             # float; contract anti-vacuity floor
+
+outputs:                              # ALL touched by resolve_config (post-simulation included)
+  run_dir: "runs/wf2_coupled"         # path
+  manifest: "runs/wf2_coupled/manifest.json"                      # path; written at START, updated in place
+  surcharge_events_csv: "runs/wf2_coupled/products/surcharge_events.csv"  # path; EXACT G2 schema
+  event_continuity_csv: "runs/wf2_coupled/products/event_continuity.csv"  # path; per-event second ledger (graft)
+  depth_series_dir: "runs/wf2_coupled/depth"                      # path
+  write_every_s: 900.0                # float; depth raster cadence
+
+smoke:
+  window_pad_cells: 50                # int; padding around predicted-node bounding box
+  min_predicted_nodes_in_window: 10   # int; toy window must contain >= this many predicted nodes
+  max_window_cells: 16384             # int; <= 128x128
+  duration_s: 3600.0                  # float; simulated seconds
+  max_steps: 20000                    # int
+  cpu_budget_wall_clock_min: 30.0     # float; refuse to start above this projected wall clock

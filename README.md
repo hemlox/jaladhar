@@ -1,107 +1,42 @@
 # JALADHAR
 
-> To design a high-resolution, real-time Urban Flood Nowcasting System (0–3 hour lead time) capable
-> of predicting street-level inundation before it happens, by coupling rainfall nowcasts with a 2D
-> high-resolution terrain model and a graph-based hydraulic model of the city's stormwater drain
-> network, including surcharge and backflow onto streets.
+Urban flood nowcasting: a rainfall nowcast drives a GPU 2D shallow-water solver over a 10 m terrain
+grid, coupled every timestep to a directed graph of the city's storm drains (capture → capacity-
+limited routing → surcharge back onto the street). Output is a per-street flood status and depth
+band with lead time, served through a live dashboard and a vehicle-aware routing API.
 
 **Smart India Hackathon 2026 — problem statement 26085** (MoES / NCMRWF, Software, Disaster
-Management). Bengaluru. Private repository.
-
-Re-scoped 2026-08-24 from the project's own earlier statement; see
-[`docs/SIH-26085-ALIGNMENT.md`](docs/SIH-26085-ALIGNMENT.md) for what changed and why.
-
----
+Management). Development city: Bengaluru. Next city: open decision — see the handover.
 
 ## Start here
 
-**New agent or collaborator → [`docs/SIH-26085-ALIGNMENT.md`](docs/SIH-26085-ALIGNMENT.md), then
-[`docs/HANDOVER.md`](docs/HANDOVER.md).** Do not start from `SPEC.md` — it is the spec, not the
-state, and its §8 thresholds are retired.
-
-| file | what it is |
+| | |
 |---|---|
-| [`docs/SIH-26085-ALIGNMENT.md`](docs/SIH-26085-ALIGNMENT.md) | **current scope, measured Phase 3 result, the signed gate G1–G5, work remaining** |
-| [`docs/HANDOVER.md`](docs/HANDOVER.md) | orientation, current state, the open problem |
-| [`docs/OPEN-ITEMS.md`](docs/OPEN-ITEMS.md) | live blockers — N-1 drain capacity, N-2 network connectivity, N-3 DWR access |
-| [`docs/BOOTSTRAP.md`](docs/BOOTSTRAP.md) | how to get a runnable checkout — `data/` does not ship |
-| [`CLAUDE.md`](CLAUDE.md) | standing rules — binding on every agent. Each rule cites the incident that earned it |
+| [`docs/HANDOVER.md`](docs/HANDOVER.md) | **the only project document** — state, measured findings, what the demo shows vs what is real, city-switch plan, 2–3 month roadmap, open items |
+| [`AGENTS.md`](AGENTS.md) | standing rules, binding on every agent and human |
+| [`deploy.sh`](deploy.sh) | `./deploy.sh --check` verifies a checkout; `./deploy.sh` launches dashboard (8501) + routing API (8502) |
+| `configs/` | every city-specific value lives here; `configs/contracts/` are the frozen machine-read interfaces |
 
-## Status in one table
+## Status in one table (2026-09-05)
 
 | | |
 |---|---|
-| Terrain, 2D solver, forcing, validation harness | **built** — ~60% of the system |
-| SPEC §8 Phase 3 gate | **discharged as measured, not passed** — 0/16 depth, BBMP 59.90% |
-| Depth deficit | **structural, measured** — all parametric levers at bounds buy <10% of what's needed |
-| Drain graph + surcharge (26085 centrepiece) | **not built** — the research contribution |
-| Nowcast ingestion, dashboard, routing API | **not built** |
-| [`docs/OPEN-ITEMS.md`](docs/OPEN-ITEMS.md) | live ledger, open items only |
-| [`docs/SPEC.md`](docs/SPEC.md) | the full 8-phase spec |
-| [`docs/phases/`](docs/phases/) | phase writeups |
-| [`docs/reference/`](docs/reference/) | ground truth, data audits, walkthroughs |
-| [`docs/archive/`](docs/archive/) | superseded material; commits reference it, so it stays |
-| [`logs/`](logs/) | raw agent reports and the independent audit, chronological |
-| [`prompts/`](prompts/) | reusable goal scaffolding and the verification contract |
+| Terrain conditioning, 2D solver, forcing adapters, validation harness | **built, measured** |
+| Drain graph (1,721 nodes / 1,587 edges, cited CPHEEO capacities, observed vs synthesised tagged) | **built** |
+| Surface ↔ drain coupling with surcharge return | **built, executed at tile scope; not used in the demo** — 96.87% of surcharge lands on drain reaches with no mapped outlet |
+| 3 h forecast product, 8-frame series, sub-minute on a storm tile | **built** — driven by rainfall that actually fell (perfect nowcast), not an issued nowcast |
+| Dashboard (LIVE / DEMO modes, watchlist, search, per-street detail) | **built** |
+| Routing API (vehicle-aware, gated) | **built — refuses by design** while the accuracy gate fails |
+| Live IMD nowcast ingestion | adapter written and contract-tested; **no endpoint configured, never fetched** |
+| Street-level accuracy gate G1 | **FAIL** — 104/399 complaint points, lift 1.30 vs ≥60% / ≥3.0 |
 
-## Status
-
-Phase 3 engineering integration is complete: the merged terrain/provenance/replay path passes the
-CPU suite and a wet real-input GPU smoke. **The scientific Phase 3 gate is paused, open, and not
-passed.** The completed science-blocker evidence is adverse: both tested Sentinel-1 reference
-routes are instrument-invalid; official hourly telemetry contains no Bengaluru Urban/Rural rows for
-the September 2022 event; and curation yields 31 flood-location attestations but only 15 auditable
-depth observations, below the 30–50 depth target. A clean preflight also refuses the repaired
-48-hour replay at 12.650 GPU-hours against the configured 10-hour ceiling. Phases 4–8 remain
-unauthorized under the fixed spec.
-
-See [`docs/HANDOVER.md`](docs/HANDOVER.md) for the exact continuation point and
-[`docs/phases/phase3-writeup.md`](docs/phases/phase3-writeup.md) for the finding/reading split. Do
-not interpret a successful smoke, stable mass balance, or passing unit tests as observational
-validation.
-
-## Setup
+## Quick start
 
 ```bash
-uv venv --python 3.11 && source .venv/bin/activate
-# Choose exactly one Torch backend:
-uv pip install --torch-backend=cpu torch==2.6.0       # CPU / no NVIDIA dGPU
-# uv pip install --torch-backend=cu124 torch==2.6.0  # RTX 4060 / CUDA 12.4
-uv pip install -e .
-cp .env.example .env && chmod 600 .env              # fill values required by your fetches
-python scripts/bootstrap_data.py                    # unpack the 5.8 MB seed bundle
+./deploy.sh --check      # verifies every artifact the demo loads; starts nothing
+./deploy.sh              # dashboard http://127.0.0.1:8501 · routing http://127.0.0.1:8502/health
+CUDA_VISIBLE_DEVICES="" .venv/bin/python -m pytest -q -p no:cacheprovider
 ```
 
-Python 3.11 is pinned — `richdem`, `whitebox` and `osmnx` wheel coverage on 3.13 is poor.
-If installing `whitebox` under an absolute path containing spaces prints `chmod: cannot access`, run
-`python scripts/repair_whitebox_permissions.py`; see [`docs/BOOTSTRAP.md`](docs/BOOTSTRAP.md).
-
-Production stages expose `typer` CLIs either as `python -m jaladhar...` modules or scripts. Runtime
-paths and compute choices belong in `configs/`; current known exceptions are tracked as code debt,
-not treated as a configuration guarantee. The CPU laptop and collaborator RTX 4060 use the same
-lockfile but install different Torch backends; see [`docs/BOOTSTRAP.md`](docs/BOOTSTRAP.md).
-
-## Data
-
-`data/` is 8.8 GB and does not ship. **`data/seed/` does** — 5.8 MB of inputs that are irreplaceable
-or expensive to re-source: the 24 hand-built ground-truth points, the 399 BBMP locations, the
-1,988 km BBMP rajakaluve network, the news corpus, and the 2,534-entry underpass register.
-`python scripts/bootstrap_data.py` verifies and unpacks it, then lists what to fetch. Everything
-else — FABDEM/GLO-30, GPM IMERG, Sentinel-1, OSM, Microsoft buildings, all derived rasters — comes
-from CLIs under `src/jaladhar/`. See [`docs/BOOTSTRAP.md`](docs/BOOTSTRAP.md).
-
-Licence note: FABDEM is **CC BY-NC-SA**. That non-commercial exposure is live and deliberate, not
-overlooked — see `docs/archive/open-items-full-2026-08-18.md`, item 2.
-
-## Secrets
-
-Credentials live in `.env` at the repo root, `chmod 600`, gitignored since the first commit and
-never present in git history. Only `.env.example` ships. Never echo them into logs, agent reports,
-or transcripts.
-
-## Reproducibility
-
-Current provenance-bearing runners must refuse dirty trees, write one JSON manifest at run start,
-snapshot resolved config, and update that same manifest to a terminal state. Historical manifests
-that violate this contract are explicit debt and do not prove acceptance. Numeric claims require a
-file in `data/` or a logged run in `runs/`; see `CLAUDE.md` rules 3, 6, 7 and V9.
+`data/` and `runs/` do not ship in git. A full checkout with the Bengaluru artifacts is
+distributed as an archive (see the handover, "Restore").

@@ -53,6 +53,9 @@ export class Engine {
     }
     this.width = cssW;
     this.height = cssH;
+    // Viewport tracking for View.clampToBbox viewport-fallback (viewfix):
+    // last-known viewport recorded by host resize handler.
+    try { globalThis.__JALADHAR_VIEWPORT = { width: cssW, height: cssH }; } catch {}
     if (this.env) {
       this.env.dpr = this.dpr;
       this.env.width = cssW;
@@ -458,7 +461,8 @@ function installWardsToggle(engine) {
   label.append(input, glyph, text);
   layersDiv.appendChild(label);
 
-  input.addEventListener("change", () => {
+  // Shared toggle path — honours CURRENT checkbox state, reuses cached bundle.
+  function syncWardsToggle() {
     label.classList.toggle("on", input.checked);
     if (input.checked) {
       ensureWards(engine)
@@ -484,5 +488,7 @@ function installWardsToggle(engine) {
     } else {
       fadeWards(engine, false);
     }
-  });
+  }
+
+  input.addEventListener("change", syncWardsToggle);
 }

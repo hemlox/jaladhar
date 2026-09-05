@@ -18,6 +18,24 @@ The HTTP surface is intentionally small:
 * ``/api/drains/causal?segment_id=`` maps one street segment onto nearby
   predicted-overcapacity drain edges via an injected midpoint provider over
   the realized centreline GeoPackage.
+* ``/api/comparison2022`` streams the realized WF8 sim-vs-sim agreement
+  (runs/wf8_sim_vs_sim_3h_vs_replay/comparison.json) — every number
+  in the strip is read from this file, never hardcoded (rule 3). Honest 404
+  {"error":"comparison product missing"} when the artifact is absent. Load-once
+  cache, verbatim bytes.
+* ``/api/comparison2022/observed.json`` is retired: returns 404
+  {"error":"retired: SAR observed view replaced by sim-vs-sim agreement"}.
+
+Response shapes
+---------------
+
+``/api/comparison2022``: the WF8 comparison.json object verbatim (keys: kind,
+banned_note, left, right, offset, counts, metrics, band_cross_tab,
+provenance) — a cross-model consistency statement, neither panel is an
+observation; the word accuracy is deliberately absent.
+
+``/api/comparison2022/observed.json``: retired — 404
+{"error":"retired: SAR observed view replaced by sim-vs-sim agreement"}.
 
 Run the module with ``python -m jaladhar.web.app serve``.  ``check`` is a
 CPU-only smoke check that does not create or mutate a run.
@@ -28,8 +46,13 @@ from __future__ import annotations
 import csv
 import json
 import mimetypes
+import os
 import re
+import subprocess
+import tempfile
 import threading
+import time
+import uuid
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -52,7 +75,7 @@ from jaladhar.validation.depth_product_contract import (
 from jaladhar.web.basemap import BUNDLE, BasemapError, gzip_if_accepted
 from jaladhar.web.drains import READER as DRAIN_READER
 from jaladhar.web.intersections import build_intersections
-from jaladhar.web.series import detect_series
+from jaladhar.web.series import FrameSeries, detect_series
 from jaladhar.web.watchlist import build_watchlist, resolve_product_source
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -100,6 +123,11 @@ def _event_maximum_label(raw: Any) -> Any:
 # so no path traversal is expressible (the served path is CONTEXT_DIR/name
 # with name fixed by this table, never by the request beyond it).
 CONTEXT_DIR = REPO_ROOT / "data" / "interim" / "context"
+# Assets served from their realized repository location instead of CONTEXT_DIR.
+# Same strict allowlist semantics: the request name maps to ONE literal path.
+CONTEXT_ASSET_ALT_PATHS: dict[str, Path] = {
+    "vehicle_wading_policy.json": REPO_ROOT / "data" / "curation" / "vehicle_wading_policy.json",
+}
 CONTEXT_ASSET_TYPES: dict[str, str] = {
     "wards_2022.bin": "application/octet-stream",
     "wards_2022.meta.json": "application/json",
@@ -108,10 +136,167 @@ CONTEXT_ASSET_TYPES: dict[str, str] = {
     "segment_ward_2022.csv.gz": "application/gzip",
     "search_index.json": "application/json",
     "forcing_series.json": "application/json",
+    "vehicle_wading_policy.json": "application/json",
 }
 
 # Realized street-centreline artifact for the causal geometry provider.
 ROAD_CENTRELINES_PATH = REPO_ROOT / "data" / "interim" / "terrain" / "roads_centrelines.gpkg"
+
+# ---- Ward analysis (owner 2026-08-27): area click -> ward-level stats ------
+# Membership realizes segment_id -> (street_name, ward_no, ward_name) from the
+# served context artifact; per-frame flooded state comes from the ACTIVE
+# series' warmed arrays. Nothing here guesses: every count traces to the
+# membership CSV rows and the frame's segment product bytes.
+_WARD_MEMBERSHIP_LOCK = threading.Lock()
+_WARD_MEMBERSHIP: dict[str, Any] | None = None
+
+
+def _ward_membership() -> dict[str, Any]:
+    global _WARD_MEMBERSHIP
+    import gzip
+
+    import numpy as np
+
+    with _WARD_MEMBERSHIP_LOCK:
+        if _WARD_MEMBERSHIP is not None:
+            return _WARD_MEMBERSHIP
+        path = CONTEXT_DIR / "segment_ward_2022.csv.gz"
+        if not path.is_file():
+            raise DashboardError(f"ward membership artifact missing: {path}")
+        ward_names: list[str] = []
+        name_to_no: dict[str, int] = {}
+        street_by_segment: dict[int, str] = {}
+        ward_of_segment = np.zeros(176172, dtype="<u4")  # 0 = unmapped sentinel
+        with gzip.open(path, "rt", encoding="utf-8", newline="") as handle:
+            reader = csv.DictReader(handle)
+            for row in reader:
+                try:
+                    seg = int(row["segment_id"])
+                    ward_no = int(row["ward_no"])
+                except (TypeError, ValueError, KeyError) as exc:
+                    raise DashboardError(f"ward membership row unreadable: {exc}") from exc
+                ward_name = (row.get("ward_name") or "").strip()
+                if ward_name and ward_name not in name_to_no:
+                    name_to_no[ward_name] = ward_no
+                    ward_names.append(ward_name)
+                if 1 <= seg <= 176171:
+                    ward_of_segment[seg] = ward_no
+                    street = (row.get("street_name") or "").strip()
+                    if street:
+                        street_by_segment[seg] = street
+        _WARD_MEMBERSHIP = {
+            "path": path,
+            "ward_names": ward_names,
+            "name_to_no": name_to_no,
+            "street_by_segment": street_by_segment,
+            "ward_of_segment": ward_of_segment,
+        }
+        return _WARD_MEMBERSHIP
+
+# ---- WF8 sim-vs-sim comparison artifact (replaces WF7 SAR observed-vs-predicted) ----
+# Retired: WF7 SAR observed-vs-predicted (runs/wf7_obs_vs_pred_20220905) is retired;
+# this endpoint now serves the sim-vs-sim agreement (runs/wf8_sim_vs_sim_3h_vs_replay).
+# Startup-resolved path; served honestly (404 {"error":"comparison product missing"}) when absent.
+# Load-once cache (bytes) like CAUSAL_MIDPOINTS precedent.
+COMPARISON_JSON_PATH = REPO_ROOT / "runs" / "wf8_sim_vs_sim_3h_vs_replay" / "comparison.json"
+_COMPARISON_LOCK = threading.Lock()
+_COMPARISON_CACHE: bytes | None = None
+_COMPARISON_CACHE_ERROR: str | None = None
+
+# ---- WF8 comparison right panel: admitted Sep-2022 replay series frames ----
+# The sim-vs-sim agreement names a replay frame (right side). Only the ACTIVE
+# demo series is served via /api/product.bin, so the replay frame travels its
+# own route here — same FrameSeries producer code path, lazily instantiated on
+# first use so dashboard boot behaviour is unchanged when the overlay is never
+# opened. Frame tag is allowlist-validated; nothing outside this realized run
+# directory is reachable.
+REPLAY_SERIES_DIR = REPO_ROOT / "runs" / "wf3_replay2_uncoupled_baseline_frames_v2"
+_REPLAY_FRAME_TAG_RE = re.compile(r"^t\d{6,8}$")
+_REPLAY_SERIES_LOCK = threading.Lock()
+_REPLAY_SERIES: "FrameSeries | None" = None
+
+
+def _replay_series() -> "FrameSeries":
+    global _REPLAY_SERIES
+    with _REPLAY_SERIES_LOCK:
+        if _REPLAY_SERIES is None:
+            if not (REPLAY_SERIES_DIR / "manifest.json").is_file():
+                raise DashboardError(
+                    f"replay frame series manifest missing: {REPLAY_SERIES_DIR}"
+                )
+            _REPLAY_SERIES = FrameSeries(REPLAY_SERIES_DIR, repo_root=REPO_ROOT)
+        return _REPLAY_SERIES
+
+# ---- Live-refresh (WF LIVE) -------------------------------------------------
+# In-memory registry for POST-triggered tile runs. Single-flight via semaphore,
+# 120 s cooldown. Tile hard-coded server-side; request body cannot change it.
+LIVE_TILE = "1200,2055,1200,2078"
+LIVE_TILE_TUPLE = (1200, 2055, 1200, 2078)
+LIVE_COOLDOWN_S = 120
+LIVE_JOBS: dict[str, dict[str, Any]] = {}
+LIVE_JOBS_LOCK = threading.Lock()
+LIVE_SINGLE_FLIGHT = threading.Semaphore(1)
+LIVE_LAST_START: dict[str, Any] = {"ts": None, "iso": None}
+
+
+def _live_manifest_authoritative(job: dict[str, Any]) -> dict[str, Any]:
+    """Enrich job with realized manifest state when present (V1).
+
+    Manifest ``status`` is authoritative for running->completed. Returns a
+    shallow copy enriched with manifest-derived wall_clock_s/steps etc when
+    available, plus manifest_path/out_dir. Never trusts thread status alone.
+    """ 
+    enriched = dict(job)
+    out_dir_str = job.get("out_dir")
+    if not out_dir_str:
+        return enriched
+    try:
+        manifest_path = REPO_ROOT / job.get("manifest_path", "") if job.get("manifest_path") else REPO_ROOT / out_dir_str / "manifest.json"
+        # Prefer relative manifest_path if job has it, else derived
+        if not manifest_path.is_file():
+            alt = REPO_ROOT / out_dir_str / "manifest.json"
+            if alt.is_file():
+                manifest_path = alt
+        if manifest_path.is_file():
+            payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+            if isinstance(payload, dict):
+                enriched["manifest_status"] = payload.get("status")
+                enriched["manifest_path"] = payload.get("manifest_path") or str(manifest_path.relative_to(REPO_ROOT))
+                # authoritative transition
+                m_status = payload.get("status")
+                if m_status == "completed" and enriched.get("status") in ("queued", "running"):
+                    enriched["status"] = "completed"
+                    if not enriched.get("finished_utc"):
+                        enriched["finished_utc"] = payload.get("end_time_iso")
+                elif m_status == "failed" and enriched.get("status") in ("queued", "running"):
+                    enriched["status"] = "failed"
+                # latency / wall_clock
+                latency = payload.get("latency_g4") or {}
+                if isinstance(latency, dict):
+                    enriched["wall_clock_s"] = latency.get("wall_clock_sec")
+                    enriched["wall_clock_min"] = latency.get("wall_clock_min")
+                    enriched["steps"] = latency.get("steps")
+                    enriched["g4_passes"] = latency.get("g4_passes")
+                    enriched["latency"] = latency
+                # tile / valid time
+                enriched["tile"] = payload.get("tile") or {"canonical_coords": list(LIVE_TILE_TUPLE)}
+                enriched["valid_time_utc"] = payload.get("window", {}).get("end") or payload.get("forecast_experiment", {}).get("valid_utc")
+                enriched["completed_utc"] = payload.get("end_time_iso")
+                # gpu
+                if "gpu_realized" in payload:
+                    enriched["gpu_realized"] = payload.get("gpu_realized")
+                # out_dir listing hint — existence check only, no heavy stat
+                try:
+                    out_abs = REPO_ROOT / out_dir_str
+                    if out_abs.is_dir():
+                        enriched["out_dir_exists"] = True
+                        enriched["out_dir_listing_hint"] = sorted([p.name for p in out_abs.iterdir()][:12])
+                except Exception:
+                    pass
+    except Exception:
+        pass
+    return enriched
+
 
 
 class RoadMidpoints:
@@ -277,6 +462,48 @@ def _lane_payload(store: DashboardStore, kind: str, frame_param: str) -> dict[st
     with _LANES_CACHE_LOCK:
         _LANES_CACHE[cache_key] = payload
     return payload
+
+
+
+def _serve_comparison(handler: BaseHTTPRequestHandler) -> None:
+    """Serve WF8 sim-vs-sim agreement verbatim (load-once cache)."""
+    global _COMPARISON_CACHE, _COMPARISON_CACHE_ERROR
+    with _COMPARISON_LOCK:
+        if _COMPARISON_CACHE is not None:
+            body = _COMPARISON_CACHE
+            handler.send_response(HTTPStatus.OK)
+            handler.send_header("Content-Type", "application/json; charset=utf-8")
+            handler.send_header("Content-Length", str(len(body)))
+            handler.send_header("Cache-Control", "no-store")
+            handler.end_headers()
+            handler.wfile.write(body)
+            return
+        if _COMPARISON_CACHE_ERROR is not None:
+            _json_response(handler, HTTPStatus.NOT_FOUND, {"error": "comparison product missing"})
+            return
+        path = COMPARISON_JSON_PATH
+        if not path.is_file():
+            _COMPARISON_CACHE_ERROR = "missing"
+            _json_response(handler, HTTPStatus.NOT_FOUND, {"error": "comparison product missing"})
+            return
+        try:
+            body = path.read_bytes()
+            json.loads(body.decode("utf-8"))
+            _COMPARISON_CACHE = body
+        except Exception as exc:  # noqa: BLE001
+            _COMPARISON_CACHE_ERROR = f"{type(exc).__name__}: {exc}"
+            _json_response(handler, HTTPStatus.INTERNAL_SERVER_ERROR, {"error": f"comparison artifact unreadable: {exc}"})
+            return
+        handler.send_response(HTTPStatus.OK)
+        handler.send_header("Content-Type", "application/json; charset=utf-8")
+        handler.send_header("Content-Length", str(len(body)))
+        handler.send_header("Cache-Control", "no-store")
+        handler.end_headers()
+        handler.wfile.write(body)
+
+
+def _serve_comparison_observed(handler: BaseHTTPRequestHandler) -> None:
+    _json_response(handler, HTTPStatus.NOT_FOUND, {"error": "retired: SAR observed view replaced by sim-vs-sim agreement"})
 
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
@@ -1487,7 +1714,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 self, HTTPStatus.NOT_FOUND, {"error": f"context asset not served: {name}"}
             )
             return
-        path = CONTEXT_DIR / name
+        path = CONTEXT_ASSET_ALT_PATHS.get(name) or (CONTEXT_DIR / name)
         try:
             body = path.read_bytes()
         except OSError as exc:
@@ -1590,6 +1817,35 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 return
             gzip_if_accepted(self, blob, "application/octet-stream")
             return
+        if request.path == "/api/replay_frame.bin":
+            query = parse_qs(request.query)
+            tag = (query.get("tag") or [""])[0].strip()
+            if not _REPLAY_FRAME_TAG_RE.fullmatch(tag):
+                _json_response(
+                    self, HTTPStatus.BAD_REQUEST, {"error": f"invalid replay frame tag: {tag!r}"}
+                )
+                return
+            try:
+                replay = _replay_series()
+                index = next(
+                    (i for i, fr in enumerate(replay.frames) if fr.tag == tag), None
+                )
+                if index is None:
+                    raise DashboardError(f"replay series declares no frame {tag}")
+                with replay.lock:
+                    if index not in replay.warm:
+                        raise DashboardError(f"frame {tag} is not warm yet")
+                blob = replay.frame_blob(index)
+            except DashboardError as exc:
+                _json_response(self, HTTPStatus.CONFLICT, {"error": str(exc)})
+                return
+            except Exception as exc:  # noqa: BLE001 - honest failure, never a guess
+                _json_response(
+                    self, HTTPStatus.CONFLICT, {"error": f"{type(exc).__name__}: {exc}"}
+                )
+                return
+            gzip_if_accepted(self, blob, "application/octet-stream")
+            return
         if request.path == "/api/basemap/meta":
             self._serve_basemap_meta()
             return
@@ -1646,6 +1902,49 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 return
             _json_response(self, HTTPStatus.OK, payload)
             return
+        if request.path == "/api/comparison2022":
+            _serve_comparison(self)
+            return
+        if request.path == "/api/comparison2022/observed.json":
+            _serve_comparison_observed(self)
+            return
+        if request.path == "/api/forecast/status":
+            query = parse_qs(request.query)
+            job_ids = query.get("job_id")
+            job_id = job_ids[0].strip() if job_ids and job_ids[0] else ""
+            if not job_id:
+                _json_response(self, HTTPStatus.BAD_REQUEST, {"error": "job_id query param required"})
+                return
+            with LIVE_JOBS_LOCK:
+                job = LIVE_JOBS.get(job_id)
+                job_copy = dict(job) if job else None
+            if job_copy is None:
+                _json_response(self, HTTPStatus.NOT_FOUND, {"error": f"unknown job_id {job_id}"})
+                return
+            enriched = _live_manifest_authoritative(job_copy)
+            # sync back authoritative status into registry if it transitioned
+            if enriched.get("status") != job_copy.get("status"):
+                with LIVE_JOBS_LOCK:
+                    if job_id in LIVE_JOBS:
+                        LIVE_JOBS[job_id].update({k: enriched[k] for k in ("status","finished_utc","wall_clock_s","wall_clock_min","steps","manifest_status") if k in enriched})
+            _json_response(self, HTTPStatus.OK, enriched)
+            return
+        if request.path == "/api/forecast/latest":
+            with LIVE_JOBS_LOCK:
+                jobs = list(LIVE_JOBS.values())
+            if not jobs:
+                _json_response(self, HTTPStatus.NOT_FOUND, {"error": "no live forecast jobs yet"})
+                return
+            # most recent terminal job, else most recent overall
+            terminal = [j for j in jobs if j.get("status") in ("completed","failed")]
+            chosen = None
+            if terminal:
+                chosen = max(terminal, key=lambda j: j.get("finished_utc") or j.get("started_utc") or "")
+            else:
+                chosen = max(jobs, key=lambda j: j.get("started_utc") or "")
+            enriched = _live_manifest_authoritative(dict(chosen))
+            _json_response(self, HTTPStatus.OK, enriched)
+            return
         if request.path == "/api/segments":
             query = parse_qs(request.query)
             try:
@@ -1674,7 +1973,332 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 return
             _json_response(self, HTTPStatus.OK, payload)
             return
+        if request.path == "/api/ward_analysis":
+            # Owner 2026-08-27: clicking a general area inside a ward shows
+            # ward-level analysis in the right sidebar. Stats compute from the
+            # ACTIVE series' warmed frame arrays restricted to the ward's
+            # membership rows — same bytes the map paints, grouped by ward.
+            query = parse_qs(request.query)
+            ward_name = (query.get("ward") or [""])[0].strip()
+            index = _query_int(query, "index")
+            series = self.server.store.series
+            if not ward_name or series is None or not series.ready:
+                _json_response(
+                    self,
+                    HTTPStatus.CONFLICT,
+                    {"error": "ward_analysis requires ward and an active frame series"},
+                )
+                return
+            if index is None:
+                index = 0
+            if index < 0 or index >= len(series.frames):
+                raise DashboardError(f"frame index {index} out of range")
+            import numpy as np
+
+            try:
+                membership = _ward_membership()
+            except DashboardError as exc:
+                _json_response(self, HTTPStatus.CONFLICT, {"error": str(exc)})
+                return
+            ward_no = membership["name_to_no"].get(ward_name)
+            if ward_no is None:
+                _json_response(
+                    self, HTTPStatus.NOT_FOUND, {"error": f"unknown ward: {ward_name!r}"}
+                )
+                return
+            with series.lock:
+                warm = series.warm.get(index)
+            if warm is None:
+                _json_response(
+                    self, HTTPStatus.CONFLICT, {"error": f"frame {index} is not warm yet"}
+                )
+                return
+            ward_mask = membership["ward_of_segment"][1:] == ward_no  # dense idx 0..N-1
+            n_segments = int(ward_mask.sum())
+            if n_segments == 0:
+                _json_response(
+                    self,
+                    HTTPStatus.NOT_FOUND,
+                    {"error": f"ward {ward_name!r} maps to no segments in the realized membership"},
+                )
+                return
+            flooded_mask = ward_mask & (warm.status[: warm.band_high.size] == 1)
+            n_flooded = int(flooded_mask.sum())
+            deepest_idx = -1
+            deepest_cm = 0
+            if n_flooded:
+                # Index-based max: np.where(flooded, u2, -1) would promote the
+                # fill to unsigned (65535) and pick a dry row — bit us once.
+                flooded_rows = np.flatnonzero(flooded_mask)
+                deepest_idx = int(flooded_rows[int(warm.band_high[flooded_rows].argmax())])
+                deepest_cm = int(warm.band_high[deepest_idx])
+            # Peak of the SERIES for this ward across warm frames.
+            peak_index = None
+            peak_n = -1
+            peak_time = None
+            for fi in range(len(series.frames)):
+                with series.lock:
+                    fw = series.warm.get(fi)
+                if fw is None:
+                    continue
+                fn = int(((fw.status[: fw.band_high.size] == 1) & ward_mask).sum())
+                if fn > peak_n:
+                    peak_n = fn
+                    peak_index = fi
+                    peak_time = series.frames[fi].valid_time_utc
+            deepest_street = None
+            if deepest_idx >= 0:
+                deepest_street = membership["street_by_segment"].get(deepest_idx + 1)
+            _json_response(
+                self,
+                HTTPStatus.OK,
+                {
+                    "kind": "ward_analysis",
+                    "ward_name": ward_name,
+                    "ward_no": ward_no,
+                    "frame_index": index,
+                    "frame_valid_time_utc": series.frames[index].valid_time_utc,
+                    "n_segments": n_segments,
+                    "n_flooded": n_flooded,
+                    "flood_share": round(n_flooded / n_segments, 6),
+                    "deepest_cm": deepest_cm if n_flooded else None,
+                    "deepest_segment_id": deepest_idx + 1 if deepest_idx >= 0 else None,
+                    "deepest_street": deepest_street,
+                    "peak_frame_index": peak_index,
+                    "peak_valid_time_utc": peak_time,
+                    "peak_n_flooded": peak_n if peak_n >= 0 else None,
+                    "provenance": {
+                        "membership_path": "data/interim/context/segment_ward_2022.csv.gz",
+                        "series_manifest_path": _repo_relative(series.manifest_path, REPO_ROOT),
+                    },
+                },
+            )
+            return
+        if request.path == "/api/segment_series":
+            # Owner ask (2026-08-27): "when will this street flood?" — scan the
+            # segment across every warm frame of the ACTIVE series and answer
+            # with realized per-frame state, including the first flooded instant.
+            query = parse_qs(request.query)
+            segment_id = _query_int(query, "segment_id")
+            series = self.server.store.series
+            if segment_id is None or series is None:
+                _json_response(
+                    self,
+                    HTTPStatus.CONFLICT,
+                    {"error": "segment_series requires segment_id and an active frame series"},
+                )
+                return
+            meta = series.meta_payload()
+            frames_out = []
+            first_flooded = None
+            try:
+                for index in range(len(series.frames)):
+                    if index not in series.warm:
+                        continue
+                    row = series.lookup_segment(index, segment_id)
+                    if row is None:
+                        continue
+                    status = row["flood_status"]
+                    if status == "flooded" and first_flooded is None:
+                        first_flooded = index
+                    frames_out.append(
+                        {
+                            "index": index,
+                            "tag": meta["frames"][index]["tag"],
+                            "valid_time_utc": meta["frames"][index]["valid_time_utc"],
+                            "flood_status": status,
+                            "band_low_cm": row["band_low_cm"],
+                            "band_high_cm": row["band_high_cm"],
+                        }
+                    )
+            except DashboardError as exc:
+                _json_response(self, HTTPStatus.CONFLICT, {"error": str(exc)})
+                return
+            horizon = meta["frames"][-1]["valid_time_utc"] if meta["frames"] else None
+            _json_response(
+                self,
+                HTTPStatus.OK,
+                {
+                    "segment_id": segment_id,
+                    "n_frames_served": len(frames_out),
+                    "frames": frames_out,
+                    "first_flooded_index": first_flooded,
+                    "first_flooded_valid_time_utc": (
+                        frames_out[first_flooded]["valid_time_utc"]
+                        if first_flooded is not None and frames_out
+                        else None
+                    ),
+                    "series_last_valid_time_utc": horizon,
+                    "source_manifest_path": meta["manifest_path"],
+                },
+            )
+            return
         self._serve_static(request.path)
+
+    def do_POST(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler API
+        request = urlsplit(self.path)
+        if request.path == "/api/forecast/trigger":
+            # Honest pre-flight (owner incident 2026-08-27): a CPU-forced
+            # session (run_demo.sh exports CUDA_VISIBLE_DEVICES="") cannot run
+            # the tile — the runner refuses unmeasured CPU compute budgets,
+            # so a trigger here could only ever spawn a doomed job. Refuse
+            # BEFORE queueing, with the real reason.
+            cpu_forced = (
+                os.environ.get("JALADHAR_CPU_ONLY", "").strip().lower() in {"1", "true", "yes"}
+                or os.environ.get("CUDA_VISIBLE_DEVICES", "x").strip() == ""
+            )
+            if cpu_forced:
+                body = json.dumps(
+                    {
+                        "error": (
+                            "live refresh unavailable: this session was launched "
+                            "CPU-forced (run_demo.sh); the tile runner refuses "
+                            "unmeasured CPU compute budgets. Relaunch the dashboard "
+                            "outside run_demo.sh (GPU session) to enable live refresh."
+                        ),
+                        "reason_code": "cpu_forced_session",
+                    }
+                ).encode("utf-8")
+                self.send_response(HTTPStatus.CONFLICT)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.send_header("Content-Length", str(len(body)))
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                self.wfile.write(body)
+                return
+            # Single-flight: try acquire without blocking -> 409 if contended
+            if not LIVE_SINGLE_FLIGHT.acquire(blocking=False):
+                body = json.dumps({"error": "single-flight: another forecast is running", "retry_after_seconds": 60}).encode("utf-8")
+                self.send_response(HTTPStatus.CONFLICT)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.send_header("Content-Length", str(len(body)))
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("Retry-After", "60")
+                self.end_headers()
+                self.wfile.write(body)
+                return
+            now = time.time()
+            last_ts = LIVE_LAST_START.get("ts")
+            if last_ts is not None and (now - last_ts) < LIVE_COOLDOWN_S:
+                remaining = int(LIVE_COOLDOWN_S - (now - last_ts)) + 1
+                try:
+                    LIVE_SINGLE_FLIGHT.release()
+                except ValueError:
+                    pass
+                body = json.dumps({"error": f"cooldown: {remaining}s remaining", "retry_after_seconds": remaining}).encode("utf-8")
+                self.send_response(HTTPStatus.TOO_MANY_REQUESTS)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.send_header("Content-Length", str(len(body)))
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("Retry-After", str(remaining))
+                self.end_headers()
+                self.wfile.write(body)
+                return
+            job_id = uuid.uuid4().hex[:12]
+            started_utc = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+            timestamp_slug = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+            out_dir = REPO_ROOT / f"runs/live_3h_{timestamp_slug}"
+            base_out = out_dir
+            counter = 0
+            while out_dir.exists():
+                counter += 1
+                out_dir = Path(str(base_out) + f"_{counter}")
+                if counter > 10:
+                    out_dir = REPO_ROOT / f"runs/live_3h_{timestamp_slug}_{job_id}"
+                    break
+            LIVE_LAST_START["ts"] = now
+            LIVE_LAST_START["iso"] = started_utc
+            out_rel = out_dir.relative_to(REPO_ROOT).as_posix() if out_dir.is_relative_to(REPO_ROOT) else str(out_dir)
+            manifest_rel = (out_dir / "manifest.json").relative_to(REPO_ROOT).as_posix() if (out_dir / "manifest.json").is_relative_to(REPO_ROOT) else str(out_dir / "manifest.json")
+            job: dict[str, Any] = {
+                "job_id": job_id,
+                "status": "queued",
+                "out_dir": out_rel,
+                "out_dir_abs": str(out_dir),
+                "manifest_path": manifest_rel,
+                "started_utc": started_utc,
+                "finished_utc": None,
+                "error": None,
+                "pid": None,
+                "log_path": None,
+                "tile": LIVE_TILE,
+            }
+            with LIVE_JOBS_LOCK:
+                LIVE_JOBS[job_id] = job
+
+            def _run_job(jid: str = job_id, od: Path = out_dir, jref: dict[str, Any] = job) -> None:
+                try:
+                    with LIVE_JOBS_LOCK:
+                        if jid in LIVE_JOBS:
+                            LIVE_JOBS[jid]["status"] = "running"
+                    log_path = Path(tempfile.gettempdir()) / f"live_3h_{jid}.log"
+                    with LIVE_JOBS_LOCK:
+                        if jid in LIVE_JOBS:
+                            LIVE_JOBS[jid]["log_path"] = str(log_path)
+                    with open(log_path, "wb") as log_file:
+                        proc = subprocess.Popen(
+                            [str(REPO_ROOT / ".venv/bin/python"), "scripts/run_windowed_forecast_3h.py", "--tile", LIVE_TILE, "--out", str(od), "--dirty-tree-reason", "live-refresh tile verification — tree dirtied by live wiring (app.py+live.js), recorded-not-laundered"],
+                            cwd=str(REPO_ROOT),
+                            stdout=log_file,
+                            stderr=subprocess.STDOUT,
+                        )
+                        with LIVE_JOBS_LOCK:
+                            if jid in LIVE_JOBS:
+                                LIVE_JOBS[jid]["pid"] = proc.pid
+                        proc.wait()
+                        exit_code = proc.returncode
+                    if exit_code != 0:
+                        tail = ""
+                        try:
+                            text_log = log_path.read_text(encoding="utf-8", errors="ignore")
+                            tail = text_log[-2000:]
+                            snippet = tail[-400:].strip() if tail else f"process exited {exit_code}"
+                        except Exception:
+                            snippet = f"process exited {exit_code}"
+                        with LIVE_JOBS_LOCK:
+                            if jid in LIVE_JOBS:
+                                LIVE_JOBS[jid]["status"] = "failed"
+                                LIVE_JOBS[jid]["error"] = snippet[:400]
+                                LIVE_JOBS[jid]["finished_utc"] = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+                    else:
+                        manifest_path = od / "manifest.json"
+                        final_status = "completed"
+                        try:
+                            if manifest_path.is_file():
+                                m = json.loads(manifest_path.read_text(encoding="utf-8"))
+                                final_status = m.get("status", "completed")
+                        except Exception:
+                            pass
+                        with LIVE_JOBS_LOCK:
+                            if jid in LIVE_JOBS:
+                                LIVE_JOBS[jid]["status"] = final_status if final_status in ("completed", "failed") else "completed"
+                                if LIVE_JOBS[jid]["status"] == "failed" and not LIVE_JOBS[jid].get("error"):
+                                    LIVE_JOBS[jid]["error"] = "manifest reports failed"
+                                LIVE_JOBS[jid]["finished_utc"] = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+                except Exception as exc:  # noqa: BLE001
+                    with LIVE_JOBS_LOCK:
+                        if jid in LIVE_JOBS:
+                            LIVE_JOBS[jid]["status"] = "failed"
+                            LIVE_JOBS[jid]["error"] = f"{type(exc).__name__}: {exc}"[:400]
+                            LIVE_JOBS[jid]["finished_utc"] = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+                finally:
+                    try:
+                        LIVE_SINGLE_FLIGHT.release()
+                    except ValueError:
+                        pass
+
+            thread = threading.Thread(target=_run_job, daemon=True)
+            thread.start()
+            body = json.dumps({"job_id": job_id, "status": "queued", "poll": f"/api/forecast/status?job_id={job_id}"}).encode("utf-8")
+            self.send_response(HTTPStatus.ACCEPTED)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        _json_response(self, HTTPStatus.NOT_FOUND, {"error": "not found"})
+        return
 
     def log_message(self, format: str, *args: Any) -> None:
         # Keep the dashboard's terminal output useful for a demo rehearsal.

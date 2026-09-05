@@ -1,7 +1,15 @@
 {
   "name": "drain_graph",
-  "version": "1.1.0-frozen (wave-2 adversarial review findings applied)",
+  "version": "1.2.0 (D-G null-capacity edge class amendment, 2026-08-26)",
   "frozen": "2026-08-24",
+  "amendment_history": [
+    {
+      "version": "1.2.0",
+      "date": "2026-08-26",
+      "what": "Defines an explicit NULL-CAPACITY EDGE CLASS for OBSERVED edges whose capacity_basis declares 'no capacity claim; routing only' (realized prefixes: 'zero measured slope ...' and 'contributing area <N> ha exceeds the rational method validity limit ...'). Membership requires ALL numeric capacity fields NULL; such edges are routing conduit with no capacity claim and are NOT loadable as zero (a declared-null edge carrying any numeric capacity field is refused). consumer_assertion_3's zero_length_dropped_count refusal is replaced by a RECORDED PROPERTY: dropped zero-length edges are a data fact counted in manifest counts and echoed in the reader result, never a load refusal.",
+      "why": "OWNER ADJUDICATION 2026-08-26 (D-G): the 93 null-capacity observed edges (61 zero-slope + 32 area-capped) exist because the owner ruled they carry 'no capacity claim, routing only' (M11 round + WF-1b validity cap) without checking that frozen v1.1.0 defined a legal class for them - the omission was the owner's error, so the fix is this contract amendment, not a consumer workaround. capacity_block_consistency now accepts the declared class; the M11 zero-slope exemption that v1.1.0 left unreachable is subsumed by it. zero_length_dropped_count=42 on the realized artefact likewise records a build fact, not a defect."
+    }
+  ],
   "reviewed": "wave-1 adversarial review x2 (muse-spark + deepseek-v4-flash); findings manually verified against realized code before adoption",
   "path": "data/processed/drain_graph.gpkg (layers drain_nodes, drain_edges) + data/processed/drain_graph_adjacency.json + runs/drain_graph_build/manifest.json",
   "producer": "WF-1 src/jaladhar/drainage/graph.py::stitch_components (deterministic, CPU-only); config keys in configs/drainage.yaml resolved at startup (rule 7)",
@@ -28,7 +36,7 @@
     ],
     "direction_rule": "per observed reach walk D8 from BOTH endpoints; from_node = endpoint whose walk reaches the other; if neither reaches, from_node = higher elev_m at snapped cell; tie -> lexicographic (x_m, y_m); connector direction = walk direction; direction_confidence=low if walk traversed synthetic flat cells (wang-and-liu 0.001 m increments inside retained basins)",
     "parallel_edge_dedup": "dedupe on (from_node,to_node,order): keep observed over synthesised; among observed keep longer reach; record dropped_edge_count + dropped_edge_ids in manifest",
-    "degenerate_edge_policy": "self-loops (from==to) dropped+counted (self_loop_dropped_count); post-snap length < 0.05 m or null slope dropped+counted (zero_length_dropped_count); consumers refuse load if either count nonzero",
+    "degenerate_edge_policy": "self-loops (from==to) dropped+counted (self_loop_dropped_count; loadable only under the M5b sanction: enumerated ids + owner adjudication ref); post-snap length < 0.05 m or null slope dropped+counted (zero_length_dropped_count) - AMENDED v1.2.0: consumers RECORD zero_length_dropped_count as a data fact, they do NOT refuse on it",
     "topology": "final directed graph MUST be acyclic; stitcher applies documented break rule (drop lowest slope synthetic in cycle) until acyclic; manifest carries graph_is_dag=true + cycle_break_count"
   },
   "determinism": {
@@ -47,7 +55,8 @@
       "required_fields": ["edge_id:int64 PK", "from_node:int64 FK upstream end", "to_node:int64 FK downstream end", "order:enum[primary,secondary,tertiary,synthetic_connector]", "edge_source:enum[observed,synthesised] (bidirectional assertion with order)", "direction_confidence:enum[high,medium,low]", "direction_basis:text naming which rule fired"],
       "capacity_bearing_fields_observed_only": ["width_m:float primary 6.71 secondary 4.88 tertiary 2.285 nominal midpoint of [1.83,2.74]", "width_low_m width_high_m band corners", "width_basis:text embedding ft->m derivation chain incl exact rounded width ('primary 22 ft = 6.71 m' etc, BBMP norm via Times of India 2016-08-02 chain)", "n_manning:float allowed values {0.013,0.015,0.030} only", "n_basis:text paired via allowed table {0.013:'CPHEEO 2019 Ch5 concrete as-new low', 0.015:'CPHEEO 2019 Ch5 open-concrete design', 0.030:'CPHEEO 2019 Ch5 unlined/grass high'}", "depth_m_solved:float rational+Manning solution", "depth_basis:'solved:rational+Manning'", "q_capacity_nom_m3s:float = safety_factor * q_capacity_full_m3s, safety_factor in [0.85,0.95] CPHEEO Ch5", "q_capacity_low_m3s q_capacity_high_m3s:min/max over joint parameter box {n in [0.013,0.030], C in [0.65,0.80], width in band, climate_uplift in [1.10,1.30]} at corners", "capacity_basis:text JSON object with keys {width,shape,side_slope,assumption,n,slope,depth,design_return_period_yr,climate_uplift,runoff_C,safety_factor,sources[]} every value non-empty sources[] entries contain http-or-document-name; declared assumptions use key 'assumption' with one-colon values 'assumption:<label>' e.g. 'assumption:side_slope_1H1V'"],
       "measured_geometry_all_edges": ["length_m:float>0 measured walk/reach geometry - REQUIRED on ALL edges including synthetic connectors (NOT part of the NULL set)", "slope_m_per_m:float>=0 finite measured from conditioned DEM endpoints post-snap - REQUIRED on ALL edges (null-slope drop policy applies to observed edges only; synthetic connectors always carry measured slope from their D8 path)"],
-      "synthetic_connectors": "ALL capacity fields NULLABLE and NULL for synthetic_connector edges - a D8 walk is a routing conduit only, carrying invented hydraulics violates rule 1. capacity_basis text = 'synthetic connector: no surveyed cross-section; routing conduit only, no capacity claim'. Consumers skip NULL-capacity edges for capture."
+      "synthetic_connectors": "ALL capacity fields NULLABLE and NULL for synthetic_connector edges - a D8 walk is a routing conduit only, carrying invented hydraulics violates rule 1. capacity_basis text = 'synthetic connector: no surveyed cross-section; routing conduit only, no capacity claim'. Consumers skip NULL-capacity edges for capture.",
+      "null_capacity_edge_class": "AMENDED v1.2.0 (see amendment_history): OBSERVED edges whose capacity_basis contains 'no capacity claim' AND starts with 'zero measured slope' or 'contributing area', with ALL numeric capacity fields (width_m, width_low_m, width_high_m, n_manning, depth_m_solved, q_capacity_nom_m3s, q_capacity_low_m3s, q_capacity_high_m3s) and the three text basis fields NULL except capacity_basis itself. Routing conduit, no capacity claim, never loadable as zero: consumers must keep q NULL/NaN (never coerce to 0), skip these edges for capture, and give them no surcharge claim. Realized membership 2026-08-25: 61 zero-slope + 32 area-capped = 93 edges."
     }
   },
   "units_and_conversion": {
@@ -75,7 +84,7 @@
   "consumer_assertions_at_load": [
     "manifest.connectivity=='D8_stitched' AND component_count_post_stitch>=1 else refuse",
     "edge_source=='synthesised' <=> order=='synthetic_connector' both directions else refuse",
-    "no from_node==to_node; length_m>0 all edges; self_loop_dropped_count==0; zero_length_dropped_count==0 else refuse",
+    "no from_node==to_node; length_m>0 all edges; self_loop_dropped_count==0 OR M5b sanction (enumerated ids + owner adjudication ref); AMENDED v1.2.0: zero_length_dropped_count is a RECORDED PROPERTY (echoed in the reader result), never a refusal",
     "graph_fingerprint recomputes over loaded edges else refuse; deterministic_ids==true",
     "on capacity-bearing edges: (n_manning,n_basis) in allowed pairs; width_low<=width_m<=width_high; width_basis contains exact rounded width_m 2dp (V10 numeric-basis consistency); q_low<=q_nom<=q_high all finite >0",
     "capacity_basis parses as JSON object, all values non-empty, CASE-INSENSITIVE check: no value v satisfies 'assumed' in v.lower() UNLESS its key starts with 'assumption' and value matches one-colon form 'assumption:<label>' (catches Assumed/ASSUMED/assumed_uncalibrated while allowing declared assumption:side_slope_1H1V); sources[] non-empty with http-or-doc-name each; depth=='solved:rational+Manning'; safety_factor in [0.85,0.95]",

@@ -251,6 +251,8 @@ def run_phase3_simulation(
     snapshot_every_s: float = 1800.0,  # 30-min snapshot cadence
     lifecycle: RunManifest | None = None,
     elevation_override: Path | None = None,  # master underpass: variant DEM on same grid
+    h0_raster: Path | None = None,  # warm start: realized depth raster (canonical grid) at issue
+    tile: tuple[int, int, int, int] | None = None,  # (r0,r1,c0,c1) canonical-coord 1/N subdomain
 ) -> SimulationOutput:
     """Execute uncalibrated solver run forced by IMERG over September 2022 event."""
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -284,6 +286,30 @@ def run_phase3_simulation(
         solver_cfg, REPO, device=device, use_buffered=True, elevation_override=elevation_override
     )
     dx = float(solver_cfg["_domain"]["resolution_m"])
+    buf_cells = round(float(solver_cfg["_domain"]["dem"]["buffer_m"]) / dx)
+    tile_window: tuple[slice, slice] | None = None
+    tile_shape: tuple[int, int] | None = None
+    w_r0 = w_r1 = w_c0 = w_c1 = None
+    if tile is not None:
+        r0, r1, c0, c1 = tile
+        if not (0 <= r0 < r1 <= grid.height and 0 <= c0 < c1 <= grid.width):
+            raise ValueError(f"tile {tile} outside canonical grid {grid.height}x{grid.width}")
+        w_r0, w_r1 = r0 + buf_cells, r1 + buf_cells
+        w_c0, w_c1 = c0 + buf_cells, c1 + buf_cells
+        tile_window = (slice(w_r0, w_r1), slice(w_c0, w_c1))
+        tile_shape = (r1 - r0, c1 - c0)
+        static = load_domain(
+            solver_cfg,
+            REPO,
+            device=device,
+            use_buffered=True,
+            elevation_override=elevation_override,
+            window=tile_window,
+        )
+        if static.shape != tile_shape:
+            raise ValueError(
+                f"load_domain tile shape {static.shape} != expected canonical crop {tile_shape}"
+            )
     p = SolverParams.from_config(solver_cfg, dx)
 
     # 3. Load IMERG historical rainfall forcing
@@ -301,7 +327,6 @@ def run_phase3_simulation(
         assert_nowcast_metadata_contract(event)
 
     # Buffer native cell ids to match buffered solver domain (pad 50 cells)
-    buf_cells = round(float(solver_cfg["_domain"]["dem"]["buffer_m"]) / dx)
     native_ids_canon = adapter.native_cell_ids
     has_uncovered_cells = bool(np.any(native_ids_canon < 0))
     native_ids_buf = (
@@ -314,6 +339,8 @@ def run_phase3_simulation(
         native_ids_buf,
         event.distinct_native_cells,
     )
+    if tile is not None:
+        native_ids_lookup = native_ids_lookup[w_r0:w_r1, w_c0:w_c1]
     native_ids_tensor = torch.as_tensor(native_ids_lookup, dtype=torch.long, device=device)
 
     # Pre-extract interval rates on GPU (m/s)
@@ -440,20 +467,53 @@ def run_phase3_simulation(
     h = torch.zeros(static.shape, dtype=torch.float32, device=device)
     qx = torch.zeros((static.shape[0], static.shape[1] - 1), dtype=torch.float32, device=device)
     qy = torch.zeros((static.shape[0] - 1, static.shape[1]), dtype=torch.float32, device=device)
+    if h0_raster is not None:
+        with rasterio.open(h0_raster) as h0_src:
+            h0 = h0_src.read(1).astype(np.float32)
+        if not np.all(np.isfinite(h0)) or np.any(h0 < 0):
+            raise ValueError(f"h0_raster must be finite and non-negative depth: {h0_raster}")
+        if tile is not None:
+            if h0.shape == (grid.height, grid.width):
+                h0 = h0[tile[0] : tile[1], tile[2] : tile[3]]
+            if h0.shape != tile_shape:
+                raise ValueError(
+                    f"h0_raster tile shape {h0.shape} != expected canonical crop {tile_shape}"
+                )
+            h[...] = torch.as_tensor(h0, dtype=torch.float32, device=device)
+        elif h0.shape == (grid.height, grid.width):
+            h[
+                buf_cells : buf_cells + grid.height,
+                buf_cells : buf_cells + grid.width,
+            ] = torch.as_tensor(h0, dtype=torch.float32, device=device)
+        elif h0.shape == static.shape:
+            h[...] = torch.as_tensor(h0, dtype=torch.float32, device=device)
+        else:
+            raise ValueError(
+                f"h0_raster shape {h0.shape} not compatible with canonical "
+                f"{(grid.height, grid.width)} or solver {(static.shape[0], static.shape[1])}"
+            )
     budget.start(h)
     cumulative_transport_depth_m = torch.zeros(static.shape, dtype=torch.float64, device=device)
     cumulative_drain_depth_m = torch.zeros(static.shape, dtype=torch.float64, device=device)
     cumulative_infiltration_depth_m = torch.zeros(static.shape, dtype=torch.float64, device=device)
 
     # State tracking
-    h_canonical_max = np.zeros((grid.height, grid.width), dtype=np.float32)
-    h_sar_instant = np.zeros((grid.height, grid.width), dtype=np.float32)
+    if tile is not None:
+        h_canonical_max = np.zeros(tile_shape, dtype=np.float32)
+        h_sar_instant = np.zeros(tile_shape, dtype=np.float32)
+    else:
+        h_canonical_max = np.zeros((grid.height, grid.width), dtype=np.float32)
+        h_sar_instant = np.zeros((grid.height, grid.width), dtype=np.float32)
     sar_captured = False
 
     snapshots_meta: list[tuple[float, str]] = []
     snapshots_dir = out_dir / "depth_rasters"
     snapshots_dir.mkdir(parents=True, exist_ok=True)
     profile_canon = grid.profile(dtype="float32", nodata=None)
+    if tile is not None:
+        profile_canon["height"] = tile_shape[0]
+        profile_canon["width"] = tile_shape[1]
+        profile_canon["transform"] = grid.transform * rasterio.Affine.translation(tile[2], tile[0])
 
     # 7. Timestep Loop
     t = 0.0
@@ -513,12 +573,15 @@ def run_phase3_simulation(
             steps += 1
 
             # Update event maximum depth over canonical grid
-            h_cpu_canon = (
-                h[buf_cells : buf_cells + grid.height, buf_cells : buf_cells + grid.width]
-                .detach()
-                .cpu()
-                .numpy()
-            )
+            if tile is not None:
+                h_cpu_canon = h.detach().cpu().numpy()
+            else:
+                h_cpu_canon = (
+                    h[buf_cells : buf_cells + grid.height, buf_cells : buf_cells + grid.width]
+                    .detach()
+                    .cpu()
+                    .numpy()
+                )
             np.maximum(h_canonical_max, h_cpu_canon, out=h_canonical_max)
 
             # Capture SAR comparison instant (06:10 IST on 5 Sept 2022)
@@ -551,12 +614,15 @@ def run_phase3_simulation(
                 last_log_t = time.perf_counter()
 
     wall_clock = time.perf_counter() - t0
-    h_final_canon = (
-        h[buf_cells : buf_cells + grid.height, buf_cells : buf_cells + grid.width]
-        .detach()
-        .cpu()
-        .numpy()
-    )
+    if tile is not None:
+        h_final_canon = h.detach().cpu().numpy()
+    else:
+        h_final_canon = (
+            h[buf_cells : buf_cells + grid.height, buf_cells : buf_cells + grid.width]
+            .detach()
+            .cpu()
+            .numpy()
+        )
 
     # Save realized final and maximum depth rasters on the canonical grid.
     final_depth_path = out_dir / "depth_final.tif"
@@ -570,9 +636,12 @@ def run_phase3_simulation(
     drain_path = out_dir / "cumulative_drain_depth_buffered.tif"
     infiltration_path = out_dir / "cumulative_infiltration_depth_buffered.tif"
     final_depth_buffered_path = out_dir / "depth_final_buffered.tif"
-    buffered_transform = profile_canon["transform"] * rasterio.Affine.translation(
-        -buf_cells, -buf_cells
-    )
+    if tile is not None:
+        buffered_transform = profile_canon["transform"]
+    else:
+        buffered_transform = profile_canon["transform"] * rasterio.Affine.translation(
+            -buf_cells, -buf_cells
+        )
     transport_profile = {
         **profile_canon,
         "width": static.shape[1],
@@ -645,8 +714,15 @@ def run_phase3_simulation(
     # Save native IMERG cell id raster (Honesty constraint)
     imerg_cell_ids_path = out_dir / "imerg_native_cell_ids.tif"
     profile_int = grid.profile(dtype="int32", nodata=-1)
+    if tile is not None:
+        profile_int["height"] = tile_shape[0]
+        profile_int["width"] = tile_shape[1]
+        profile_int["transform"] = grid.transform * rasterio.Affine.translation(tile[2], tile[0])
+        native_ids_write = adapter.native_cell_ids[tile[0] : tile[1], tile[2] : tile[3]]
+    else:
+        native_ids_write = adapter.native_cell_ids
     with rasterio.open(imerg_cell_ids_path, "w", **profile_int) as dst:
-        dst.write(adapter.native_cell_ids.astype(np.int32), 1)
+        dst.write(native_ids_write.astype(np.int32), 1)
 
     # Write dt schedule binary sidecar
     dt_sidecar = write_dt_sidecar(ctrl.schedule, out_dir / "dt_schedule.f32.gz")

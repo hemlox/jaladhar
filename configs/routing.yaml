@@ -31,3 +31,33 @@ server_max_snap_distance_basis: "repo internal precedent, no external standard l
 # the G1 rescore is FAIL (104/399 hits, lift ~1.30 under the frozen >=0.60/>=3.0
 # thresholds) and routing execution stays refused while it stands.
 gate_report_path: "runs/wf3_replay2_gates_v7_excluded/g1_score.json"
+
+# WF8 presentation-day demo: route refusals key on the 3-hour forecast at its
+# VALID time (2022-09-04T21:40Z, "03:10 IST" state the audience just watched),
+# not frame 0 of the played series (the issue-instant state). The gate report
+# above deliberately keeps citing the v6 event-maximum score as backing
+# evidence (owner directive 2026-08-27): its recorded depth-product hash will
+# not match this file, /health says so honestly, and POST /v1/route still
+# returns 503 scientific_gate_not_accepted.
+depth_product_override_path: "runs/wf3_uncoupled_3h_forecast_warm_product/products/segment_status.csv"
+
+# WF-7 routing graph connectivity fix (measured 2026-08-27, CPU-only):
+# Provenance: endpoint snapping follows WF-1 drain stitcher scheme verbatim
+#   (cKDTree.query_pairs(tol) -> union-find clusters -> min(round(x,3),round(y,3)) rep;
+#   see src/jaladhar/drainage/stitch.py _snap_slots / loader.py _snapped_representatives).
+# Measured sweep on realized roads_centrelines.gpkg (176171 segments, 177077 parts):
+#   0.0m (legacy exact): 107014 comps, 279627 nodes
+#   0.5m: 107005 comps (-9), 279611 nodes
+#   1.0m: 106921 comps (-93), 279471 nodes
+#   2.0m: 106569 comps (-445, -0.42%), 279012 nodes  <- CHOSEN (upper prior 1-2m, conservative)
+#   5.0m: 102849 comps (-4165), 274141 nodes
+#   10.0m: 92223 comps (-14791), 257176 nodes
+# Rationale: gain accelerates beyond 2m but risks false merges of parallel service roads /
+# dual carriageways (typical 5-7m separation). Prior 1-2m balances digitization-gap closure
+# (101k pairs at 0.5m yield only 16 node merges) vs over-merge. Chosen 2.0m is measurably
+# better than 1.0m while remaining conservative. Intersection splitting measured via STRtree
+# (~18k interior crossings extrapolated) but SKIPPED: planar split would falsely connect
+# grade-separated bridges/tunnels without verified z-level.
+routing_graph:
+  endpoint_snap_tolerance_m: 2.0
+  enable_intersection_splitting: false

@@ -119,6 +119,7 @@ def resolve_routing_settings(
     yaml_policy: str | None = None
     yaml_snap_raw: str | None = None
     yaml_gate_report: str | None = None
+    yaml_depth_override: str | None = None
     if config_path is not None and config_path.is_file():
         try:
             payload = yaml.safe_load(config_path.read_text(encoding="utf-8"))
@@ -141,6 +142,9 @@ def resolve_routing_settings(
             value = payload.get("gate_report_path")
             if value is not None and isinstance(value, str) and value.strip():
                 yaml_gate_report = value.strip()
+            value = payload.get("depth_product_override_path")
+            if value is not None and isinstance(value, str) and value.strip():
+                yaml_depth_override = value.strip()
         snap_basis = payload.get("server_max_snap_distance_basis")
         if snap_basis is not None and not isinstance(snap_basis, str):
             problems.append(
@@ -188,6 +192,20 @@ def resolve_routing_settings(
                 f"routing config gate_report_path file does not exist: {yaml_gate_report}"
             )
 
+    depth_override_file: Path | None = None
+    depth_override_source = "unset"
+    if yaml_depth_override:
+        candidate = Path(yaml_depth_override)
+        if not candidate.is_absolute():
+            candidate = repo_root / candidate
+        if candidate.is_file():
+            depth_override_file, depth_override_source = candidate, "config"
+        else:
+            problems.append(
+                f"routing config depth_product_override_path file does not exist: "
+                f"{yaml_depth_override}"
+            )
+
     if problems:
         raise DemoError("routing settings resolution failed:\n- " + "\n- ".join(problems))
     return {
@@ -198,6 +216,8 @@ def resolve_routing_settings(
         "snap_basis": (snap_basis.strip() if isinstance(snap_basis, str) else None),
         "gate_report_file": gate_report_file,
         "gate_report_source": gate_report_source,
+        "depth_override_file": depth_override_file,
+        "depth_override_source": depth_override_source,
         "config_path": config_path,
         "config_source": config_source,
     }
@@ -406,7 +426,10 @@ def main(
             host=host,
             port=api_port,
             repo_root=REPO_ROOT,
-            depth_product_file=depth_product_file_for(evidence),
+            depth_product_file=(
+                routing.get("depth_override_file")
+                or depth_product_file_for(evidence)
+            ),
         )
         api_argv = append_snap_cap(api_argv, resolved_snap)
         api_argv = append_vehicle_policy(api_argv, resolved_policy)

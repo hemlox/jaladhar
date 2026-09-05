@@ -753,9 +753,12 @@ def test_red_placement_guard_at_publish_paths_even_with_override(tmp_path: Path)
     assert len(art["edges_gdf"]) == 11  # 10 base + detached policy-unmet edge
 
 
-def test_red_zero_length_counter_refused(tmp_path: Path) -> None:
-    """V5 RED DEMO 6. Mutation: zero_length_dropped_count=1 threaded through
-    extra_counts at finalize - consumers refuse load per the degenerate policy."""
+def test_zero_length_counter_recorded_not_refused(tmp_path: Path) -> None:
+    """V6 AMENDED 2026-08-26 (contract v1.2.0, D-G owner adjudication): the SPEC was
+    amended - zero_length_dropped_count is a RECORDED PROPERTY, not a refusal ('the
+    42 dropped zero-length edges are a build fact, not a defect'). The former red
+    demo test_red_zero_length_counter_refused asserted the old refusal; under the
+    amended contract the same mutation must LOAD and echo the count in the result."""
     elev = _write_elevation(tmp_path)
     cfg = _cfg(tmp_path, elev)
     man = init_manifest(cfg["outputs"]["run_dir"], cfg)
@@ -768,8 +771,77 @@ def test_red_zero_length_counter_refused(tmp_path: Path) -> None:
     )
     out = tmp_path / "cand_zero"
     paths = write_candidate(_nodes(), _edges(), man, str(out))
-    with pytest.raises(RefuseLoadError, match=r"zero_length_dropped_count=1 != 0"):
-        read_artefact(paths["gpkg"], paths["adjacency"], paths["manifest"])
+    art = read_artefact(paths["gpkg"], paths["adjacency"], paths["manifest"])
+    assert art["dropped_zero_length_count"] == 1
+    # the recorded property is visible without any override flags:
+    assert "dropped_zero_length_count" in art
+
+
+def test_null_capacity_edge_class_accepted_and_guarded(tmp_path: Path) -> None:
+    """V6 AMENDED 2026-08-26 (contract v1.2.0, D-G): an observed edge with a declared
+    'no capacity claim; routing only' basis and ALL numeric capacity fields NULL is a
+    legal NULL-CAPACITY EDGE CLASS member; a declared-null edge carrying ANY numeric
+    field is refused - null class is NOT loadable as zero."""
+    elev = _write_elevation(tmp_path)
+    cfg = _cfg(tmp_path, elev)
+    man = init_manifest(cfg["outputs"]["run_dir"], cfg)
+
+    edges = _edges()
+    e2 = edges[1]
+    for fld in (
+        "width_m",
+        "width_low_m",
+        "width_high_m",
+        "n_manning",
+        "depth_m_solved",
+        "q_capacity_nom_m3s",
+        "q_capacity_low_m3s",
+        "q_capacity_high_m3s",
+        "width_basis",
+        "n_basis",
+        "depth_basis",
+    ):
+        setattr(e2, fld, None)  # type: ignore[attr-defined]
+    e2.capacity_basis = (  # type: ignore[attr-defined]
+        "contributing area 12779 ha exceeds the rational method validity limit "
+        "5000 ha: no capacity claim; routing only"
+    )
+    man = finalize_manifest(
+        man, nodes=_nodes(), edges=edges, stitch_metrics=_stitch_metrics(1)
+    )
+    out = tmp_path / "cand_nullclass"
+    paths = write_candidate(_nodes(), edges, man, str(out))
+    art = read_artefact(paths["gpkg"], paths["adjacency"], paths["manifest"])
+    assert art["null_capacity_edge_count"] == 1
+
+    # NOT loadable as zero: one numeric field on a declared-null edge refuses.
+    bad = _edges()
+    b2 = bad[1]
+    for fld in (
+        "width_m",
+        "width_low_m",
+        "width_high_m",
+        "n_manning",
+        "depth_m_solved",
+        "width_basis",
+        "n_basis",
+        "depth_basis",
+    ):
+        setattr(b2, fld, None)  # type: ignore[attr-defined]
+    b2.q_capacity_nom_m3s = 0.0  # type: ignore[attr-defined]
+    b2.q_capacity_low_m3s = None  # type: ignore[attr-defined]
+    b2.q_capacity_high_m3s = None  # type: ignore[attr-defined]
+    b2.capacity_basis = (  # type: ignore[attr-defined]
+        "zero measured slope on pinned surface: no capacity claim; routing only"
+    )
+    man_bad = init_manifest(cfg["outputs"]["run_dir"], cfg)
+    man_bad = finalize_manifest(
+        man_bad, nodes=_nodes(), edges=bad, stitch_metrics=_stitch_metrics(1)
+    )
+    out_bad = tmp_path / "cand_nullclass_bad"
+    paths_bad = write_candidate(_nodes(), bad, man_bad, str(out_bad))
+    with pytest.raises(RefuseLoadError, match=r"\[null_capacity_class\] edge 2"):
+        read_artefact(paths_bad["gpkg"], paths_bad["adjacency"], paths_bad["manifest"])
 
 
 def test_red_n_manning_pairing_refused(tmp_path: Path) -> None:

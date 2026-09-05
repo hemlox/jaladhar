@@ -75,6 +75,21 @@ CAPACITY_FIELDS = CAPACITY_NUMERIC_FIELDS + CAPACITY_TEXT_FIELDS + ("capacity_ba
 SYNTHETIC_CAPACITY_BASIS = (
     "synthetic connector: no surveyed cross-section; routing conduit only, no capacity claim"
 )
+# Contract v1.2.0 NULL-CAPACITY EDGE CLASS (D-G owner amendment 2026-08-26): an
+# OBSERVED edge whose capacity_basis declares 'no capacity claim; routing only'
+# with ALL numeric capacity fields NULL. Routing conduit, no capacity claim,
+# NOT loadable as zero - see configs/contracts/drain_graph.json amendment_history.
+NULL_CAPACITY_BASIS_PREFIXES = ("zero measured slope", "contributing area")
+NULL_CAPACITY_BASIS_REQUIRED_SUBSTRING = "no capacity claim"
+
+
+def _is_null_capacity_basis(basis: str) -> bool:
+    b = basis.strip().lower()
+    return (
+        bool(b)
+        and NULL_CAPACITY_BASIS_REQUIRED_SUBSTRING in b
+        and b.startswith(NULL_CAPACITY_BASIS_PREFIXES)
+    )
 DEPTH_BASIS_EXPECTED = "solved:rational+Manning"
 N_MANNING_PAIRS = {
     0.013: "CPHEEO 2019 Ch5 concrete as-new low",
@@ -958,7 +973,12 @@ def read_artefact(
 
     Enforces consumer_assertions_at_load 1-9 of configs/contracts/drain_graph.json
     (10 is the raster seam, tested elsewhere), the tightened >1-component refusal,
-    and the placement guard against publish paths while disconnected."""
+    and the placement guard against publish paths while disconnected.
+    Contract v1.2.0 (D-G owner amendment 2026-08-26): observed edges may be members
+    of the explicit NULL-CAPACITY EDGE CLASS (declared 'no capacity claim; routing
+    only' basis, ALL numeric capacity fields NULL, never loadable as zero), and
+    zero_length_dropped_count is a recorded property returned in the result dict,
+    not a refusal."""
     # -- files + manifest envelope -------------------------------------------
     for p, what in ((gpkg, "gpkg"), (adjacency, "adjacency")):
         if not Path(p).exists():
@@ -1036,11 +1056,10 @@ def read_artefact(
         f"counts.dropped_edge_ids (found {len(enumerated_self_loops)})",
         RefuseLoadError,
     )
-    _require(
-        zeros == 0,
-        f"[consumer_assertion_3] zero_length_dropped_count={zeros} != 0",
-        RefuseLoadError,
-    )
+    # Contract v1.2.0 (D-G amendment 2026-08-26): zero_length_dropped_count is a
+    # RECORDED PROPERTY, not a refusal - dropped zero-length edges are a build
+    # fact (realized artefact: 42), echoed in the reader result below.
+    _ = zeros  # recorded; see return dict "dropped_zero_length_count"
     unresolved = int(counts.get("unresolved_outfall_count", 0) or 0)
     _require(
         unresolved == 0, f"[v-outfall] unresolved_outfall_count={unresolved} != 0", RefuseLoadError
@@ -1179,6 +1198,7 @@ def read_artefact(
             )
 
     # -- per-edge assertions 2, 3, synth-separability, 5, 6 --------------------
+    null_capacity_edge_count = 0
     for r in edge_recs:
         eid = int(r["edge_id"])
         src, order = str(r["edge_source"]), str(r["order"])
@@ -1222,6 +1242,7 @@ def read_artefact(
 
         cap_present = {fld: _nn(r.get(fld)) for fld in CAPACITY_FIELDS}
         any_cap = any(v is not None for v in cap_present.values())
+        basis_txt = str(r.get("capacity_basis") or "")
         if src == "synthesised":
             filled = [k for k, v in cap_present.items() if v is not None and k != "capacity_basis"]
             _require(
@@ -1236,18 +1257,37 @@ def read_artefact(
                 f"disclaimer text, got {cap_present['capacity_basis']!r}",
                 RefuseLoadError,
             )
+        elif _is_null_capacity_basis(basis_txt):
+            # Contract v1.2.0 NULL-CAPACITY EDGE CLASS (D-G amendment 2026-08-26):
+            # declared routing conduit, no capacity claim. Legal ONLY with every
+            # numeric capacity field NULL - never loadable as zero.
+            numeric_filled = [
+                k
+                for k, v in cap_present.items()
+                if v is not None and k != "capacity_basis"
+            ]
+            _require(
+                not numeric_filled,
+                f"[null_capacity_class] edge {eid}: declared no-capacity basis carries "
+                f"numeric fields {numeric_filled} - null class is routing conduit, "
+                "NOT loadable as zero",
+                RefuseLoadError,
+            )
+            null_capacity_edge_count += 1
         elif any_cap:
             unfilled = [k for k, v in cap_present.items() if v is None]
             _require(
                 not unfilled,
                 f"[capacity_block_consistency] edge {eid}: partially-filled capacity fields "
-                f"{unfilled} (either all NULL/blocked or fully populated)",
+                f"{unfilled} (either a declared null-capacity edge under contract v1.2.0, "
+                "or fully populated)",
                 RefuseLoadError,
             )
             _check_observed_capacity(eid, r)
-        elif str(r.get("capacity_basis") or "").startswith("zero measured slope"):
-            pass  # M11 round 2026-08-25: zero-slope observed segment, routing-only, no claim
-        # else: fully-NULL observed edge = blocked_missing_design_intensity mode, legal
+        # else: fully-NULL observed edge WITHOUT a declared basis - unchanged from
+        # v1.1.0 (historical blocked_missing_design_intensity mode, legal). The
+        # v1.2.0 amendment ADDS the declared null-capacity class; it does not
+        # retire this legacy legality.
 
     # -- V-SYNTHVISIBLE: fraction recomputed FROM THE WRITTEN GPKG -------------
     # Field-level schema first, then this cross-artefact integrity check: the
@@ -1300,9 +1340,16 @@ def read_artefact(
             RefuseLoadError,
         )
     _require(adj["cycles"] == [], "[adjacency] cycles must be [] post-break", RefuseLoadError)
+    # Contract v1.2.0 (D-G amendment 2026-08-26): dropped.zero_length entries are a
+    # RECORDED property (build fact), never a refusal; dropped.self_loops remain
+    # gated by the M5b sanction exactly as consumer_assertion_3 requires.
+    adj_self_loops_nonempty = len(adj["dropped"]["self_loops"]) > 0
+    m5b_sanctioned = bool(owner_adjudication_ref.strip()) and len(enumerated_self_loops) >= 1
     _require(
-        adj["dropped"]["self_loops"] == [] and adj["dropped"]["zero_length"] == [],
-        "[adjacency] dropped.self_loops/zero_length must be [] on a loadable artefact",
+        not adj_self_loops_nonempty or m5b_sanctioned,
+        "[adjacency] dropped.self_loops non-empty without the M5b sanction "
+        "(non-empty owner_adjudication_ref AND enumerated self_loop entries in "
+        "manifest counts.dropped_edge_ids)",
         RefuseLoadError,
     )
     topo = [int(x) for x in adj["topo_order"]]
@@ -1360,6 +1407,10 @@ def read_artefact(
         "edges_gdf": edges_gdf,
         "adjacency": adj,
         "manifest": man,
+        # Contract v1.2.0 recorded properties (D-G amendment 2026-08-26)
+        "dropped_zero_length_count": zeros,
+        "dropped_self_loop_count": self_loops,
+        "null_capacity_edge_count": null_capacity_edge_count,
     }
 
 

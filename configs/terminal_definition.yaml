@@ -1,0 +1,73 @@
+# =============================================================================
+# WF-2 M1 terminal (outfall) definition — version v2-lake-boundary
+# =============================================================================
+# OWNER DIRECTIVE (WF-2 round 3, binding): "the 97.28% dead-end surcharge split
+# may be an OUTFALL-DEFINITION ARTIFACT. A rajakaluve discharging into
+# Bellandur/Varthur Lake HAS reached a terminal sink; a reach crossing the
+# domain boundary HAS left the domain." This file makes the extended terminal
+# definition VISIBLE: config-declared, justified, sensitivity-banded. It is a
+# CONSUMER-side seed derivation — the drain-graph contract forbids PRODUCERS
+# emitting node_type=inlet/outfall_reason=lake_boundary, so no producer
+# artefact is rewritten by or because of this file.
+#
+# Every key here is touched by jaladhar.drainage.terminal.load_terminal_definition
+# at load (rule-7 style aggregated validation: ALL problems in ONE error).
+
+definition_version: "v2-lake-boundary"
+
+rules:
+  # Rule 0 (baseline, always applied first): the producer-declared outfall set,
+  # read from the SAME gpkg node_type column as today. Nothing about it changes;
+  # it simply takes priority so counts partition exactly (declared > lake > boundary).
+  declared_gpkg_outfall:
+    source: "drain_nodes.node_type == 'outfall' (runs/drain_graph_build/drain_graph.gpkg)"
+
+  lake_polygon:
+    enabled: true
+    # A node qualifies ONLY if flow cannot continue past it in the directed
+    # graph (no outgoing edges). Justification: the owner directive says a
+    # reach discharging into the lake "HAS reached a terminal sink" — a node
+    # with outgoing edges has NOT terminated there. Declared visibly so the
+    # predicate can be adjudicated rather than discovered in code.
+    require_sink: true
+    source_path: "data/raw/osm/osm_water.gpkg"       # already on disk; see provenance
+    layer: "osm_water_polygons"
+    crs: "EPSG:32643"                                # asserted == the graph CRS at load
+    name_field: "name"
+    selection:
+      mode: "exact-name"                             # exact string match, no fuzzy matching
+      names: ["Bellandur Lake", "Varthur Lake"]
+    # = 1 cell at the 10 m producer grid, matching the stitcher's
+    # snap_tolerance_m = 10.0 convention (configs/drainage.yaml stitch block).
+    snap_tolerance_m: 10.0
+    justification: >-
+      Owner suspicion (WF-2 round 3, quoted): "A rajakaluve discharging into
+      Bellandur/Varthur Lake HAS reached a terminal sink" — measured smoking
+      guns: adjacency nodes 1183 and 1512 are graph sinks (zero outgoing edges)
+      sitting at 0.0 m inside the Bellandur / Varthur lake polygons of
+      data/raw/osm/osm_water.gpkg while the declared outfall set holds neither.
+      Under the v1 declared-only seeds such reaches were scored dead_end.
+
+  domain_boundary:
+    enabled: true
+    require_sink: true                               # same terminal-sink reasoning as lakes
+    bbox_source: "graph_manifest.config_snapshot.grid"  # single source: runs/drain_graph_build/manifest.json
+    tolerance_m: 10.0                                # = 1 cell, matching the snap convention above
+    justification: >-
+      Owner suspicion (WF-2 round 3, quoted): "a reach crossing the domain
+      boundary HAS left the domain." Plan-stage probe expects ZERO additional
+      seeds here — zero non-outfall nodes lie within 200 m of any grid edge —
+      and that zero IS the answer to the boundary half of the suspicion; the
+      sensitivity table is published whatever it shows.
+
+# Both tolerances are swept together at these points in the post-hoc split
+# product (runs/wf2_coupled_resmoke/products/return_ratio_split_v2.json);
+# published whatever it shows — no tuning to improve numbers.
+sensitivity_tolerances_m: [0, 5, 10, 25, 50]
+
+provenance:
+  pointer: "runs/terrain_water/manifest.json"
+  note: >-
+    Lake geometry provenance lives in that manifest ('OpenStreetMap via
+    Overpass', fetched <=2026-08-20, cached convention). Sentinel-1 was
+    DISQUALIFIED as a water-source candidate and is deliberately not referenced.

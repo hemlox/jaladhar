@@ -46,6 +46,7 @@ from urllib.parse import urlsplit
 import typer
 
 from jaladhar.routing.graph import REPO, RoadGraphError, RoadNetwork, SnappedPoint
+from jaladhar.routing.graph import _resolve_routing_graph_config as _resolve_routing_graph_config_from_graph
 from jaladhar.routing.policy import VehiclePolicyCatalog, VehiclePolicyError, load_vehicle_policies
 from jaladhar.routing.product import DepthProduct, DepthProductError, load_depth_product
 from jaladhar.validation.depth_product_contract import MAX_FORECAST_LEAD_MINUTES, sha256_file
@@ -87,6 +88,63 @@ def _runtime_source_provenance(repo_root: Path) -> dict[str, Any]:
         "git_dirty_paths": dirty_paths,
         "source_files_sha256": source_files,
     }
+
+
+def _resolve_routing_graph_config_for_service(
+    explicit_tolerance: float | None = None,
+    explicit_splitting: bool | None = None,
+    config_path: Path | None = None,
+) -> dict[str, object]:
+    """Rule-7 resolver for routing_graph keys for the serving path; aggregates all problems.
+
+    Mirrors ``jaladhar.routing.graph._resolve_routing_graph_config`` semantics so the
+    serving graph and the CLI inspect share one truth.  Explicit CLI values win;
+    otherwise the YAML ``routing_graph`` mapping is consulted.  Absent / null keys
+    yield legacy None/False semantics (byte-identical old behaviour).  All problems
+    are aggregated into one ValueError to fail in the first second (CLAUDE.md rule 7).
+    """
+    # If caller provided explicit values, no need to read YAML for those keys,
+    # but we still need to validate the explicit values via the same aggregating
+    # path and honour "absent => legacy" for the uninjected key.
+    # Delegating to the graph resolver when no explicit override keeps the
+    # validation single-sourced.
+    if explicit_tolerance is not None or explicit_splitting is not None:
+        # Validate explicit overrides through the same aggregating logic by
+        # synthesising a temporary config dict is heavy; instead just validate
+        # via the resolver's rules directly and aggregate.
+        problems: list[str] = []
+        if explicit_tolerance is not None:
+            import math
+            if isinstance(explicit_tolerance, bool) or not isinstance(explicit_tolerance, (int, float)) or not math.isfinite(float(explicit_tolerance)) or float(explicit_tolerance) < 0:
+                problems.append(f"routing_graph.endpoint_snap_tolerance_m must be finite >=0 or null, got {explicit_tolerance!r}")
+        if explicit_splitting is not None and not isinstance(explicit_splitting, bool):
+            problems.append(f"routing_graph.enable_intersection_splitting must be boolean, got {explicit_splitting!r}")
+        if problems:
+            raise ValueError(
+                "config resolution failed with "
+                + str(len(problems))
+                + " problem(s):\n"
+                + "\n".join(f"- {p}" for p in problems)
+            )
+        # For the key not explicitly set, fall through to YAML
+        if explicit_tolerance is None or explicit_splitting is None:
+            try:
+                cfg = _resolve_routing_graph_config_from_graph(config_path)
+            except ValueError:
+                raise
+            tol = explicit_tolerance if explicit_tolerance is not None else cfg.get("endpoint_snap_tolerance_m")
+            split = explicit_splitting if explicit_splitting is not None else cfg.get("enable_intersection_splitting", False)
+            # normalize 0.0 -> None already done by graph resolver; explicit 0.0 also -> None per Rule 7
+            if tol is not None and float(tol) == 0.0:
+                tol = None
+            return {"endpoint_snap_tolerance_m": tol, "enable_intersection_splitting": bool(split)}
+        # both explicit
+        tol = float(explicit_tolerance) if explicit_tolerance is not None else None
+        if tol is not None and tol == 0.0:
+            tol = None
+        return {"endpoint_snap_tolerance_m": tol, "enable_intersection_splitting": bool(explicit_splitting)}
+    # No explicit override: delegate fully to graph resolver (single source)
+    return _resolve_routing_graph_config_from_graph(config_path)
 
 
 def _scientific_gate_from_report(
@@ -219,8 +277,32 @@ class RoutingService:
         gate_report_file: Path | None = None,
         server_max_snap_distance_m: float | None = None,
         repo_root: Path = REPO,
+        endpoint_snap_tolerance_m: float | None = None,
+        enable_intersection_splitting: bool | None = None,
+        routing_config_path: Path | None = None,
     ) -> RoutingService:
-        network = RoadNetwork.from_files(road_file, lookup_file)
+        # Rule-7: resolve routing_graph keys up-front, aggregating all problems.
+        # Explicit args win (CLI override); otherwise consult configs/routing.yaml.
+        # Absent / null -> legacy None/False (byte-identical old behaviour).
+        # Config comments in configs/routing.yaml stay truthful about the chosen 2.0m.
+        try:
+            cfg = _resolve_routing_graph_config_for_service(
+                explicit_tolerance=endpoint_snap_tolerance_m,
+                explicit_splitting=enable_intersection_splitting,
+                config_path=routing_config_path,
+            )
+        except ValueError as exc:
+            # Surface as RoadGraphError so _common_service maps to BadParameter (Rule 7 fail-fast)
+            raise RoadGraphError(str(exc)) from exc
+        resolved_tolerance = cfg.get("endpoint_snap_tolerance_m")
+        resolved_splitting = bool(cfg.get("enable_intersection_splitting", False))
+        # Normalize: explicit None from CLI means "use config" already handled; 0.0 -> legacy None handled in resolver
+        network = RoadNetwork.from_files(
+            road_file,
+            lookup_file,
+            endpoint_snap_tolerance_m=resolved_tolerance,
+            enable_intersection_splitting=resolved_splitting,
+        )
         product: DepthProduct | None = None
         product_error: str | None = None
         if depth_product_file is None:
@@ -317,7 +399,9 @@ class RoutingService:
                 (
                     "The raw OSM inventory has no node/edge graph; this service derives a "
                     "conservative endpoint graph from the persisted centreline geometry "
-                    "without snapping or inventing intersections."
+                    "with endpoint snapping at routing_graph.endpoint_snap_tolerance_m when "
+                    "configured (2.0 m per configs/routing.yaml; null/absent => legacy exact match) "
+                    "and without inventing intersections unless routing_graph.enable_intersection_splitting is true."
                 ),
                 (
                     "No verified published vehicle-wading threshold is present in the "
@@ -690,6 +774,9 @@ def _common_service(
     vehicle_policy_file: Path | None,
     gate_report_file: Path | None,
     server_max_snap_distance_m: float | None,
+    endpoint_snap_tolerance_m: float | None = None,
+    enable_intersection_splitting: bool | None = None,
+    routing_config_path: Path | None = None,
 ) -> RoutingService:
     try:
         return RoutingService.from_paths(
@@ -699,8 +786,11 @@ def _common_service(
             vehicle_policy_file=vehicle_policy_file,
             gate_report_file=gate_report_file,
             server_max_snap_distance_m=server_max_snap_distance_m,
+            endpoint_snap_tolerance_m=endpoint_snap_tolerance_m,
+            enable_intersection_splitting=enable_intersection_splitting,
+            routing_config_path=routing_config_path,
         )
-    except RoadGraphError as exc:
+    except (RoadGraphError, ValueError) as exc:
         raise typer.BadParameter(str(exc)) from exc
 
 
@@ -716,6 +806,9 @@ def health(
     vehicle_policy_file: Path | None = typer.Option(None),
     gate_report_file: Path | None = typer.Option(None),
     server_max_snap_distance_m: float | None = typer.Option(None),
+    endpoint_snap_tolerance_m: float | None = typer.Option(None, help="Optional endpoint snap tolerance in metres (WF-1 scheme). None => resolve from configs/routing.yaml routing_graph.endpoint_snap_tolerance_m; null/absent => legacy exact match."),
+    enable_intersection_splitting: bool = typer.Option(False, help="If true, attempt interior intersection splitting (routing_graph.enable_intersection_splitting)."),
+    routing_config: Path | None = typer.Option(None, help="Routing YAML for routing_graph keys; defaults to configs/routing.yaml when present."),
 ) -> None:
     """Load the configured inputs and print realized readiness on CPU."""
 
@@ -726,6 +819,9 @@ def health(
         vehicle_policy_file,
         gate_report_file,
         server_max_snap_distance_m,
+        endpoint_snap_tolerance_m=endpoint_snap_tolerance_m,
+        enable_intersection_splitting=enable_intersection_splitting if enable_intersection_splitting else None,
+        routing_config_path=routing_config,
     )
     typer.echo(json.dumps(service.health(), indent=2, sort_keys=True))
 
@@ -745,6 +841,9 @@ def route(
     vehicle_policy_file: Path | None = typer.Option(None),
     gate_report_file: Path | None = typer.Option(None),
     server_max_snap_distance_m: float | None = typer.Option(None),
+    endpoint_snap_tolerance_m: float | None = typer.Option(None, help="Optional endpoint snap tolerance in metres (WF-1 scheme). None => resolve from configs/routing.yaml."),
+    enable_intersection_splitting: bool = typer.Option(False, help="If true, attempt interior intersection splitting."),
+    routing_config: Path | None = typer.Option(None, help="Routing YAML for routing_graph keys; defaults to configs/routing.yaml when present."),
 ) -> None:
     """Evaluate one route request and print the realized result or refusal."""
 
@@ -755,6 +854,9 @@ def route(
         vehicle_policy_file,
         gate_report_file,
         server_max_snap_distance_m,
+        endpoint_snap_tolerance_m=endpoint_snap_tolerance_m,
+        enable_intersection_splitting=enable_intersection_splitting if enable_intersection_splitting else None,
+        routing_config_path=routing_config,
     )
     try:
         request = json.loads(request_file.read_text(encoding="utf-8"))
@@ -779,6 +881,9 @@ def serve(
     vehicle_policy_file: Path | None = typer.Option(None),
     gate_report_file: Path | None = typer.Option(None),
     server_max_snap_distance_m: float | None = typer.Option(None),
+    endpoint_snap_tolerance_m: float | None = typer.Option(None, help="Optional endpoint snap tolerance in metres (WF-1 scheme). None => resolve from configs/routing.yaml routing_graph.endpoint_snap_tolerance_m; null/absent => legacy exact match."),
+    enable_intersection_splitting: bool = typer.Option(False, help="If true, attempt interior intersection splitting (routing_graph.enable_intersection_splitting)."),
+    routing_config: Path | None = typer.Option(None, help="Routing YAML for routing_graph keys; defaults to configs/routing.yaml when present."),
     host: str = typer.Option("127.0.0.1"),
     port: int = typer.Option(8080),
     cors_origin: str | None = typer.Option(
@@ -799,6 +904,9 @@ def serve(
         vehicle_policy_file,
         gate_report_file,
         server_max_snap_distance_m,
+        endpoint_snap_tolerance_m=endpoint_snap_tolerance_m,
+        enable_intersection_splitting=enable_intersection_splitting if enable_intersection_splitting else None,
+        routing_config_path=routing_config,
     )
     server = _server_for(service, host, port, cors_origin=cors_origin)
     typer.echo(json.dumps(service.health(), sort_keys=True))

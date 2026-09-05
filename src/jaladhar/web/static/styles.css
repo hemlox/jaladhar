@@ -73,6 +73,7 @@ button, input {
 /* ---------------------------------------------------------------- layout */
 
 .app {
+  position: relative;
   display: grid;
   grid-template-columns: 1fr var(--rail-w);
   grid-template-rows: var(--header-h) 1fr var(--bottom-h);
@@ -351,26 +352,7 @@ button, input {
   overflow-wrap: anywhere;
 }
 
-/* WF-6 M3: OPEN ANOMALY card — a flagged unexplained measured result is
-   shown on screen, not smoothed away. Error-tone left edge from the
-   surcharge family; body ink stays primary because this IS a finding. */
-.wf6-anomaly {
-  border-left: 3px solid var(--surcharge);
-}
-
-.wf6-anomaly-body {
-  margin: 0;
-  font-size: 12px;
-  line-height: 1.5;
-  color: var(--ink);
-}
-
-.wf6-anomaly-policy {
-  margin-top: 8px;
-  font-size: 11px;
-  line-height: 1.5;
-  color: var(--ink-dim);
-}
+/* C14: wf6-anomaly card retired — removed per spec */
 
 /* bottom bar — 96px: scrubber, play, layer toggles */
 
@@ -585,3 +567,250 @@ button, input {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ---- 2022 Observed vs Predicted comparison overlay (WF7) ----------------- */
+/* Palette/type/motion tokens verbatim from guide §4; no invented values. */
+.comparison-entry-btn{
+  display:inline-flex; align-items:center; gap:6px;
+  border:1px solid var(--line); border-radius:999px;
+  padding:5px 12px; font-size:11px; font-weight:600;
+  letter-spacing:0.08em; text-transform:uppercase;
+  color:var(--ink-dim); background:var(--panel);
+  cursor:pointer; transition:background var(--fast) var(--ease), border-color var(--fast) var(--ease), color var(--fast) var(--ease);
+}
+.comparison-entry-btn:hover{ background:var(--panel-hi); border-color:var(--ink-faint); color:var(--ink); }
+.comparison-entry-btn:focus-visible{ outline:1px solid var(--accent); outline-offset:2px; }
+
+.jal-comp-overlay{
+  position:absolute; inset:0; z-index:45;
+  display:flex; flex-direction:column;
+  background:var(--bg-deep); color:var(--ink);
+  opacity:1; transform:none;
+  transition:opacity var(--base) var(--ease), transform var(--base) var(--ease);
+}
+.jal-comp-overlay.hidden{ display:none !important; opacity:0; transform:translateY(6px); }
+.jal-comp-overlay[hidden]{ display:none !important; }
+
+/* Entrance: overlay + panels rise in at 240ms ease-out (guide §4 motion). */
+@keyframes comp-overlay-in{
+  from{ opacity:0; transform:translateY(6px); }
+  to{ opacity:1; transform:none; }
+}
+@keyframes comp-panel-in{
+  from{ opacity:0; transform:translateY(4px); }
+  to{ opacity:1; transform:none; }
+}
+.jal-comp-overlay:not(.hidden):not([hidden]){ animation:comp-overlay-in var(--base) ease-out; }
+.jal-comp-panel, .jal-comp-strip{ animation:comp-panel-in var(--base) ease-out; }
+
+.jal-comp-chrome{
+  display:flex; align-items:center; justify-content:space-between;
+  height:56px; padding:0 20px; flex:none;
+  border-bottom:1px solid var(--line); background:var(--bg-deep);
+}
+.jal-comp-title{
+  font-size:11px; font-weight:600; letter-spacing:0.14em; text-transform:uppercase; color:var(--ink-dim);
+}
+.jal-comp-close{
+  border:1px solid var(--line); border-radius:999px; background:var(--panel); color:var(--ink-dim);
+  padding:5px 14px; font-size:11px; cursor:pointer;
+  transition:background var(--fast) var(--ease), border-color var(--fast) var(--ease);
+}
+.jal-comp-close:hover{ background:var(--panel-hi); border-color:var(--ink-faint); color:var(--ink); }
+
+.jal-comp-panels{
+  flex:1; display:grid; grid-template-columns:1fr 1fr; gap:12px; padding:12px;
+  min-height:0; background:var(--bg);
+}
+.jal-comp-panel{
+  position:relative; overflow:hidden; background:var(--bg);
+  border:1px solid var(--line); border-radius:10px;
+  display:flex; flex-direction:column; min-height:0; cursor:pointer;
+}
+.jal-comp-panel canvas{ position:absolute; inset:0; width:100%; height:100%; }
+.jal-comp-panel-label{
+  position:absolute; top:12px; left:12px; z-index:2;
+  background:rgba(16,21,31,0.92); border:1px solid var(--line); border-radius:999px;
+  padding:4px 12px; font-size:11px; font-weight:600; letter-spacing:0.08em; text-transform:uppercase; color:var(--ink-dim);
+  pointer-events:none;
+}
+
+.jal-comp-strip{
+  flex:none; background:var(--panel); border-top:1px solid var(--line);
+  padding:16px 20px; display:grid; gap:10px;
+  font-size:12px; line-height:1.5; color:var(--ink-dim);
+}
+.jal-comp-metrics{ display:flex; flex-wrap:wrap; gap:14px 22px; align-items:baseline; }
+.jal-comp-metric{ display:flex; flex-direction:column; gap:2px; }
+.jal-comp-metric-label{ font-size:11px; font-weight:600; letter-spacing:0.08em; text-transform:uppercase; color:var(--ink-faint); }
+.jal-comp-metric-value{ font-size:18px; font-weight:300; letter-spacing:-0.02em; color:var(--ink); font-variant-numeric:tabular-nums; }
+.jal-comp-metric-ci{ font-size:11px; color:var(--ink-faint); font-variant-numeric:tabular-nums; }
+.jal-comp-metric-value-row{ display:flex; align-items:baseline; gap:8px; }
+.jal-comp-metric--lead .jal-comp-metric-value{ font-size:28px; }
+.jal-comp-metric--grouped{ border-left:2px solid var(--line); padding-left:12px; }
+.jal-comp-caption{
+  flex-basis:100%; margin:2px 0 0; font-size:11px; line-height:1.5; color:var(--ink-faint);
+  border-left:2px solid var(--line); padding-left:10px;
+}
+.jal-comp-disclosures{ display:grid; gap:6px; font-size:11px; color:var(--ink-faint); border-top:1px solid var(--line); padding-top:10px; margin-top:2px; }
+.jal-comp-disclosures .provenance-line{ margin-top:4px; }
+
+/* Legends inside comparison panels reuse main legend styling */
+.jal-comp-legend{
+  position:absolute; bottom:12px; left:12px; z-index:2;
+  background:rgba(16,21,31,0.92); border:1px solid var(--line); border-radius:10px;
+  padding:10px 12px; font-size:11px; color:var(--ink-dim); display:grid; gap:6px; pointer-events:none; max-width:220px; min-width:180px;
+}
+.jal-comp-legend-title{ font-size:11px; font-weight:600; letter-spacing:0.14em; text-transform:uppercase; color:var(--ink-dim); }
+.jal-comp-legend-encoding{ font-size:10px; color:var(--ink-faint); letter-spacing:0.04em; }
+.jal-comp-legend-row{ display:flex; align-items:center; gap:8px; }
+.jal-comp-empty{
+  display:grid; place-items:center; height:100%; padding:24px; text-align:center; color:var(--ink-dim); font-size:13px; line-height:1.6;
+}
+.jal-comp-empty .retry{ margin-top:10px; border:1px solid var(--line); border-radius:999px; background:var(--panel); color:var(--ink-dim); padding:4px 14px; font-size:11px; cursor:pointer; }
+.jal-comp-empty .retry:hover{ background:var(--panel-hi); color:var(--ink); }
+
+@media (prefers-reduced-motion: reduce){
+  .jal-comp-overlay{ transition-duration:0.01ms !important; animation-duration:0.01ms !important; }
+  .jal-comp-panel, .jal-comp-strip{ animation-duration:0.01ms !important; }
+}
+
+
+/* ---- LIVE forecast refresh (WF LIVE) ------------------------------------ */
+/* Tokens verbatim from FRONTEND-DESIGN-GUIDE.md §4 — no invented values. */
+.live-run-btn{
+  display:inline-flex; align-items:center; gap:6px;
+  border:1px solid var(--line); border-radius:999px;
+  padding:5px 12px; font-size:11px; font-weight:600;
+  letter-spacing:0.08em; text-transform:uppercase;
+  color:var(--ink-dim); background:var(--panel);
+  cursor:pointer; transition:background var(--fast) var(--ease), border-color var(--fast) var(--ease), color var(--fast) var(--ease);
+}
+.live-run-btn:hover:not(:disabled){ background:var(--panel-hi); border-color:var(--ink-faint); color:var(--ink); }
+.live-run-btn:disabled{ opacity:0.55; cursor:default; }
+.live-run-btn:focus-visible{ outline:1px solid var(--accent); outline-offset:2px; }
+
+.live-panel{ border-left:3px solid var(--accent); }
+.live-tile-hint{ font-size:10px; font-weight:400; letter-spacing:0.06em; color:var(--ink-faint); text-transform:none; margin-left:8px; }
+.live-status{ display:grid; gap:8px; font-size:12px; line-height:1.5; color:var(--ink-dim); }
+.live-idle{ color:var(--ink-dim); }
+.live-scope-note{ font-size:11px; color:var(--ink-faint); line-height:1.45; }
+.live-scope-note.scope-emphasis{ color:var(--ink-dim); border-top:1px solid var(--line); padding-top:8px; margin-top:8px; }
+.live-card{ display:grid; gap:6px; padding:10px 12px; background:rgba(16,21,31,0.6); border:1px solid var(--line); border-radius:10px; }
+.live-card.live-queued{ border-color:var(--ink-faint); }
+.live-card.live-running{ border-color:var(--accent); }
+.live-card.live-completed{ border-color:rgba(56,189,248,0.35); }
+.live-card.live-failed{ border-color:rgba(244,63,94,0.45); }
+.live-state-label{ display:flex; align-items:center; gap:8px; font-size:11px; font-weight:600; letter-spacing:0.08em; text-transform:uppercase; color:var(--ink); }
+.live-running .live-state-label{ color:var(--accent); }
+.live-failed .live-state-label{ color:var(--surcharge); }
+.live-dot{
+  width:7px; height:7px; border-radius:999px; flex:none;
+  background:var(--ink-faint);
+  animation:live-pulse 1.4s ease-in-out infinite;
+}
+.live-running .live-dot{ background:var(--accent); }
+.live-card .kv dd{ font-variant-numeric:tabular-nums; }
+@keyframes live-pulse{
+  0%,100%{ opacity:0.35; }
+  50%{ opacity:1; }
+}
+.live-meta{ font-size:11px; color:var(--ink-faint); overflow-wrap:anywhere; font-variant-numeric:tabular-nums; }
+.live-meta code{ font-family:ui-monospace,"SF Mono",Menlo,monospace; font-size:11px; color:var(--ink-faint); }
+.live-note{ font-size:11px; color:var(--ink-faint); }
+.live-error{ font-size:11px; color:var(--surcharge); overflow-wrap:anywhere; }
+.live-error code{ color:var(--surcharge); }
+.live-listing{ font-size:11px; color:var(--ink-faint); overflow-wrap:anywhere; }
+.live-g4{ font-size:11px; font-weight:600; color:var(--ink-dim); }
+.live-raw{ font-family:ui-monospace,"SF Mono",Menlo,monospace; font-size:10px; color:var(--ink-faint); background:var(--bg-deep); border:1px solid var(--line); border-radius:6px; padding:8px; overflow:auto; max-height:180px; white-space:pre-wrap; overflow-wrap:anywhere; }
+
+@media (prefers-reduced-motion: reduce){
+  .live-run-btn{ transition-duration:0.01ms !important; }
+  .live-dot{ animation-duration:0.01ms !important; }
+}
+
+
+/* Narrow viewport: comparison panels stack vertically (guide §5 layout) */
+@media (max-width: 1024px){
+  .jal-comp-panels{
+    grid-template-columns:1fr;
+    grid-template-rows:1fr 1fr;
+  }
+}
+
+/* ---- B7 LIVE/DEMO mode chip + toggle (additive, guide tokens only) ---- */
+.mode-chip{
+  display:inline-flex;flex-direction:column;align-items:flex-end;gap:1px;
+  line-height:1.2;text-align:right;margin-right:4px;
+}
+.mode-chip-main{
+  font-size:11px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;
+  padding:3px 10px;border-radius:999px;border:1px solid var(--line);
+  background:var(--panel);color:var(--ink);
+}
+body.mode-live .mode-chip-main{color:var(--accent);border-color:rgba(56,189,248,0.35);background:rgba(16,21,31,0.9);}
+body.mode-demo .mode-chip-main{color:var(--ink);border-color:var(--ink-faint);background:var(--panel-hi);}
+.mode-chip-sub{
+  font-size:10px;font-weight:400;letter-spacing:0.06em;color:var(--ink-faint);text-transform:none;
+}
+.mode-toggle-btn{
+  display:inline-flex;align-items:center;gap:6px;
+  border:1px solid var(--line);border-radius:999px;
+  padding:5px 12px;font-size:11px;font-weight:600;
+  letter-spacing:0.08em;text-transform:uppercase;
+  color:var(--ink-dim);background:var(--panel);
+  cursor:pointer;transition:background var(--fast) var(--ease),border-color var(--fast) var(--ease),color var(--fast) var(--ease);
+}
+.mode-toggle-btn:hover:not(:disabled){background:var(--panel-hi);border-color:var(--ink-faint);color:var(--ink);}
+.mode-toggle-btn:disabled{opacity:0.5;cursor:default;}
+.mode-toggle-btn.live-return{border-color:rgba(56,189,248,0.35);color:var(--accent);}
+.mode-toggle-btn.hidden{ display:none !important; }
+#gate-note.hidden{ display:none !important; }
+#btn-demo-restart.hidden{ display:none !important; }
+/* B7 live empty state: timeline disabled visibly */
+body.mode-live .timeline{ opacity:0.45; pointer-events:none; }
+body.mode-live .bottombar .play-btn:disabled{ opacity:0.5; }
+body.mode-live .wf6tl-cluster{ opacity:0.45; pointer-events:none; }
+body.mode-live .wf6tl-hy-wrap{ opacity:0.35; pointer-events:none; }
+/* B9 gate note never visible */
+#gate-note{ display:none !important; }
+/* A1 no 48h: ensure no stray badge shows uncoupled baseline as error */
+#run-label{ max-width:36vw; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+/* Beyond-horizon tick dim */
+.tick-beyond{ opacity:0.45; font-style:italic; }
+
+/* GAP-3 beyond-horizon honesty: dim over-run rows/ticks */
+.beyond-horizon{ opacity:0.55 !important; }
+.beyond-hint{ font-size:10px; color:var(--ink-faint); margin-left:6px; font-style:italic; letter-spacing:0.02em; }
+#watchlist .wf6-row.beyond-horizon{ opacity:0.55; }
+#watchlist .wf6-lead.beyond-horizon{ opacity:0.55; font-style:italic; }
+.wf6-watchlist .beyond-horizon{ opacity:0.55; }
+
+/* D2 fix: single chip + single toggle + single run-label, no overflow at 1280/1920 */
+.topbar{ flex-wrap:nowrap; overflow:hidden; gap:12px; }
+.topbar .brand{ flex:none; min-width:0; }
+.topbar .run-label{ flex:1 1 auto; min-width:0; justify-content:flex-end; overflow:hidden; flex-wrap:nowrap; }
+#mode-chip{ flex:none; }
+#mode-chip-sub.hidden{ display:none !important; }
+#run-label.hidden{ display:none !important; }
+.status-dot.hidden{ display:none !important; }
+#run-label{ flex:0 1 auto; min-width:0; max-width:36vw; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+@media (max-width:1300px){
+  #run-label{ max-width:28vw; }
+  .wf6-search{ width: min(300px, calc(100% - 24px)) !important; }
+}
+@media (min-width:1920px){
+  #run-label{ max-width:32vw; }
+}
+
+/* D7 watchdog: ensure watchlist name never collapses to 1 char */
+#watchlist .wf6-row{ grid-template-columns:22px minmax(90px,1fr) 88px 10px !important; }
+#watchlist .wf6-main{ min-width:90px !important; }
+#watchlist .wf6-name{ min-width:0; }
+#watchlist .wf6-metrics{ min-width:88px; }
+
+/* bottombar overflow guard */
+.bottombar{ overflow:hidden; min-width:0; }
+.bottombar .timeline{ min-width:0; overflow:hidden; }
+#wf6tl-cluster{ max-width:280px; min-width:0; flex-shrink:0; }
+#wf6tl-length{ max-width:260px !important; }

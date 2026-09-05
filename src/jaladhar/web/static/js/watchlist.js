@@ -178,24 +178,24 @@ const PANEL_CSS = `
 .wf6-rowitem{ display:flex; align-items:stretch; }
 .wf6-rowitem .wf6-row{ flex:1; min-width:0; }
 .wf6-go{
-  flex:none; width:34px; border:none; border-left:1px solid var(--line);
+  flex:none; width:34px; transition:background var(--fast) var(--ease), color var(--fast) var(--ease); border:none; border-left:1px solid var(--line);
   background:transparent; color:var(--ink-faint); font-size:13px; cursor:pointer;
 }
 .wf6-go:hover{ background:var(--panel-hi); color:var(--ink); }
 .wf6-row{
-  display:grid; grid-template-columns:22px minmax(0,1fr) auto 10px; align-items:center; gap:8px;
+  display:grid; transition:background var(--fast) var(--ease); grid-template-columns:22px minmax(90px,1fr) 88px 10px; align-items:center; gap:8px;
   width:100%; padding:7px 12px; background:transparent; border:none;
   color:inherit; font:inherit; text-align:left; cursor:pointer;
 }
 .wf6-row:hover, .wf6-row:focus-visible{ background:var(--panel-hi); }
 .wf6-rank{ color:var(--ink-faint); font-size:11px; font-variant-numeric:tabular-nums; }
-.wf6-main{ display:flex; flex-direction:column; gap:3px; min-width:0; }
-.wf6-name{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-weight:500; }
+.wf6-main{ display:flex; flex-direction:column; gap:3px; min-width:90px; flex:1; }
+.wf6-name{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-weight:500; min-width:0; flex:1; }
 .wf6-ward{
   align-self:flex-start; border:1px solid var(--line); border-radius:999px;
   padding:0 8px; font-size:10px; color:var(--ink-dim); white-space:nowrap;
 }
-.wf6-metrics{ display:flex; flex-direction:column; align-items:flex-end; gap:3px; }
+.wf6-metrics{ display:flex; flex-direction:column; align-items:flex-end; gap:3px; min-width:88px; flex:none; text-align:right; }
 .wf6-depth{ font-size:12px; color:var(--ink); white-space:nowrap; font-variant-numeric:tabular-nums; }
 .wf6-lead{ font-size:11px; color:var(--ink-dim); white-space:nowrap; font-variant-numeric:tabular-nums; }
 .wf6-lead.tone-0{ color:var(--d1); }
@@ -227,7 +227,7 @@ const PANEL_CSS = `
 .wf6-retry:hover{ background:var(--panel-hi); color:var(--ink); }
 
 .wf6-skel{
-  height:36px; margin:8px 12px; border-radius:8px;
+  height:36px; margin:8px 12px; border-radius:10px;
   background:linear-gradient(100deg, var(--panel) 40%, var(--panel-hi) 50%, var(--panel) 60%);
   background-size:200% 100%;
   animation:wf6-shimmer 1.4s linear infinite;
@@ -297,6 +297,38 @@ export class WatchlistPanel {
 
   mount() {
     ensureStyles();
+    // D1 live-empty enforcement: watch for any demo rows leaking into LIVE empty and replace
+    const _liveEnforce = () => {
+      const lm = (globalThis.__JALADHAR_MODE === "live") || (globalThis.__JALADHAR_STATE && globalThis.__JALADHAR_STATE.mode === "live");
+      const le = !!(globalThis.__JALADHAR_STATE && globalThis.__JALADHAR_STATE.liveEmpty);
+      if(lm && le){
+        // if body contains demo rows, force empty
+        const wl=document.getElementById("watchlist");
+        const body=wl?.querySelector(".wf6-body");
+        if(body && body.querySelector(".wf6-row")){
+          body.replaceChildren();
+          const empty=document.createElement("div");
+          empty.className="wf6-empty";
+          empty.textContent="no live run — streets at risk appear after the first live forecast";
+          body.appendChild(empty);
+          const intEl=document.querySelector("#watchlist .wf6-int"); if(intEl) intEl.remove();
+          const chip=document.querySelector("#watchlist .wf6-chip");
+          if(chip) chip.textContent="—";
+          const sl=document.querySelector("#watchlist .wf6-statusline");
+          if(sl) sl.style.display="none";
+        }
+      }
+    };
+    setInterval(_liveEnforce, 800);
+    document.addEventListener("jaladhar:live-enter", _liveEnforce);
+    // also observe DOM mutations on watchlist body
+    setTimeout(()=>{
+      const wl=document.getElementById("watchlist");
+      const b=wl?.querySelector(".wf6-body");
+      if(b){
+        new MutationObserver(_liveEnforce).observe(b, {childList:true, subtree:true});
+      }
+    }, 1000);
     if (document.getElementById(PANEL_ID)) {
       throw new Error(`#${PANEL_ID} already exists — refusing double mount`);
     }
@@ -347,9 +379,14 @@ export class WatchlistPanel {
     this.root = root;
 
     document.addEventListener("wf6:frame-changed", (event) => {
+      // suppress demo frame changes while in LIVE empty
+      const isLiveEmpty = (globalThis.__JALADHAR_MODE === "live") && globalThis.__JALADHAR_STATE && globalThis.__JALADHAR_STATE.liveEmpty;
+      if(isLiveEmpty) return;
       const frame = event.detail && event.detail.frame;
       if (typeof frame === "string" && frame) this.setFrame(frame);
     });
+    document.addEventListener("jaladhar:live-enter", () => { this.refresh(); });
+    document.addEventListener("jaladhar:demo-enter", () => { this.refresh(); });
     return this;
   }
 
@@ -383,6 +420,24 @@ export class WatchlistPanel {
   // -------------------------------------------------------------- fetching
 
   async refresh() {
+    // D1 LIVE honesty: zero demo-derived numbers in LIVE with no live run
+    const liveMode = (globalThis.__JALADHAR_MODE === "live") || (globalThis.__JALADHAR_STATE && globalThis.__JALADHAR_STATE.mode === "live");
+    const liveEmpty = !!(globalThis.__JALADHAR_STATE && globalThis.__JALADHAR_STATE.liveEmpty);
+    if(liveMode && liveEmpty){
+      // honest live-empty, never fetch demo watchlist
+      this.countChip.textContent = "—";
+      this.countChip.title = "no live run yet";
+      if(this.statusLine) this.statusLine.style.display="none";
+      this.body.replaceChildren();
+      const empty=document.createElement("div");
+      empty.className="wf6-empty";
+      empty.textContent="no live run — streets at risk appear after the first live forecast";
+      this.body.appendChild(empty);
+      this.source=null; this.counts=null; this.rows=[]; this.everLoaded=false;
+      return;
+    } else {
+      if(this.statusLine) this.statusLine.style.display="";
+    }
     const seq = ++this.loadSeq;
     // Stale-while-revalidate (V-trace friction finding): once real data has
     // been shown, a frame change keeps the previous rows visible with an
@@ -483,6 +538,20 @@ export class WatchlistPanel {
   }
 
   renderData() {
+    const liveMode = (globalThis.__JALADHAR_MODE === "live") || (globalThis.__JALADHAR_STATE && globalThis.__JALADHAR_STATE.mode === "live");
+    const liveEmpty = !!(globalThis.__JALADHAR_STATE && globalThis.__JALADHAR_STATE.liveEmpty);
+    if(liveMode && liveEmpty){
+      this.countChip.textContent = "—";
+      this.countChip.title = "no live run yet";
+      if(this.statusLine) this.statusLine.style.display="none";
+      this.body.replaceChildren();
+      const empty=document.createElement("div");
+      empty.className="wf6-empty";
+      empty.textContent="no live run — streets at risk appear after the first live forecast";
+      this.body.appendChild(empty);
+      this.source=null; this.counts=null; this.rows=[]; this.everLoaded=false;
+      return;
+    }
     const flooded = isFiniteNumber(this.counts?.flooded_streets)
       ? this.counts.flooded_streets
       : this.rows.length;
@@ -640,6 +709,12 @@ export class WatchlistPanel {
   // --------------------------------------------------------- intersections
 
   renderIntersections(nodes, error) {
+    const liveMode = (globalThis.__JALADHAR_MODE === "live") || (globalThis.__JALADHAR_STATE && globalThis.__JALADHAR_STATE.mode === "live");
+    const liveEmpty = !!(globalThis.__JALADHAR_STATE && globalThis.__JALADHAR_STATE.liveEmpty);
+    if(liveMode && liveEmpty){
+      this.root.querySelector(".wf6-int")?.remove();
+      return;
+    }
     // Remove any previous section; the whole panel re-renders on refresh.
     this.root.querySelector(".wf6-int")?.remove();
     if (this.body.querySelector(".wf6-empty") && !nodes) return;

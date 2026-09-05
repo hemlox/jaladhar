@@ -53,3 +53,11 @@ dist/
 
 # Goal-session state (per-session working notes; never project history)
 .goal/
+
+# Runtime logs (deploy.sh writes here)
+logs/
+
+# Per-user agent configuration
+.codex/
+.claude/settings.local.json
+.claude/RESUME.md

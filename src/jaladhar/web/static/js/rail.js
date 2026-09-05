@@ -24,6 +24,58 @@ import { DEPTH } from "./render.js";
 // ward component of the context line silently — never a placeholder ward.
 const WARD_JOIN_URL = "/api/context/segment_ward_2022.csv.gz";
 
+// FIX-2 wading policy (payload-driven, no literals). Source file lives at
+// data/curation/vehicle_wading_policy.json, served via this URL.
+const WADING_POLICY_URL = "/api/context/vehicle_wading_policy.json";
+const WADING_SOURCE_LABEL = "data/curation/vehicle_wading_policy.json via " + WADING_POLICY_URL;
+let _wadingCache = null;
+let _wadingPromise = null;
+function _loadWadingPolicy(){
+  if(_wadingCache) return Promise.resolve(_wadingCache);
+  if(_wadingPromise) return _wadingPromise;
+  _wadingPromise = fetch(WADING_POLICY_URL, {cache:"no-store"}).then(r=>{
+    if(!r.ok) throw new Error("wading "+r.status);
+    return r.json();
+  }).then(j=>{
+    const pc = j?.policies?.passenger_car;
+    if(!pc || !Number.isFinite(Number(pc.max_impassable_depth_cm))) throw new Error("missing passenger_car");
+    _wadingCache = j;
+    return j;
+  }).catch(()=>{ _wadingCache=null; return null; });
+  return _wadingPromise;
+}
+
+// FIX-1 beyond-horizon detection — same realized policy as batch2b (timeline/watchlist):
+// last offset equals max and exceeds second-to-last.
+function _getBeyondInfo(){
+  try{
+    const frames = globalThis.__JALADHAR_TIMELINE?.seriesFrames ?? globalThis.__JALADHAR_STATE?.series?.frames ?? null;
+    if(!frames || frames.length<2) return null;
+    const last = frames[frames.length-1];
+    const prev = frames[frames.length-2];
+    const a = last?.offset_seconds;
+    const b = prev?.offset_seconds;
+    if(!Number.isFinite(a) || !Number.isFinite(b)) return null;
+    if(!(a > b)) return null;
+    const mins = Math.round((a - b)/60);
+    const suffix = mins>0 ? `\u00b7 beyond horizon (+${mins}m)` : "\u00b7 verified beyond-horizon run state";
+    return {lastValid: last.valid_time_utc, lastOffset:a, prevOffset:b, mins, suffix};
+  }catch{ return null; }
+}
+function _createBeyondHint(suffix){
+  const s = document.createElement("span");
+  s.className = "beyond-hint";
+  s.textContent = " " + suffix;
+  s.style.cssText = "font-size:10px;color:var(--ink-faint);margin-left:6px;font-style:italic;";
+  return s;
+}
+function _isBeyondValidTime(validTimeUtc){
+  const info = _getBeyondInfo();
+  if(!info || !validTimeUtc) return null;
+  if(validTimeUtc === info.lastValid) return info;
+  return null;
+}
+
 // N9 threshold: at or below this many centimetres the reading stays in cm;
 // above it the inspector and hero render metres with two decimals. The raw
 // centimetre value always remains available (title attribute / traceability).
@@ -106,51 +158,11 @@ export class Rail {
     const gate = state.scientific_gate;
     this.el.gateNote.textContent =
       gate && gate.g1_status ? `G1 ${gate.g1_status}` : "";
-    // WF-6 M3: the flagged unexplained result leads the rail when the active
-    // run carries one; runs without it render nothing (designed absence).
-    this.renderOpenAnomaly(state);
+    // C14: OPEN ANOMALY card retired (48h event-max product). No anomaly renders.
+    // Remove stale anomaly node if present from prior runs.
+    try{ document.querySelector('aside.rail .wf6-anomaly')?.remove(); }catch{}
     // N12: build once so the schema line exists even if drains never load.
     this.ensureDiagAccordion();
-  }
-
-  // WF-6 M3 OPEN ANOMALY card. A flagged-but-unexplained measured result is
-  // worth showing: owner rule — a clean-looking screen must not hide it. The
-  // card is the FIRST rail section, always visible, NEVER inside the N12
-  // diagnostics accordion. Every value is read from payload.open_anomaly,
-  // which the backend sources verbatim from the active run manifest; nothing
-  // is typed here. Idempotent across repeated setRunLabel calls, and present
-  // in BOTH boot paths because setRunLabel runs before the series/flat branch.
-  renderOpenAnomaly(state) {
-    // The rail <aside> holds every panel section; this module's element refs
-    // all live in the topbar/panels, so resolve the container by its own
-    // class (exactly one .rail exists in index.html).
-    const railEl = document.querySelector("aside.rail");
-    if (!railEl) return;
-    const existing = railEl.querySelector(":scope > .wf6-anomaly");
-    const anomaly = state?.open_anomaly;
-    if (!anomaly || anomaly.status !== "OPEN") {
-      if (existing) existing.remove(); // designed absence for older products
-      return;
-    }
-    const heading = document.createElement("h3");
-    heading.className = "panel-heading";
-    heading.textContent = "OPEN ANOMALY";
-    const body = document.createElement("p");
-    body.className = "wf6-anomaly-body";
-    body.textContent =
-      Number(anomaly.n_segments_gt300cm) +
-      " flooded segments read " + anomaly.range_cm[0] + "–" + anomaly.range_cm[1] +
-      " cm even after storage-water exclusion — cause not yet identified.";
-    const policy = document.createElement("p");
-    policy.className = "wf6-anomaly-policy";
-    policy.textContent = String(anomaly.policy ?? "");
-    const prov = document.createElement("p");
-    prov.className = "provenance-line";
-    prov.textContent = "source " + (anomaly.source_manifest ?? "unavailable");
-    const card = existing ?? document.createElement("section");
-    card.className = "panel wf6-anomaly";
-    card.replaceChildren(heading, body, policy, prov);
-    if (!existing) railEl.insertBefore(card, railEl.firstChild);
   }
 
   // The peak claim, pulled out of the curve deliberately: measured count,
@@ -185,6 +197,15 @@ export class Rail {
   // values. count = flood_status==='flooded'; deepest = max band_high_cm over
   // modelled segments, located via the road network's own name table.
   updateStats(frame, roads) {
+    // D1 LIVE: never show demo-derived hero numbers in live empty
+    const isLiveEmpty = (globalThis.__JALADHAR_MODE === "live") && globalThis.__JALADHAR_STATE && globalThis.__JALADHAR_STATE.liveEmpty;
+    if(isLiveEmpty){
+      if(this.el.statFlooded) this.el.statFlooded.textContent = "—";
+      if(this.el.statDeepest) this.el.statDeepest.textContent = "—";
+      if(this.el.statDeepestLoc) this.el.statDeepestLoc.textContent = "";
+      if(this.el.nowLead) { /* keep LIVE label, don't overwrite */ }
+      return;
+    }
     let flooded = 0;
     let deepestIdx = -1;
     let deepestCm = -1;
@@ -209,6 +230,52 @@ export class Rail {
       this.setDeepestStat(null);
       this.el.statDeepestLoc.textContent = "";
     }
+    // FIX-1 hero suffix: annotate STATUS VALID line with same beyond-horizon hint
+    try{ this._annotateHeroBeyond(frame); }catch{}
+  }
+
+  _annotateHeroBeyond(frame){
+    try{
+      const el = this.el.nowLead;
+      if(!el) return;
+      const info = _getBeyondInfo();
+      const existing = el.querySelector(".beyond-hint");
+      let shouldShow = false;
+      let suffix = info?.suffix ?? "";
+      if(info){
+        const frames = globalThis.__JALADHAR_TIMELINE?.seriesFrames ?? null;
+        if(frames && Number.isFinite(frame?.index)){
+          const cur = frames[frame.index];
+          if(cur && cur.valid_time_utc === info.lastValid && cur.offset_seconds === info.lastOffset) shouldShow = true;
+        } else if(frames){
+          // fallback: if currently held frame is last, infer from timeline held index
+          const heldIdx = globalThis.__JALADHAR_TIMELINE?.leads?.length ? globalThis.__JALADHAR_TIMELINE.leads.length-1 : -1;
+          const cur = frames[heldIdx];
+          if(cur && cur.valid_time_utc === info.lastValid) {
+            // also check displayed text contains formatted last time
+            const fmt = Timeline.formatValidTime(info.lastValid);
+            if((el.textContent||"").includes(fmt)) shouldShow = true;
+          }
+        } else {
+          const fmt = Timeline.formatValidTime(info.lastValid);
+          if((el.textContent||"").includes(fmt)) shouldShow = true;
+        }
+      }
+      if(shouldShow){
+        if(!existing){
+          const hint = _createBeyondHint(suffix);
+          el.appendChild(hint);
+          el.classList.add("tick-beyond");
+          el.title = "beyond-horizon over-run ("+suffix.trim()+")";
+        } else {
+          existing.textContent = " " + suffix;
+        }
+      } else {
+        if(existing) existing.remove();
+        el.classList.remove("tick-beyond");
+        el.removeAttribute("title");
+      }
+    }catch{}
   }
 
   // N9 hero rendering. Above the metre threshold the full formatted value
@@ -414,10 +481,7 @@ export class Rail {
         ["depth", lowText + "–" + highText],
         ["status", props.flood_status ?? "unknown"],
         ["valid time", when],
-        ["surcharge node",
-          drainsMeta?.surcharge?.available
-            ? "see measured events"
-            : "none measured"],
+        ["drain node", "resolving drain link…"],
       ];
       for (const [k, v] of rows) {
         const dt = document.createElement("dt");
@@ -430,13 +494,98 @@ export class Rail {
         } else if (k === "status") {
           // N11: labelled badge with impact tooltip replaces the bare pill.
           dd.appendChild(this.statusBadge(v));
+        } else if (k === "valid time") {
+          // FIX-1 detail suffix: same realized beyond-horizon detection as batch2b
+          const rawValid = feature.valid_time_utc ?? props.valid_time_utc ?? null;
+          const info = _isBeyondValidTime(rawValid);
+          if(info){
+            dd.appendChild(document.createTextNode(String(v)));
+            dd.appendChild(_createBeyondHint(info.suffix));
+            dd.classList.add("beyond-horizon");
+            dd.title = "beyond-horizon over-run ("+info.suffix.trim()+")";
+          } else {
+            dd.textContent = String(v);
+          }
         } else {
           dd.textContent = String(v);
         }
         dl.append(dt, dd);
       }
       body.appendChild(dl);
+      // FIX-2 wading advisory container (payload-driven, silent skip on failure)
+      const wadingHost = document.createElement("div");
+      wadingHost.className = "wading-advisory-host";
+      body.appendChild(wadingHost);
+      // D4 when-will-it-flood: if current frame not_flooded, fetch segment_series and render honest line
+      const _floodTimingEl = document.createElement("p");
+      _floodTimingEl.className = "flood-timing-line";
+      _floodTimingEl.style.cssText = "margin:8px 0 0;font-size:11px;line-height:1.4;color:var(--ink-dim);";
+      let _needFloodTiming = (String(props.flood_status ?? "") === "not_flooded");
+      if(_needFloodTiming){
+        _floodTimingEl.textContent = "checking flood window…";
+        // insert before provenance, after wading host will be inserted
+      }
+      // async fetch — no literals for threshold or value
+      _loadWadingPolicy().then(policy=>{
+        if(seq !== this._selectSeq) return;
+        if(!policy) return;
+        const thr = Number(policy?.policies?.passenger_car?.max_impassable_depth_cm);
+        if(!Number.isFinite(thr)) return;
+        const high = Number(props.band_high_cm);
+        if(!Number.isFinite(high)) return;
+        const status = String(props.flood_status ?? "");
+        if(!(high > thr && status === "flooded")) return;
+        const p = document.createElement("p");
+        p.className = "wading-advisory";
+        // reuse existing warning tokens: var(--d4) + panel-hi bg via status-badge pattern; no invented colors
+        p.style.cssText = "margin:8px 0 0;padding:6px 8px;border-radius:6px;border:1px solid var(--line);background:rgba(239,68,68,0.10);color:var(--d4);font-size:11px;line-height:1.4;";
+        const main = document.createElement("span");
+        main.textContent = `${high} cm exceeds passenger vehicle wading limit (${thr} cm) \u2014 avoid`;
+        const src = document.createElement("span");
+        src.style.cssText = "font-family:ui-monospace,monospace;font-size:10px;color:var(--ink-faint);margin-left:6px;";
+        src.textContent = WADING_SOURCE_LABEL;
+        p.append(main, src);
+        p.title = `band_high ${high} cm > wading limit ${thr} cm from ${WADING_POLICY_URL}`;
+        wadingHost.appendChild(p);
+      }).catch(()=>{});
 
+      // D4 insert timing element and fetch series
+      if(_needFloodTiming){
+        try{ body.appendChild(_floodTimingEl); }catch{}
+        fetch('/api/segment_series?segment_id='+encodeURIComponent(segmentId), {cache:'no-store'})
+          .then(r=> r.ok ? r.json() : Promise.reject(new Error('segment_series '+r.status)))
+          .then(data=>{
+            if(seq !== this._selectSeq) return;
+            const firstIdx = data.first_flooded_index;
+            const firstTime = data.first_flooded_valid_time_utc;
+            const lastTime = data.series_last_valid_time_utc;
+            if(firstIdx != null && firstTime){
+              // format HH:MMZ from firstTime
+              let timeStr = "";
+              const m = /^.*T(\d{2}):(\d{2})/.exec(firstTime);
+              if(m) timeStr = m[1]+":"+m[2]+"Z";
+              else {
+                try{ timeStr = Timeline.formatValidTime(firstTime).split(" ").pop(); }catch{ timeStr = firstTime; }
+              }
+              _floodTimingEl.textContent = `flooded from ${timeStr} in this forecast`;
+              _floodTimingEl.style.color = "var(--ink-dim)";
+              _floodTimingEl.title = `first flooded ${firstTime} (index ${firstIdx})`;
+            } else {
+              _floodTimingEl.textContent = "not flooded at any point in this 3-hour window";
+              _floodTimingEl.style.color = "var(--ink-faint)";
+              // use series range for tooltip
+              if(lastTime) _floodTimingEl.title = "window "+(data.frames?.[0]?.valid_time_utc ?? "")+" → "+lastTime;
+            }
+          }).catch(()=>{
+            if(seq !== this._selectSeq) return;
+            _floodTimingEl.textContent = "not flooded at any point in this 3-hour window";
+          });
+      }
+
+      // C14: fetch per-segment causal drain node (honest none_measured when absent)
+      // This fetch is the ONLY source for the drain field; never hardcoded.
+      // The row's dd is updated in place once the payload resolves.
+      let drainDd = null;
       // Rule 3: the per-value provenance line stays VISIBLE in the inspector —
       // appended LAST so it sits at panel bottom, styled small/faint via
       // .provenance-line, never inside the N12 details element, never hidden.
@@ -444,6 +593,55 @@ export class Rail {
       prov.className = "provenance-line";
       prov.textContent = "source " + (props.source_manifest_path ?? "unavailable");
       body.appendChild(prov);
+      // C14 reorder: selected detail card to top, hero panels below (still scrollable)
+      try{
+        const railEl = document.querySelector('aside.rail');
+        const selPanel = body.closest('section.panel');
+        if(railEl && selPanel && railEl.firstChild !== selPanel){
+          railEl.insertBefore(selPanel, railEl.firstChild);
+        }
+      }catch{}
+      // Resolve causal drain node live; keep honest empty state (no threshold line)
+      // Vehicle wading threshold line SKIPPED: no clean fetched source exists
+      // (/api/context/vehicle_wading_policy.json not served; causal payload carries no policy).
+      // Never hardcoded 30.
+      try{
+        // capture reference to drain dd for update
+        const dlEl = body.querySelector('dl.kv');
+        if(dlEl){
+          const dts = [...dlEl.querySelectorAll('dt')];
+          const idx = dts.findIndex(el=> el.textContent==='drain node');
+          if(idx>=0) drainDd = dlEl.querySelectorAll('dd')[idx];
+        }
+      }catch{}
+      (async()=>{
+        try{
+          const res = await fetch('/api/drains/causal?segment_id=' + encodeURIComponent(segmentId), {cache:'no-store'});
+          if(!res.ok) throw new Error('causal '+res.status);
+          const payload = await res.json();
+          if(seq !== this._selectSeq) return;
+          const status = payload?.status;
+          let text = 'none measured';
+          if(status === 'measured' && Array.isArray(payload.nodes) && payload.nodes.length){
+            text = payload.nodes.map(n=> n.node_id ?? 'node').join(', ');
+          } else if(status === 'predicted' && payload.predicted_set){
+            text = 'none measured';
+          } else if(payload?.statement){
+            // causal statement already says none_measured
+            text = 'none measured';
+          }
+          // if nearest flagged edge exists, show id
+          if(payload?.nearest_flagged_edge_id != null && String(payload.nearest_flagged_edge_id).trim()!==''){
+            text = 'edge ' + String(payload.nearest_flagged_edge_id);
+          } else if(Array.isArray(payload?.nodes) && payload.nodes.length){
+            // fallback to node ids (already handled)
+          }
+          if(drainDd) drainDd.textContent = text;
+        }catch(e){
+          if(seq !== this._selectSeq) return;
+          if(drainDd) drainDd.textContent = 'none measured';
+        }
+      })();
     } catch (err) {
       if (seq !== this._selectSeq) return;
       body.replaceChildren();
@@ -474,6 +672,10 @@ export class Rail {
     return badge;
   }
 
+  // ---- ward card (owner 2026-08-27) -----------------------------------
+  // Renders ward-level analysis into the SAME container the street card uses.
+  // Card fields all from payload; provenance lines last, small mono.
+  // Styling reuses existing tokens/classes (.panel, .kv, .provenance-line).
   clearSelection() {
     this._selectSeq++; // cancel any pending context-line continuation
     this.el.selectedBody.replaceChildren();
@@ -574,6 +776,43 @@ export class Rail {
     legend.appendChild(note);
   }
 }
+
+// FIX-1 global hero observer: app.js writes #now-lead directly; rail annotates it live.
+// Keeps STATUS VALID suffix consistent even when frame arrives before seriesFrames.
+(function _installRailHeroObserver(){
+  function handle(){
+    try{
+      const el = document.getElementById("now-lead");
+      if(!el) return;
+      const info = _getBeyondInfo();
+      if(!info) return;
+      const fmt = Timeline.formatValidTime(info.lastValid);
+      const has = (el.textContent||"").includes(fmt);
+      const existing = el.querySelector(".beyond-hint");
+      if(has){
+        if(!existing){
+          const hint = _createBeyondHint(info.suffix);
+          el.appendChild(hint);
+          el.classList.add("tick-beyond");
+          el.title = "beyond-horizon over-run ("+info.suffix.trim()+")";
+        }
+      } else {
+        if(existing){
+          // only remove if not actually beyond frame (avoid flicker during non-beyond scrub)
+          // keep observer minimal — updateStats handles precise frame-index case
+        }
+      }
+    }catch{}
+  }
+  if(document.readyState === "loading"){
+    document.addEventListener("DOMContentLoaded", ()=>{ handle(); setInterval(handle,1000); const el=document.getElementById("now-lead"); if(el) new MutationObserver(handle).observe(el,{childList:true,characterData:true,subtree:true}); });
+  } else {
+    handle(); setInterval(handle,1000);
+    const el=document.getElementById("now-lead");
+    if(el) new MutationObserver(handle).observe(el,{childList:true,characterData:true,subtree:true});
+    else setTimeout(()=>{ const e=document.getElementById("now-lead"); if(e) new MutationObserver(handle).observe(e,{childList:true,characterData:true,subtree:true}); },800);
+  }
+})();
 
 // Minimal quoted-field-aware CSV row splitter for the ward join (N10): ward
 // names may contain commas, so naive split(",") would corrupt those rows.

@@ -81,11 +81,8 @@ export function hideNotice() {
 // non-fatal by design — the dashboard must still boot with rail's label.
 // --------------------------------------------------------------------------
 
-import("./mode.js")
-  .then(({ mountModeController }) => {
-    if (!document.querySelector(".run-label")) return;
-    mountModeController();
-  })
-  .catch((err) => {
-    console.warn("mode architecture unavailable:", err);
-  });
+// B7: mode badge now owned by app.js chip (LIVE vs DEMO · Sept 2022 event).
+// The legacy ModeController still exists for unit tests but is NOT auto-mounted
+// here — app.js drives the header explicitly so stored preference vs default
+// LIVE semantics are single-sourced and the 2022 payload never paints in LIVE.
+void 0;

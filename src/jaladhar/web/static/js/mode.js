@@ -26,7 +26,7 @@
 // --------------------------------------------------------------------------
 
 export const BADGE_LIVE = "LIVE";
-export const BADGE_DEMO_FORECAST = "DEMO · FORECAST";
+export const BADGE_DEMO_FORECAST = "DEMO \u00b7 Sept 2022 event";
 export const BADGE_NO_PRODUCT = "NO PRODUCT";
 export const BADGE_UNATTRIBUTED = "UNATTRIBUTED PRODUCT";
 
@@ -304,9 +304,7 @@ export function resolve(state) {
     const monYear = start
       ? `${MONTHS[start.getMonth()]} ${start.getFullYear()}`.toUpperCase()
       : null;
-    out.badge = monYear
-      ? `REPLAY · ${monYear} HINDCAST`
-      : "REPLAY HINDCAST";
+    out.badge = "DEMO \u00b7 Sept 2022 event";
     const span = start && end ? fmtSpanMs(end.getTime() - start.getTime()) : null;
     const range = start ? fmtDayRange(start, end) : null;
     const bits = [];

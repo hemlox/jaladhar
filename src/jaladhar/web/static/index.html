@@ -16,9 +16,14 @@
           <span class="brand-sub">Bengaluru · Urban Flood Nowcast</span>
         </div>
         <div class="run-label">
+          <span id="mode-chip" class="mode-chip" aria-live="polite"><span id="mode-chip-main" class="mode-chip-main">LIVE</span><span id="mode-chip-sub" class="mode-chip-sub">no live forecast run yet</span></span>
           <span id="status-dot" class="status-dot"></span>
-          <span id="run-label">loading run state</span>
-          <span id="gate-note" class="gate-note"></span>
+          <span id="run-label" class="hidden" aria-hidden="true">Sept 2022 event · 3-hour forecast issued 00:10 IST</span>
+          <span id="gate-note" class="gate-note hidden" aria-hidden="true"></span>
+          <button id="btn-demo-toggle" class="mode-toggle-btn" type="button" aria-label="Show demo forecast">Demo: Sept 2022 event</button>
+          <button id="btn-live-return" class="mode-toggle-btn live-return hidden" type="button" aria-label="Return to live">LIVE</button>
+          <button id="btn-live-run" class="live-run-btn" type="button" aria-label="Re-run the 3-hour forecast tile now — fresh compute of the demo forecast" title="RE-RUN the 3 h forecast tile NOW — fresh compute of the demo forecast (tile locked server-side)">RUN FRESH SIMULATION</button>
+          <button id="btn-comparison" class="comparison-entry-btn" type="button" aria-label="Open 2022 Forecast vs Replay agreement comparison">2022 Forecast vs Replay · Agreement</button>
         </div>
       </header>
 
@@ -85,6 +90,7 @@
 
       <footer class="bottombar">
         <button id="btn-play" class="play-btn" aria-label="Play the nowcast horizon" disabled title="Play needs more than one realized lead">▶</button>
+        <button id="btn-demo-restart" class="play-btn hidden" type="button" aria-label="Restart demo play-out" title="Restart demo from first frame">↻ Restart</button>
         <div class="timeline">
           <input id="scrubber" type="range" min="0" max="0" step="any" value="0"
                  aria-label="Scrub the realized forecast leads" disabled>

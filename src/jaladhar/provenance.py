@@ -36,6 +36,36 @@ def require_clean_git(repo_root: Path) -> str:
     return sha
 
 
+def git_sha_admitting_dirty(repo_root: Path, reason: str) -> dict[str, Any]:
+    """Realized Git state recorded without laundering a dirty source tree.
+
+    Mirrors ``segment_status._admitted_dirty_git_provenance``: the manifest
+    carries ``git_tree_clean=false`` plus every porcelain path so no consumer
+    can mistake the run for reproducible-from-HEAD; adoption stays owner-gated
+    and a clean-tree re-run is required before it can be served as a default.
+    """
+    sha = _git(repo_root, "rev-parse", "--verify", "HEAD^{commit}")
+    porcelain = _git(repo_root, "status", "--porcelain", "--untracked-files=all")
+    paths = [line[3:] for line in porcelain.splitlines() if line.strip()]
+    if not reason.strip():
+        raise ValueError("dirty-tree admission requires a non-empty reason")
+    return {
+        "git_sha": sha,
+        "git_tree_clean": False,
+        "git_dirty_paths": paths,
+        "source_tree_dirty_admission": {
+            "reason": reason.strip(),
+            "porcelain_paths": paths,
+            "policy": (
+                "recorded-not-laundered: concurrent units own the listed paths and this "
+                "unit is forbidden to commit/stash them; product adoption stays "
+                "owner-gated and a clean-tree re-run is required before it can be "
+                "served as a reproducible default"
+            ),
+        },
+    }
+
+
 def _utc_now() -> str:
     return datetime.now(UTC).isoformat()
 
@@ -68,6 +98,7 @@ class RunManifest:
         config_paths: dict[str, str] | None = None,
         compute_budget: dict[str, Any] | None = None,
         fields: dict[str, Any] | None = None,
+        dirty_tree_admission_reason: str | None = None,
     ) -> None:
         self.path = path
         self.stage = stage
@@ -76,6 +107,7 @@ class RunManifest:
         self.config_paths = copy.deepcopy(config_paths or {})
         self.compute_budget = copy.deepcopy(compute_budget)
         self.fields = copy.deepcopy(fields or {})
+        self.dirty_tree_admission_reason = dirty_tree_admission_reason
         self._manifest: dict[str, Any] | None = None
 
     def _assert_owned_state(self) -> None:
@@ -93,11 +125,16 @@ class RunManifest:
             raise FileExistsError(
                 f"refusing to replace existing run manifest {self.path}; use a fresh run directory"
             )
-        sha = require_clean_git(self.repo_root)
+        if self.dirty_tree_admission_reason is not None:
+            git_fields: dict[str, Any] = git_sha_admitting_dirty(
+                self.repo_root, self.dirty_tree_admission_reason
+            )
+        else:
+            git_fields = {"git_sha": require_clean_git(self.repo_root)}
         payload: dict[str, Any] = {
             "stage": self.stage,
             "status": "running",
-            "git_sha": sha,
+            **git_fields,
             "start_time_iso": _utc_now(),
             "resolved_config": self.resolved_config,
             "config_paths": self.config_paths,

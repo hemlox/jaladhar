@@ -174,32 +174,56 @@ def _resolve_multiframe_config(
     except (OSError, json.JSONDecodeError) as exc:
         errors.append(f"source_manifest unreadable: {exc}")
         payload = None
+    # Coupling lattice mirrors segment_status.py: a COUPLED source is refused;
+    # an explicit coupling_enabled=false declaration carries fuller provenance
+    # than silence and is accepted as uncoupled (same decision the single
+    # product path already makes). Only a manifest that predates declarations
+    # (key absent) still requires the legacy admission sidecar below.
+    source_declares_uncoupled = False
     if isinstance(payload, dict):
         declared_coupling = payload.get("coupling_enabled")
-        if declared_coupling is not None:
+        if declared_coupling is True:
             errors.append(
-                "frame-series products are defined only for the legacy uncoupled replay; "
+                "frame-series products are defined only for uncoupled sources; "
                 f"source manifest declares coupling_enabled={declared_coupling!r}"
             )
+        elif declared_coupling is False:
+            source_declares_uncoupled = True
     else:
         errors.append("source_manifest is not a JSON object")
 
-    errors.extend(_baseline_admission_errors(baseline_admission, source_manifest))
-    if baseline_admission is None:
-        errors.append(
-            "baseline_admission: required so the series inherits the audited "
-            "UNCOUPLED BASELINE decision"
+    baseline_inheritance = "legacy_uncoupled_baseline_admission"
+    if source_declares_uncoupled:
+        baseline_inheritance = (
+            "source-declared coupling_enabled=false; legacy admission not bound "
+            "(its recorded bindings belong to a different realized run by design)"
         )
+    else:
+        errors.extend(_baseline_admission_errors(baseline_admission, source_manifest))
+        if baseline_admission is None:
+            errors.append(
+                "baseline_admission: required so the series inherits the audited "
+                "UNCOUPLED BASELINE decision"
+            )
     if errors:
         raise ConfigResolutionError(
             "multiframe product startup configuration failed:\n- " + "\n- ".join(errors)
         )
-    assert baseline_admission is not None
+    assert source_declares_uncoupled or baseline_admission is not None
     return {
         **resolved,
         "product_label": UNCOUPLED_BASELINE_LABEL,
-        "baseline_admission": baseline_admission,
-        "baseline_admission_sha256": sha256_file(baseline_admission),
+        "baseline_inheritance": baseline_inheritance,
+        "baseline_admission": (
+            baseline_admission
+            if not source_declares_uncoupled and baseline_admission is not None
+            else None
+        ),
+        "baseline_admission_sha256": (
+            sha256_file(baseline_admission)
+            if not source_declares_uncoupled and baseline_admission is not None
+            else None
+        ),
         "excluded_basin_classes": excluded_basin_classes,
         "exclusion_mode": exclusion_mode,
     }

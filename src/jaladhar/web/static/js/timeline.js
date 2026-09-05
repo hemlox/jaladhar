@@ -19,6 +19,9 @@ const REDUCED = window.matchMedia("(prefers-reduced-motion: reduce)");
 
 const SWEEP_MS = 3000;
 
+// GAP-3/GAP-4 hooks
+function _beyondSuffix(info){ return info?.suffix ?? "\u00b7 beyond horizon (+30m)"; }
+
 function countFlooded(codes) {
   let c = 0;
   for (let i = 0; i < codes.length; i++) if (codes[i] === 1) c++;
@@ -101,8 +104,9 @@ export class Timeline {
 .wf6tl-btn:disabled { color:var(--ink-faint); cursor:default; }
 .wf6tl-btn[aria-pressed="true"] { color:var(--ink); border-color:var(--ink-faint); background:var(--panel-hi); }
 .wf6tl-speed {
-  height:24px; border-radius:8px; border:1px solid var(--line); background:var(--panel);
+  height:24px; border-radius:6px; border:1px solid var(--line); background:var(--panel);
   color:var(--ink); font-size:11px; padding:0 2px; cursor:pointer;
+  transition:background var(--fast) var(--ease), border-color var(--fast) var(--ease);
 }
 .wf6tl-speed:disabled { color:var(--ink-faint); cursor:default; }
 `;
@@ -151,7 +155,7 @@ export class Timeline {
     this.speedSel.className = "wf6tl-speed";
     this.speedSel.setAttribute("aria-label", "Playback speed");
     this.speedSel.disabled = true;
-    for (const s of [1, 2, 5]) {
+    for (const s of [0.5, 1, 2, 5]) {
       const o = document.createElement("option");
       o.value = String(s);
       o.textContent = s + "x";
@@ -175,11 +179,21 @@ export class Timeline {
     cluster.id = "wf6tl-cluster";
     cluster.className = "wf6tl-cluster";
     cluster.append(kpi, row);
+    // D3 length label: sourced from /api/state fields (no literals)
+    const lengthEl = document.createElement("p");
+    lengthEl.id = "wf6tl-length";
+    lengthEl.className = "wf6tl-length";
+    lengthEl.style.cssText = "margin:4px 0 0;font-size:10px;color:var(--ink-faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:260px;text-align:right;";
+    lengthEl.setAttribute("aria-live","polite");
+    cluster.appendChild(lengthEl);
     host.appendChild(cluster);
 
     this.kpiText = kpiText;
     this.kpiTrend = trend;
+    this.lengthEl = lengthEl;
     this._syncControlTitles();
+    // D3: init length from current seriesFrames if available, else fetch state
+    try{ this._refreshLengthLabel(); }catch{}
   }
 
   _syncControlTitles() {
@@ -216,6 +230,53 @@ export class Timeline {
     this.onFrameChange({ leadIndex, frac });
     this._syncControls();
     this._updateKpi(leadIndex, frac);
+    // GAP-4 observable
+    try{
+      const lead = this.leads[leadIndex];
+      globalThis.__JALADHAR_DEMO_TICK = {i: leadIndex, lead, frac, ts: Date.now()};
+      globalThis.__JALADHAR_STATE = globalThis.__JALADHAR_STATE || {};
+      globalThis.__JALADHAR_STATE.demoTick = globalThis.__JALADHAR_DEMO_TICK;
+    }catch{}
+    // GAP-3 tick annotation: when last frame is beyond horizon, add suffix/dim
+    try{
+      const frames = this.seriesFrames ?? globalThis.__JALADHAR_TIMELINE?.seriesFrames ?? null;
+      if(frames && frames.length>=2 && this.leads.length===frames.length){
+        const lastIdx = frames.length-1;
+        const isBeyondLast = (leadIndex===lastIdx && frac===0);
+        // tickEnd corresponds to last valid_time
+        const lastValid = frames[lastIdx]?.valid_time_utc;
+        if(lastValid && this.tickEnd){
+          const base = Timeline.formatValidTime(lastValid);
+          // compute suffix via offset diff if available
+          let mins = 30;
+          try{
+            const a = frames[lastIdx]?.offset_seconds;
+            const b = frames[lastIdx-1]?.offset_seconds;
+            if(Number.isFinite(a) && Number.isFinite(b)) mins = Math.round((a-b)/60);
+          }catch{}
+          const suffix = mins>0 ? ` \u00b7 beyond horizon (+${mins}m)` : " \u00b7 verified beyond-horizon run state";
+          if(this.tickEnd.textContent===base){
+            // first time, append hint
+            const need = !this.tickEnd.querySelector?.(".beyond-hint");
+            if(need && !this.tickEnd.textContent.includes("beyond")){
+              this.tickEnd.textContent = base;
+              const hint = document.createElement("span");
+              hint.className="beyond-hint";
+              hint.textContent = suffix;
+              hint.style.cssText="font-size:10px;color:var(--ink-faint);margin-left:6px;font-style:italic;";
+              this.tickEnd.appendChild(hint);
+              this.tickEnd.classList.add("tick-beyond");
+              this.tickEnd.title="beyond-horizon over-run ("+suffix.trim()+")";
+            }
+          }
+          // Also dim when currently on beyond frame: add class to slider container
+          const host = this.slider.closest(".timeline") ?? this.slider.parentElement;
+          if(host){
+            host.classList.toggle("beyond-active", isBeyondLast);
+          }
+        }
+      }
+    }catch{}
   }
 
   _syncControls() {
@@ -248,6 +309,17 @@ export class Timeline {
   // nothing renders until a frame is actually in hand, and the arrow hides
   // rather than guessing across a gap.
   _updateKpi(leadIndex, frac) {
+    const isLiveEmpty = (globalThis.__JALADHAR_MODE==="live") && globalThis.__JALADHAR_STATE && globalThis.__JALADHAR_STATE.liveEmpty;
+    if(isLiveEmpty){
+      if(this.kpiText) this.kpiText.textContent="";
+      if(this.kpiTrend) this.kpiTrend.hidden=true;
+      const kpiEl=document.getElementById("wf6tl-kpi");
+      if(kpiEl) kpiEl.style.display="none";
+      return;
+    } else {
+      const kpiEl=document.getElementById("wf6tl-kpi");
+      if(kpiEl) kpiEl.style.display="";
+    }
     if (!this.kpiText) return;
     const lead = this.leads[leadIndex];
     const frame = lead == null ? undefined : this.frames.get(lead);
@@ -287,6 +359,89 @@ export class Timeline {
 
   // ----------------------------------------------------------- timeline
 
+  async _refreshLengthLabel(){
+    try{
+      const st = globalThis.__JALADHAR_STATE;
+      // try state payload cached
+      let data = null;
+      if(st && st.series && Array.isArray(st.series.frames) && st.series.cadence_seconds){
+        data = st.series;
+      }
+      if(!data){
+        // fetch live state (no literals)
+        const r = await fetch("/api/state",{cache:"no-store"});
+        const j = await r.json();
+        data = j.series ?? null;
+      }
+      if(!data || !Array.isArray(data.frames) || data.frames.length<1) return;
+      const n = data.frames.length;
+      const cadenceSec = Number(data.cadence_seconds);
+      const cadenceMin = cadenceSec ? Math.round(cadenceSec/60) : null;
+      const firstIso = data.frames[0].valid_time_utc;
+      const lastIso = data.frames[data.frames.length-1].valid_time_utc;
+      const firstValid = firstIso ? Timeline.formatValidTime(firstIso) : "";
+      const lastValid = lastIso ? Timeline.formatValidTime(lastIso) : "";
+      // extract HH:MM from formatted "Sep 4 18:40Z" -> time part
+      const fmtTime = (iso)=>{ const m=/^.*T(\d{2}):(\d{2})/.exec(iso); return m? m[1]+":"+m[2] : Timeline.formatValidTime(iso); };
+      const t0 = fmtTime(firstIso);
+      const t1 = fmtTime(lastIso);
+      // compute span hours from offsets or cadence
+      let spanHours = null;
+      if(Number.isFinite(data.frames[data.frames.length-1].offset_seconds) && Number.isFinite(data.frames[0].offset_seconds)){
+        const spanSec = data.frames[data.frames.length-1].offset_seconds - data.frames[0].offset_seconds;
+        spanHours = spanSec/3600;
+      } else if(cadenceSec && n>1){
+        spanHours = (n-1)*cadenceSec/3600;
+      }
+      let spanLabel = "";
+      if(spanHours!=null){
+        if(Math.abs(spanHours - Math.round(spanHours))<0.01) spanLabel = Math.round(spanHours)+"-h forecast";
+        else spanLabel = (Math.round(spanHours*10)/10)+"-h forecast";
+      } else {
+        spanLabel = n+"-frame series";
+      }
+      // detect over-run: last frame is verified beyond-horizon run state
+      let overRun = "";
+      let tEnd = t1;
+      try{
+        const offsets = data.frames.map(f=>f.offset_seconds).filter(Number.isFinite);
+        if(offsets.length>=2){
+          const lastOff = offsets[offsets.length-1];
+          const prevOff = offsets[offsets.length-2];
+          const step = prevOff!=null ? lastOff-prevOff : cadenceSec;
+          // horizon is second-last offset when over-run present (e.g., 10800 = 3h)
+          if(lastOff > 10800 && Math.abs(lastOff - prevOff - cadenceSec) < 1){
+            const extraMin = Math.round(step/60);
+            if(extraMin) overRun = ` (+${extraMin}m over-run)`;
+            // window end should be previous frame's time (21:40), not last (22:10)
+            const prevIso = data.frames[data.frames.length-2].valid_time_utc;
+            tEnd = fmtTime(prevIso);
+            // also adjust spanLabel to 3-h not 3.5: horizon hours = (n-1)*cadence - step? Compute as prevOff/3600
+            if(prevOff!=null) spanHours = prevOff/3600;
+            if(spanHours!=null){
+              if(Math.abs(spanHours - Math.round(spanHours))<0.01) spanLabel = Math.round(spanHours)+"-h forecast";
+              else spanLabel = (Math.round(spanHours*10)/10)+"-h forecast";
+            }
+          }
+        }
+      }catch{}
+      // Compose: '3-h forecast · 8 frames × 30 min · 18:40 → 21:40Z (+30m over-run)'
+      const parts = [];
+      if(spanLabel) parts.push(spanLabel);
+      if(n && cadenceMin) parts.push(`${n} frames \u00d7 ${cadenceMin} min`);
+      if(t0 && tEnd) parts.push(`${t0} \u2192 ${tEnd}Z${overRun}`);
+      const label = parts.join(" \u00b7 ");
+      if(this.lengthEl){
+        // in LIVE empty, hide demo length
+        const isLiveEmpty = (globalThis.__JALADHAR_MODE==="live") && globalThis.__JALADHAR_STATE && globalThis.__JALADHAR_STATE.liveEmpty;
+        if(isLiveEmpty){ this.lengthEl.style.display="none"; return; }
+        this.lengthEl.style.display="";
+        this.lengthEl.textContent = label;
+        this.lengthEl.title = `frames ${n}, cadence ${cadenceSec}s, ${firstIso} → ${lastIso}`;
+      }
+    }catch(e){ /* silent */ }
+  }
+
   async configure(leads, fetchFrame, opts = {}) {
     this.leads = leads;
     this.mode = opts.mode ?? "lead";
@@ -319,6 +474,11 @@ export class Timeline {
       (!multi && opts.tickStartLabel) || this.describe(leads[0]);
     this.tickEnd.textContent =
       (!multi && opts.tickEndLabel) || this.describe(leads[leads.length - 1]);
+    // GAP-3 initial tick annotation handled by _emit on hold index; ensure tickEnd gets beyond suffix after seriesFrames assigned by caller
+    try{
+      // delay to allow seriesFrames assignment (app.js sets after configure), annotate on next tick
+      setTimeout(()=>{ try{ this._emit(this.leads.length-1,0); this.slider.value=String(this.leads.length-1); const p=this.interpolated(); this._emit(p.leadIndex,p.frac);}catch{} }, 100);
+    }catch{}
     this.nowLead.textContent =
       leads.length > 1
         ? (opts.horizonLabel ?? this.describe(leads[leads.length - 1]) + " HORIZON")
@@ -329,6 +489,13 @@ export class Timeline {
     const holdIndex = this.leads.length - 1;
     if (this.frames.get(this.leads[holdIndex])) {
       this._emit(holdIndex, 0);
+    }
+    try{ this._refreshLengthLabel(); }catch{}
+    // listen for demo-enter to re-show label
+    if(!this._lengthListener){
+      this._lengthListener=true;
+      document.addEventListener("jaladhar:demo-enter", ()=>{ try{ this._refreshLengthLabel(); }catch{} });
+      document.addEventListener("jaladhar:live-enter", ()=>{ if(this.lengthEl) this.lengthEl.style.display="none"; });
     }
     return first;
   }
