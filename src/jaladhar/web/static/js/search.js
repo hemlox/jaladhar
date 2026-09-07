@@ -57,15 +57,23 @@ function normalizeEntry(entry) {
 
 const SEARCH_CSS = `
 .wf6-search{
-  position:absolute; top:12px; z-index:50; width:min(${SEARCH_WIDTH}px, calc(100% - 24px));
+  position:absolute; top:calc(var(--header-h,56px) + 14px); z-index:50;
+  width:min(${SEARCH_WIDTH}px, calc(100% - 24px));
   font-size:13px; transition:left var(--base,240ms) var(--ease,ease);
 }
 .wf6-search input{
-  width:100%; padding:8px 12px; border-radius:10px; border:1px solid var(--line);
-  background:rgba(16,21,31,0.94); color:var(--ink); font-size:13px; outline:none;
+  width:100%; padding:9px 14px 9px 36px; border-radius:9px;
+  border:1px solid var(--line);
+  background:rgba(12,16,25,0.92)
+    no-repeat left 13px center / 15px 15px
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%235A6579' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='M21 21l-4.3-4.3'/%3E%3C/svg%3E");
+  -webkit-backdrop-filter:blur(8px); backdrop-filter:blur(8px);
+  box-shadow:0 6px 18px rgba(0,0,0,0.28);
+  color:var(--ink); font-size:13px; outline:none;
+  transition:border-color var(--fast,160ms) var(--ease,ease), box-shadow var(--fast,160ms) var(--ease,ease);
 }
 .wf6-search input::placeholder{ color:var(--ink-faint); }
-.wf6-search input:focus{ border-color:var(--accent); }
+.wf6-search input:focus{ border-color:var(--accent); box-shadow:0 6px 18px rgba(0,0,0,0.28), 0 0 0 3px rgba(56,189,248,0.16); }
 .wf6-search input:focus-visible{ outline:1px solid var(--accent); outline-offset:2px; }
 .wf6-search-list{
   position:absolute; left:0; right:0; top:calc(100% + 4px); margin:0; padding:4px;

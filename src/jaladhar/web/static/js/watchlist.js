@@ -178,26 +178,38 @@ const PANEL_CSS = `
 .wf6-rowitem{ display:flex; align-items:stretch; }
 .wf6-rowitem .wf6-row{ flex:1; min-width:0; }
 .wf6-go{
-  flex:none; width:34px; transition:background var(--fast) var(--ease), color var(--fast) var(--ease); border:none; border-left:1px solid var(--line);
-  background:transparent; color:var(--ink-faint); font-size:13px; cursor:pointer;
+  flex:none; width:36px; align-self:stretch;
+  transition:background var(--fast) var(--ease), color var(--fast) var(--ease), opacity var(--fast) var(--ease);
+  border:none; border-left:1px solid var(--line);
+  background:transparent
+    no-repeat center / 15px 15px
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%235A6579' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='9 6 15 12 9 18'/%3E%3C/svg%3E");
+  color:var(--ink-faint); font-size:0; cursor:pointer; opacity:0.5;
 }
-.wf6-go:hover{ background:var(--panel-hi); color:var(--ink); }
+.wf6-rowitem:hover .wf6-go{ opacity:1; }
+.wf6-go:hover{
+  background-color:var(--panel-hi);
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2338BDF8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='9 6 15 12 9 18'/%3E%3C/svg%3E");
+}
 .wf6-row{
-  display:grid; transition:background var(--fast) var(--ease); grid-template-columns:22px minmax(90px,1fr) 88px 10px; align-items:center; gap:8px;
-  width:100%; padding:7px 12px; background:transparent; border:none;
+  display:grid; transition:background var(--fast) var(--ease);
+  grid-template-columns:20px 1fr auto 8px;
+  grid-template-areas:"rank name depth dot" "rank meta meta dot";
+  align-items:center; column-gap:9px; row-gap:2px;
+  width:100%; padding:8px 12px 9px; background:transparent; border:none;
   color:inherit; font:inherit; text-align:left; cursor:pointer;
 }
 .wf6-row:hover, .wf6-row:focus-visible{ background:var(--panel-hi); }
-.wf6-rank{ color:var(--ink-faint); font-size:11px; font-variant-numeric:tabular-nums; }
-.wf6-main{ display:flex; flex-direction:column; gap:3px; min-width:90px; flex:1; }
-.wf6-name{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-weight:500; min-width:0; flex:1; }
+.wf6-rank{ grid-area:rank; align-self:start; padding-top:1px; color:var(--ink-faint); font-size:11px; font-variant-numeric:tabular-nums; }
+.wf6-name{ grid-area:name; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-weight:500; min-width:0; color:var(--ink); }
+.wf6-depth{ grid-area:depth; justify-self:end; font-size:12px; color:var(--ink); white-space:nowrap; font-variant-numeric:tabular-nums; }
+.wf6-meta{ grid-area:meta; display:flex; align-items:center; gap:7px; min-width:0; }
 .wf6-ward{
-  align-self:flex-start; border:1px solid var(--line); border-radius:999px;
-  padding:0 8px; font-size:10px; color:var(--ink-dim); white-space:nowrap;
+  flex:none; border:1px solid var(--line); border-radius:5px;
+  padding:0 6px; font-size:10px; line-height:1.5; color:var(--ink-dim);
+  white-space:nowrap; background:rgba(255,255,255,0.02);
 }
-.wf6-metrics{ display:flex; flex-direction:column; align-items:flex-end; gap:3px; min-width:88px; flex:none; text-align:right; }
-.wf6-depth{ font-size:12px; color:var(--ink); white-space:nowrap; font-variant-numeric:tabular-nums; }
-.wf6-lead{ font-size:11px; color:var(--ink-dim); white-space:nowrap; font-variant-numeric:tabular-nums; }
+.wf6-lead{ min-width:0; overflow:hidden; text-overflow:ellipsis; font-size:11px; color:var(--ink-faint); white-space:nowrap; font-variant-numeric:tabular-nums; }
 .wf6-lead.tone-0{ color:var(--d1); }
 .wf6-lead.tone-1{ color:var(--d2); }
 .wf6-lead.tone-2{ color:var(--d3); }
@@ -620,21 +632,22 @@ export class WatchlistPanel {
 
     btn.appendChild(el("span", "wf6-rank", String(rank)));
 
-    const main = el("span", "wf6-main");
-    main.appendChild(el("span", "wf6-name", row.street_name ?? "unnamed street"));
-    const ward = wardLabel(row);
-    if (ward) main.appendChild(el("span", "wf6-ward", ward));
-    btn.appendChild(main);
+    // primary line: name + depth band + status dot
+    btn.appendChild(el("span", "wf6-name", row.street_name ?? "unnamed street"));
+    btn.appendChild(el("span", "wf6-depth", formatDepthBand(row.depth_band_cm)));
+    btn.appendChild(el("span", `wf6-dot dot-${dotClass(row.status)}`));
 
-    const metrics = el("span", "wf6-metrics");
-    metrics.appendChild(el("span", "wf6-depth", formatDepthBand(row.depth_band_cm)));
+    // secondary meta line spans the row width: ward + valid time / lead.
+    // (app.js appends the beyond-horizon hint into .wf6-lead, so it stays a
+    //  distinct element carrying the valid-time text.)
+    const meta = el("span", "wf6-meta");
+    const ward = wardLabel(row);
+    if (ward) meta.appendChild(el("span", "wf6-ward", ward));
     const lead = el("span", "wf6-lead", this.leadCellText(row));
     const tone = this.leadToneClass(row);
     if (tone) lead.classList.add(tone); // empty token throws on DOMTokenList
-    metrics.appendChild(lead);
-    btn.appendChild(metrics);
-
-    btn.appendChild(el("span", `wf6-dot dot-${dotClass(row.status)}`));
+    meta.appendChild(lead);
+    btn.appendChild(meta);
 
     const segments = Array.isArray(row.segment_ids) ? row.segment_ids.length : null;
     btn.title =
@@ -663,7 +676,7 @@ export class WatchlistPanel {
     // request event consumed by routing.js. The selected vehicle class lives
     // in routing.js's global (null when that module is absent — its handler
     // then answers with a designed message). This panel invents nothing.
-    const go = el("button", "wf6-go", "⚡");
+    const go = el("button", "wf6-go");
     go.type = "button";
     go.setAttribute("aria-label", `route around ${row.street_name ?? "this street"}`);
     go.title = "route around this street";
