@@ -358,10 +358,10 @@ const STYLE_TEXT = `
 #mode-badge[data-stale] .jal-badge-text{opacity:.55}
 #mode-badge .jal-badge-subline{font-size:10px;color:var(--ink-faint,#5A6579)}
 #${NOTICE_HOST_ID}{position:absolute;top:12px;left:50%;transform:translateX(-50%);z-index:40;pointer-events:none}
-#${NOTICE_HOST_ID} .jal-notice-card{pointer-events:auto;background:rgba(16,21,31,.92);border:1px solid var(--line,#1E2634);border-radius:10px;padding:10px 18px;max-width:min(560px,80vw);text-align:center}
+#${NOTICE_HOST_ID} .jal-notice-card{pointer-events:auto;background:var(--glass, rgba(255,255,255,0.9));border:1px solid var(--line, rgba(0,0,0,0.1));border-radius:10px;padding:10px 18px;max-width:min(560px,80vw);text-align:center}
 #${NOTICE_HOST_ID} .jal-notice-title{font-size:10px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-dim,#94A0B4);margin-bottom:3px}
 #${NOTICE_HOST_ID} .jal-notice-message{font-size:11px;line-height:1.5;color:var(--ink-dim,#94A0B4);margin:0}
-#${NOTICE_HOST_ID} .tone-calm{border-color:rgba(56,189,248,.4)}
+#${NOTICE_HOST_ID} .tone-calm{border-color:rgba(0,122,255,.4)}
 #${NOTICE_HOST_ID} .tone-calm .jal-notice-title{color:var(--accent,#38BDF8)}
 #${NOTICE_HOST_ID} .tone-alert{border-color:rgba(244,63,94,.45)}
 #${NOTICE_HOST_ID} .tone-alert .jal-notice-title{color:var(--surcharge,#F43F5E)}

@@ -481,7 +481,6 @@ export class Rail {
         ["depth", lowText + "–" + highText],
         ["status", props.flood_status ?? "unknown"],
         ["valid time", when],
-        ["drain node", "resolving drain link…"],
       ];
       for (const [k, v] of rows) {
         const dt = document.createElement("dt");
@@ -542,6 +541,7 @@ export class Rail {
         const main = document.createElement("span");
         main.textContent = `${high} cm exceeds passenger vehicle wading limit (${thr} cm) \u2014 avoid`;
         const src = document.createElement("span");
+        src.className = "prov-line";
         src.style.cssText = "font-family:ui-monospace,monospace;font-size:10px;color:var(--ink-faint);margin-left:6px;";
         src.textContent = WADING_SOURCE_LABEL;
         p.append(main, src);
@@ -582,10 +582,6 @@ export class Rail {
           });
       }
 
-      // C14: fetch per-segment causal drain node (honest none_measured when absent)
-      // This fetch is the ONLY source for the drain field; never hardcoded.
-      // The row's dd is updated in place once the payload resolves.
-      let drainDd = null;
       // Rule 3: the per-value provenance line stays VISIBLE in the inspector —
       // appended LAST so it sits at panel bottom, styled small/faint via
       // .provenance-line, never inside the N12 details element, never hidden.
@@ -601,47 +597,6 @@ export class Rail {
           railEl.insertBefore(selPanel, railEl.firstChild);
         }
       }catch{}
-      // Resolve causal drain node live; keep honest empty state (no threshold line)
-      // Vehicle wading threshold line SKIPPED: no clean fetched source exists
-      // (/api/context/vehicle_wading_policy.json not served; causal payload carries no policy).
-      // Never hardcoded 30.
-      try{
-        // capture reference to drain dd for update
-        const dlEl = body.querySelector('dl.kv');
-        if(dlEl){
-          const dts = [...dlEl.querySelectorAll('dt')];
-          const idx = dts.findIndex(el=> el.textContent==='drain node');
-          if(idx>=0) drainDd = dlEl.querySelectorAll('dd')[idx];
-        }
-      }catch{}
-      (async()=>{
-        try{
-          const res = await fetch('/api/drains/causal?segment_id=' + encodeURIComponent(segmentId), {cache:'no-store'});
-          if(!res.ok) throw new Error('causal '+res.status);
-          const payload = await res.json();
-          if(seq !== this._selectSeq) return;
-          const status = payload?.status;
-          let text = 'none measured';
-          if(status === 'measured' && Array.isArray(payload.nodes) && payload.nodes.length){
-            text = payload.nodes.map(n=> n.node_id ?? 'node').join(', ');
-          } else if(status === 'predicted' && payload.predicted_set){
-            text = 'none measured';
-          } else if(payload?.statement){
-            // causal statement already says none_measured
-            text = 'none measured';
-          }
-          // if nearest flagged edge exists, show id
-          if(payload?.nearest_flagged_edge_id != null && String(payload.nearest_flagged_edge_id).trim()!==''){
-            text = 'edge ' + String(payload.nearest_flagged_edge_id);
-          } else if(Array.isArray(payload?.nodes) && payload.nodes.length){
-            // fallback to node ids (already handled)
-          }
-          if(drainDd) drainDd.textContent = text;
-        }catch(e){
-          if(seq !== this._selectSeq) return;
-          if(drainDd) drainDd.textContent = 'none measured';
-        }
-      })();
     } catch (err) {
       if (seq !== this._selectSeq) return;
       body.replaceChildren();
@@ -686,6 +641,10 @@ export class Rail {
   }
 
   setDrainStatus(meta) {
+    // The Drain network panel was removed from the rail (owner 2026-09-10):
+    // app.js still calls this from the drain-layer load paths, so it degrades
+    // to a no-op rather than touching a panel that no longer exists.
+    if (!this.el.drainStatus || !this.el.drainFingerprint) return;
     // N12: wrap the drain panel content in the collapsed diagnostics
     // accordion before filling it (idempotent).
     this.ensureDiagAccordion();

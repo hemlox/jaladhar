@@ -7,13 +7,31 @@
     <link rel="icon" href="data:,">
     <title>JALADHAR · Bengaluru Urban Flood Nowcast</title>
     <link rel="stylesheet" href="/styles.css">
+    <script>
+      /* No-flash appearance: set data-theme before first paint from the saved
+         choice, else the OS preference. app.js wires the toggle to the same key. */
+      try {
+        var _t = localStorage.getItem("jaladhar.theme");
+        if (_t !== "light" && _t !== "dark") {
+          _t = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+        }
+        document.documentElement.setAttribute("data-theme", _t);
+      } catch (e) {}
+    </script>
   </head>
   <body>
     <div class="app">
       <header class="topbar">
-        <div class="brand">
-          <span class="brand-name">JALADHAR</span>
-          <span class="brand-sub">Bengaluru · Urban Flood Nowcast</span>
+        <div class="topbar-left">
+          <div class="traffic" role="group" aria-label="Window controls">
+            <button class="tl tl-red" type="button" title="Hide streets panel" aria-label="Hide streets panel"></button>
+            <button class="tl tl-yellow" type="button" title="Hide detail panel" aria-label="Hide detail panel"></button>
+            <button class="tl tl-green" type="button" title="Toggle full screen" aria-label="Toggle full screen"></button>
+          </div>
+          <div class="brand">
+            <span class="brand-name">JALADHAR</span>
+            <span class="brand-sub">Bengaluru · Urban Flood Nowcast</span>
+          </div>
         </div>
         <div class="run-label">
           <span id="mode-chip" class="mode-chip" aria-live="polite"><span id="mode-chip-main" class="mode-chip-main">LIVE</span><span id="mode-chip-sub" class="mode-chip-sub">no live forecast run yet</span></span>
@@ -24,6 +42,10 @@
           <button id="btn-live-return" class="mode-toggle-btn live-return hidden" type="button" aria-label="Return to live">LIVE</button>
           <button id="btn-live-run" class="live-run-btn" type="button" aria-label="Re-run the 3-hour forecast tile now — fresh compute of the demo forecast" title="RE-RUN the 3 h forecast tile NOW — fresh compute of the demo forecast (tile locked server-side)">Run fresh simulation</button>
           <button id="btn-comparison" class="comparison-entry-btn" type="button" aria-label="Open 2022 Forecast vs Replay agreement comparison" title="2022 Forecast vs Replay · Agreement">Forecast vs Replay</button>
+          <button id="btn-theme" class="theme-toggle" type="button" aria-label="Toggle light and dark appearance" title="Appearance: Light / Dark">
+            <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+            <svg class="icon-moon" viewBox="0 0 24 24" fill="currentColor" stroke="none" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+          </button>
         </div>
       </header>
 
@@ -57,13 +79,13 @@
       </section>
 
       <aside class="rail" aria-label="Nowcast details">
-        <section class="panel">
+        <section class="panel" id="status-panel">
           <h3 class="panel-heading now-heading">STATUS <span id="now-lead" class="now-lead">—</span></h3>
           <div class="hero-value"><span id="stat-flooded">—</span></div>
           <p class="hero-caption">segments flooded</p>
         </section>
 
-        <section class="panel">
+        <section class="panel" id="deepest-panel">
           <div class="hero-value"><span id="stat-deepest">—</span><span class="hero-unit">cm</span></div>
           <p class="hero-caption">deepest reading</p>
           <p class="hero-location" id="stat-deepest-loc"></p>
@@ -77,14 +99,8 @@
         <section class="panel">
           <h3 class="panel-heading">Selected segment</h3>
           <div id="selected-body">
-            <p class="hero-caption">Click a street to inspect its realized product row.</p>
+            <p class="hero-caption">Select a street for detail.</p>
           </div>
-        </section>
-
-        <section class="panel">
-          <h3 class="panel-heading">Drain network</h3>
-          <p class="drain-note" id="drain-status">loading drain snapshot…</p>
-          <p class="fingerprint" id="drain-fingerprint"></p>
         </section>
       </aside>
 
@@ -97,6 +113,8 @@
           <span class="tick" id="tick-start">now</span>
           <span class="tick" id="tick-end">+3h</span>
         </div>
+        <button id="btn-diag" class="diag-toggle" type="button" aria-pressed="false"
+                title="Show data provenance and diagnostic detail (manifest paths, hashes, model notes)">Provenance</button>
         <div class="layers">
           <label id="toggle-roads" class="layer-toggle on">
             <input type="checkbox" checked data-layer="roads"><span class="glyph">⬢</span>roads

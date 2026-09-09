@@ -130,11 +130,18 @@ export function statusLineText(source, rows) {
 
 const PANEL_CSS = `
 .wf6-watchlist{
-  position:absolute; top:var(--header-h,56px); left:0; bottom:var(--bottom-h,96px);
-  width:${PANEL_WIDTH}px; z-index:30;
+  position:absolute;
+  top:calc(var(--header-h,56px) + var(--hud-gap,12px));
+  left:var(--hud-gap,12px);
+  bottom:calc(var(--bottom-h,96px) + var(--hud-gap,12px));
+  width:${PANEL_WIDTH}px; z-index:20;
   display:flex; flex-direction:column;
-  background:rgba(10,14,23,0.97);
-  border-right:1px solid var(--line);
+  background:var(--glass-sheen) no-repeat, var(--glass, rgba(255,255,255,0.72));
+  -webkit-backdrop-filter:var(--glass-refract, blur(32px) saturate(180%) brightness(1.08));
+  backdrop-filter:var(--glass-refract, blur(32px) saturate(180%) brightness(1.08));
+  border:1px solid var(--glass-border, rgba(255,255,255,0.16));
+  border-radius:var(--radius-card,18px);
+  box-shadow:var(--shadow-hud, 0 16px 48px rgba(0,0,0,0.42)), var(--glass-highlight, inset 0 1px 0 rgba(255,255,255,0.30));
   color:var(--ink); font-size:13px; overflow:hidden;
 }
 .wf6-watchlist *{ box-sizing:border-box; }
@@ -157,13 +164,29 @@ const PANEL_CSS = `
 
 .wf6-sortbar{ display:flex; align-items:center; gap:8px; padding:7px 12px; border-bottom:1px solid var(--line); }
 .wf6-sortlabel{ font-size:11px; color:var(--ink-faint); letter-spacing:0.08em; text-transform:uppercase; }
-.wf6-seg{ display:inline-flex; border:1px solid var(--line); border-radius:999px; overflow:hidden; }
+.wf6-seg{ display:inline-flex; gap:2px; padding:2px; border:none; border-radius:9px; background:var(--seg-track); }
 .wf6-seg button{
-  border:none; background:transparent; color:var(--ink-dim); font-size:11px;
-  padding:3px 12px; cursor:pointer;
+  border:none; background:transparent; color:var(--ink-dim); font-size:11px; font-weight:500;
+  padding:3px 12px; border-radius:7px; cursor:pointer;
+  transition:background var(--fast) var(--ease), color var(--fast) var(--ease);
 }
 .wf6-seg button:hover{ color:var(--ink); }
-.wf6-seg button.on{ background:var(--panel-hi); color:var(--ink); }
+.wf6-seg button.on{ background:var(--seg-thumb); color:var(--ink); box-shadow:0 1px 2px rgba(0,0,0,0.18); }
+
+/* View toggle (owner 2026-09-09): Overview mirrors the detail rail's summary
+   (status, deepest reading, peak, drain network) inside this panel, styled by
+   the same segmented control as the sort row. Detailed — the per-street list —
+   stays the default; the rail itself pops up only for a selection. */
+.wf6-viewbar{ display:flex; align-items:center; gap:8px; padding:7px 12px; border-bottom:1px solid var(--line); }
+.wf6-overview{
+  display:none; flex:1; overflow-y:auto; overscroll-behavior:contain;
+  padding:0 14px 14px;
+}
+.wf6-overview-note{ padding:14px 2px 6px; font-size:12px; line-height:1.6; color:var(--ink-faint); }
+.wf6-watchlist.wf6-overview-mode .wf6-sortbar,
+.wf6-watchlist.wf6-overview-mode .wf6-statusline,
+.wf6-watchlist.wf6-overview-mode .wf6-body{ display:none; }
+.wf6-watchlist.wf6-overview-mode .wf6-overview{ display:block; }
 
 .wf6-statusline{
   margin:0; padding:6px 12px; font-size:11px; color:var(--ink-faint);
@@ -274,9 +297,11 @@ const PANEL_CSS = `
 .wf6-watchlist.wf6-collapsed{ width:40px !important; }
 .wf6-watchlist.wf6-collapsed .wf6-heading,
 .wf6-watchlist.wf6-collapsed .wf6-chip,
+.wf6-watchlist.wf6-collapsed .wf6-viewbar,
 .wf6-watchlist.wf6-collapsed .wf6-sortbar,
 .wf6-watchlist.wf6-collapsed .wf6-statusline,
-.wf6-watchlist.wf6-collapsed .wf6-body{ display:none; }
+.wf6-watchlist.wf6-collapsed .wf6-body,
+.wf6-watchlist.wf6-collapsed .wf6-overview{ display:none; }
 .wf6-watchlist.wf6-collapsed .wf6-titlebar{ justify-content:center; border-bottom:none; }
 .wf6-watchlist.wf6-collapsed .wf6-collapse{ transform:rotate(180deg); }
 `;
@@ -295,6 +320,7 @@ export class WatchlistPanel {
   constructor({ frame = DEFAULT_FRAME } = {}) {
     this.frame = frame;
     this.sort = "severity"; // 'severity' = payload order; 'soonest' = local lead sort
+    this.view = "detailed"; // 'detailed' = per-street list; 'overview' = rail summary mirror
     this.expanded = false; // ROW_RENDER_CAP virtualization expander
     this.collapsed = false;
     this.source = null;
@@ -303,6 +329,9 @@ export class WatchlistPanel {
     this.maxLead = 0;
     this.loadSeq = 0; // guards stale responses against newer refreshes
     this.root = null;
+    this.overview = null;
+    this.viewButtons = {};
+    this._railObserver = null;
   }
 
   // ------------------------------------------------------------- mounting
@@ -376,6 +405,9 @@ export class WatchlistPanel {
       btn.type = "button";
       btn.dataset.wf6Sort = value;
       btn.setAttribute("aria-pressed", String(value === this.sort));
+      if (value === "soonest") {
+        btn.title = "order streets by when they first flood in the realized event";
+      }
       btn.addEventListener("click", () => this.setSort(value));
       this.sortButtons[value] = btn;
       seg.appendChild(btn);
@@ -384,11 +416,55 @@ export class WatchlistPanel {
 
     this.statusLine = el("p", "wf6-statusline");
 
+    // ---- view toggle (owner 2026-09-09): Overview carries the detail rail's
+    // startup summary inside this panel; Detailed keeps the per-street list.
+    const viewbar = el("div", "wf6-viewbar");
+    viewbar.append(el("span", "wf6-sortlabel", "view"));
+    const viewSeg = el("div", "wf6-seg");
+    for (const [value, label] of [
+      ["detailed", "Detailed"],
+      ["overview", "Overview"],
+    ]) {
+      const btn = el("button", value === this.view ? "on" : "", label);
+      btn.type = "button";
+      btn.dataset.wf6View = value;
+      btn.setAttribute("aria-pressed", String(value === this.view));
+      btn.addEventListener("click", () => this.setView(value));
+      this.viewButtons[value] = btn;
+      viewSeg.appendChild(btn);
+    }
+    viewbar.appendChild(viewSeg);
+
     // ---- body
     this.body = el("section", "wf6-body");
+    this.overview = el("section", "wf6-overview");
 
-    root.append(titlebar, sortbar, this.statusLine, this.body);
+    root.append(titlebar, viewbar, sortbar, this.statusLine, this.body, this.overview);
     this.root = root;
+
+    // Live mirror while Overview is showing: the rail's own writers (stats,
+    // live panel, causal panel) own its DOM and write by element id, so the
+    // overview clones it read-only — ids are stripped from every clone and
+    // re-cloned at most once per frame, only while the user is looking at it.
+    const railHost = document.querySelector("aside.rail");
+    if (railHost) {
+      let scheduled = false;
+      this._railObserver = new MutationObserver(() => {
+        if (this.view !== "overview" || scheduled) return;
+        scheduled = true;
+        requestAnimationFrame(() => {
+          scheduled = false;
+          if (this.view === "overview") this.mirrorRail();
+        });
+      });
+      this._railObserver.observe(railHost, {
+        childList: true,
+        subtree: true,
+        characterData: true,
+        attributes: true,
+        attributeFilter: ["class", "hidden", "style", "aria-hidden"],
+      });
+    }
 
     document.addEventListener("wf6:frame-changed", (event) => {
       // suppress demo frame changes while in LIVE empty
@@ -412,6 +488,51 @@ export class WatchlistPanel {
       this.collapsed ? "Expand streets panel" : "Collapse streets panel"
     );
     emit("wf6:watchlist-toggle", { open: !this.collapsed });
+  }
+
+  setView(view) {
+    if (view !== "overview" && view !== "detailed") return;
+    this.view = view;
+    for (const [value, btn] of Object.entries(this.viewButtons)) {
+      btn.classList.toggle("on", value === view);
+      btn.setAttribute("aria-pressed", String(value === view));
+    }
+    const overview = view === "overview";
+    this.root.classList.toggle("wf6-overview-mode", overview);
+    if (overview) this.mirrorRail();
+  }
+
+  // Read-only clone of the detail rail's panels (status, deepest, peak,
+  // selected segment, drain network, live panel when present). Clone ids are
+  // stripped so getElementById keeps resolving to the real panels the rail's
+  // writers target — the overview never becomes a second source of truth.
+  mirrorRail() {
+    if (!this.overview) return;
+    this.overview.replaceChildren();
+    const rail = document.querySelector("aside.rail");
+    if (!rail) {
+      this.overview.appendChild(
+        el("p", "wf6-overview-note", "detail panel unavailable")
+      );
+      return;
+    }
+    let cloned = 0;
+    for (const section of Array.from(rail.children)) {
+      if (!section || section.nodeType !== 1) continue;
+      if (section.classList.contains("hidden") || section.hasAttribute("hidden")) {
+        continue;
+      }
+      const clone = section.cloneNode(true);
+      clone.removeAttribute("id");
+      for (const node of clone.querySelectorAll("[id]")) node.removeAttribute("id");
+      this.overview.appendChild(clone);
+      cloned++;
+    }
+    if (!cloned) {
+      this.overview.appendChild(
+        el("p", "wf6-overview-note", "detail panel is empty")
+      );
+    }
   }
 
   setSort(sort) {
@@ -590,15 +711,28 @@ export class WatchlistPanel {
 
   sortedRows() {
     if (this.sort !== "soonest") return this.rows;
-    // Local re-sort by lead_minutes; rows with no realized lead sink rather
-    // than inventing a position; ties fall back to the payload's rank.
+    // Soonest = when the street FIRST floods across the realized series
+    // (server-computed first_flood_offset_minutes, an offset from series
+    // start — never a forecast lead). Rows without a realized first flood
+    // sink rather than inventing a position; ties fall back to the payload's
+    // severity rank. Frame-scoped lead_minutes is identical on every row, so
+    // it cannot order anything — the first-flood field is what differs.
+    const maxOffset = this.rows.reduce(
+      (max, row) =>
+        Number.isFinite(row.first_flood_offset_minutes)
+          ? Math.max(max, row.first_flood_offset_minutes)
+          : max,
+      0
+    );
+    this._soonestMaxOffset = maxOffset;
     return [...this.rows].sort((a, b) => {
-      const la = a.lead_minutes;
-      const lb = b.lead_minutes;
-      const fa = isFiniteNumber(la);
-      const fb = isFiniteNumber(lb);
-      if (fa && fb && la !== lb) return la - lb;
-      if (fa !== fb) return fa ? -1 : 1;
+      const ka = Number.isFinite(a.first_flood_offset_minutes)
+        ? a.first_flood_offset_minutes
+        : Infinity;
+      const kb = Number.isFinite(b.first_flood_offset_minutes)
+        ? b.first_flood_offset_minutes
+        : Infinity;
+      if (ka !== kb) return ka - kb;
       return (a.rank ?? 0) - (b.rank ?? 0);
     });
   }
@@ -698,6 +832,14 @@ export class WatchlistPanel {
   }
 
   leadCellText(row) {
+    // Soonest view: the street's FIRST flood in the realized series — a
+    // valid time, never typeset as a "+N min" lead (A2: offsets stay times).
+    if (
+      this.sort === "soonest" &&
+      typeof row.first_flood_valid_time_utc === "string"
+    ) {
+      return Timeline.formatValidTime(row.first_flood_valid_time_utc);
+    }
     // A hindcast offset is where water stood relative to a past instant —
     // never typeset as a "+N min" lead, even when a numeric offset exists.
     if (this.source?.lead_kind === "hindcast_offset") {
@@ -708,6 +850,19 @@ export class WatchlistPanel {
   }
 
   leadToneClass(row) {
+    if (this.sort === "soonest") {
+      // Tone follows the same first-flood axis the sort uses, normalised
+      // against the realized max (no hardcoded horizon).
+      const max = this._soonestMaxOffset ?? 0;
+      if (
+        !(max > 0) ||
+        !isFiniteNumber(row.first_flood_offset_minutes)
+      ) {
+        return "";
+      }
+      const t = row.first_flood_offset_minutes / max;
+      return t < 0.25 ? "tone-0" : t < 0.5 ? "tone-1" : t < 0.75 ? "tone-2" : "tone-3";
+    }
     if (
       this.source?.lead_kind !== "forecast_lead" ||
       !isFiniteNumber(row.lead_minutes) ||

@@ -13,24 +13,65 @@
 import { queryGrid as queryParts } from "./data.js";
 import { assertRampShape, deriveDepthBands } from "./ramp.js";
 
+// Light-mode ramp: crisp solid strokes, minimal glow. On a light basemap a
+// shadow-blur halo spreads the colour into the ground and washes it out, so the
+// glow that reads as luminosity on a dark map is dialled almost to zero here.
 export const DEPTH = [
-  { max: 0.15, color: "#22D3EE", width: 1.6, blur: 4 },
-  { max: 0.30, color: "#FACC15", width: 2.4, blur: 8 },
-  { max: 0.50, color: "#FB923C", width: 3.2, blur: 14 },
-  { max: Infinity, color: "#EF4444", width: 4.2, blur: 22 },
+  { max: 0.15, color: "#0EA5C4", width: 1.9, blur: 0 },
+  { max: 0.30, color: "#F3A008", width: 2.7, blur: 0 },
+  { max: 0.50, color: "#F97316", width: 3.5, blur: 1 },
+  { max: Infinity, color: "#DC2626", width: 4.6, blur: 1 },
 ];
 
-const INK_FAINT = "#5A6579";
-const ROAD_DRY = "#232B3A";
-const ROAD_MAJOR = "#2C3546";
-const LAKE_FILL = "#0C2438";
-const LAKE_EDGE = "#16405E";
-const DRAIN = "#33415A";
-const ACCENT = "#38BDF8";
+// Basemap chrome colours are sourced from the CSS :root tokens so the palette
+// has a single source of truth (styles.css). The literals are fallbacks only.
+const _ROOT_STYLE = getComputedStyle(document.documentElement);
+function _cssVar(name, fallback) {
+  const v = _ROOT_STYLE.getPropertyValue(name).trim();
+  return v || fallback;
+}
+// These are cached at load and re-read by refreshPalette() whenever the
+// Light/Dark appearance changes — the whole basemap chrome swaps from one call.
+let INK_FAINT, ROAD_DRY, ROAD_MAJOR, LAKE_FILL, LAKE_EDGE, DRAIN, ACCENT;
 // Ward context (N2): the LAKE_* aesthetic one step dimmer — administrative
 // ground tint, never competing with the water layer for attention.
-const WARD_FILL = "#081019";
-const WARD_EDGE = "#10263C";
+let WARD_FILL, WARD_EDGE;
+// Flood-line casing: a dark under-stroke that gives every water line
+// edge-contrast against the LIGHT basemap. A thin caution-amber (#F3A008) line
+// on the map ground (#E9E7E0) is only ~2:1 on its own — below legibility — so
+// each band is stroked twice (dark casing, then colour on top), the standard
+// cartographic answer. A mid-dark NEUTRAL (not ink-black): a black casing bleeds
+// into thin amber lines under anti-aliasing and turns them olive. In DARK mode
+// the water is drawn additively and glows on the dark ground, so the casing is
+// skipped entirely (a dark edge on a dark ground does nothing) — see strokeBand.
+let CASING;
+// waterAdditive: DARK mode composites the water "lighter" (additive glow on a
+// dark ground, the data-optimal look); LIGHT mode composites source-over with a
+// casing. Driven by the --water-additive token so it follows the theme however
+// it was set (explicit toggle or OS preference).
+let waterAdditive = false;
+// Casing edge girth, in CSS px, added to each flood line's colour width. Tight
+// (0.5): a thin, higher-alpha rim reads as a crisp cartographic edge; a wide
+// low-alpha rim reads as a halo and is what made the light basemap look blurry.
+const CASING_EDGE_PX = 0.5;
+
+// Re-read every theme-dependent colour. Call after the appearance changes, then
+// repaint (app.js wires this to the theme toggle). Cheap: a handful of
+// getPropertyValue reads off the live root style.
+export function refreshPalette() {
+  INK_FAINT = _cssVar("--ink-faint", "#5A6579");
+  ROAD_DRY = _cssVar("--road-dry", "#232B3A");
+  ROAD_MAJOR = _cssVar("--road-major", "#2C3546");
+  LAKE_FILL = _cssVar("--lake", "#0C2438");
+  LAKE_EDGE = _cssVar("--lake-edge", "#16405E");
+  DRAIN = _cssVar("--drain", "#33415A");
+  ACCENT = _cssVar("--accent", "#38BDF8");
+  WARD_FILL = _cssVar("--ward-fill", "#081019");
+  WARD_EDGE = _cssVar("--ward-edge", "#10263C");
+  CASING = _cssVar("--flood-casing", "#48484D");
+  waterAdditive = _cssVar("--water-additive", "0") === "1";
+}
+refreshPalette();
 
 // Presentation constants (pixels / counts — allowed literal classes).
 const HAIRLINE_PX = 1;
@@ -43,7 +84,12 @@ const LABEL_FONT_PX = 11;
 // attenuates when zoomed far out. At m/px <= WATER_REF_MPP the guide values
 // apply exactly.
 const WATER_REF_MPP = 4;
-const WATER_MIN_SCALE = 0.22;
+// City-zoom width floor. Raised twice for the light basemap (0.22 → 0.30 →
+// 0.45): source-over colour needs enough girth to read AS a solid colour — a
+// 1 px anti-aliased core inside a translucent casing reads as a soft smear,
+// not data. Governs the whole-city view and the comparison panels alike
+// (both sit past WATER_REF_MPP, so both floor here).
+const WATER_MIN_SCALE = 0.45;
 // Road-class hierarchy (N1): arterials stay thick and prominent at every
 // zoom; the residential/service mesh recedes (dimmer stroke) and is HIDDEN
 // beyond 2.5 m/px, where tens of thousands of hairlines collapse into visual
@@ -88,9 +134,9 @@ export function drawBackground(ctx, width, height, view, centre) {
   const [cx, cy] = view.toScreen(centre[0], centre[1]);
   const radius = Math.max(width, height) * 0.75;
   const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius);
-  grad.addColorStop(0, "#141A26"); // derived midpoint of --panel-hi and --bg
-  grad.addColorStop(0.55, "#0A0E17");
-  grad.addColorStop(1, "#05070D");
+  grad.addColorStop(0, _cssVar("--map-g0", "#141A26")); // lighter under city centre
+  grad.addColorStop(0.55, _cssVar("--map-g1", "#0A0E17"));
+  grad.addColorStop(1, _cssVar("--map-g2", "#05070D"));
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, width, height);
 }
@@ -529,20 +575,30 @@ export function drawWater(ctx, env) {
     const frameA = env.frameA;
     const frameB = env.interpFrac > 0 ? env.frameB : null;
     const frac = frameB ? env.interpFrac : 0;
-    const entryA = waterWorldFor(env, frameA);
-    const entryB = frameB ? waterWorldFor(env, frameB) : null;
+    // Each entry is [waterWorld, alpha]. At rest we crossfade A->B so slow
+    // hand-scrubbing is smooth. While PLAYING we draw only the dominant frame
+    // at full alpha — that halves the stroke count so the casing pass (restored
+    // for legibility of moving floods on the light ground) fits the frame
+    // budget; the crossfade is imperceptible at sweep speed.
+    let draws;
+    if (waterPlaying && frameB) {
+      const dom = frac >= 0.5 ? frameB : frameA;
+      draws = [[waterWorldFor(env, dom), 1]];
+    } else {
+      draws = [[waterWorldFor(env, frameA), 1 - frac]];
+      if (frameB) draws.push([waterWorldFor(env, frameB), frac]);
+    }
     ctx.save();
-    ctx.globalCompositeOperation = "lighter";
+    ctx.globalCompositeOperation = waterAdditive ? "lighter" : "source-over";
     ctx.setTransform(
       env.dpr * view.scale, 0, 0, -env.dpr * view.scale,
       env.dpr * view.tx, env.dpr * view.ty
     );
-    for (let b = 0; b < 4; b++) {
-      if (entryA.counts[b]) {
-        strokeBand(ctx, entryA.bands[b], b, zoomScale, env.dpr, view.scale, 1 - frac);
-      }
-      if (entryB && entryB.counts[b]) {
-        strokeBand(ctx, entryB.bands[b], b, zoomScale, env.dpr, view.scale, frac);
+    for (const [entry, alpha] of draws) {
+      for (let b = 0; b < 4; b++) {
+        if (entry.counts[b]) {
+          strokeBand(ctx, entry.bands[b], b, zoomScale, env.dpr, view.scale, alpha);
+        }
       }
     }
     ctx.restore();
@@ -577,7 +633,7 @@ export function drawWater(ctx, env) {
     }
   }
   ctx.save();
-  ctx.globalCompositeOperation = "lighter";
+  ctx.globalCompositeOperation = waterAdditive ? "lighter" : "source-over";
   for (let b = 0; b < bands.length; b++) {
     if (counts[b] === 0) continue;
     strokeBand(ctx, bands[b], b, zoomScale, env.dpr);
@@ -587,18 +643,52 @@ export function drawWater(ctx, env) {
 
 function strokeBand(ctx, path, band, zoomScale, dpr, worldDiv = 1, alphaMul = 1) {
   const spec = DEPTH[band];
-  ctx.shadowColor = spec.color;
-  // Guide types shadowBlur = blur * dpr; blur is device-px (transform-free).
-  // During play the shadow pass doubles rasterisation cost at city zoom for
-  // a bloom scaled below 1px — it is dropped while playing only, so the
-  // sweep holds 60fps and the rest state keeps the full guide glow.
-  const blurPx = Math.max(1, spec.blur * zoomScale * dpr);
-  ctx.shadowBlur = zoomScale < 0.5 && waterPlaying ? 0 : blurPx;
-  ctx.strokeStyle = spec.color;
-  ctx.lineWidth = Math.max(HAIRLINE_PX / dpr, spec.width * zoomScale) / worldDiv;
-  const base = zoomScale < 1 ? 0.35 + 0.65 * zoomScale : 1;
-  ctx.globalAlpha = base * alphaMul;
+  const colorWidth = Math.max(HAIRLINE_PX / dpr, spec.width * zoomScale) / worldDiv;
+  // Water renders source-over (see drawWater): on the light basemap colours sit
+  // ON the ground. Alpha now stays near-full at every zoom (floor 0.7 + 0.3·z):
+  // the old 0.5-floor left city-scale strokes at ~65% over a pale ground,
+  // which is exactly the washed-out "blurry" look (owner 2026-09-09, second
+  // report) — solid colour is what reads as sharp.
+  const base = zoomScale < 1 ? 0.7 + 0.3 * zoomScale : 1;
+  const edge = CASING_EDGE_PX / worldDiv;
   setRound(ctx);
+  // LIGHT-mode casing pass — a neutral-dark under-stroke, COLOUR-DOMINANT. The
+  // added girth is a fixed ~0.7 CSS-px edge (CASING_EDGE_PX / worldDiv keeps it
+  // constant in screen px across the world-transformed and untransformed draw
+  // paths), never a multiple of colorWidth — which is already world-scaled and
+  // would blow the casing up if divided by worldDiv again. Thin amber cores keep
+  // their colour; the casing is only an edge, and carries no bloom.
+  //
+  // Drawn ALWAYS in light (incl. while playing): the dark edge is exactly what
+  // keeps moving amber/orange floods legible on the light ground (without it
+  // they wash to pale mush). Playback affords the second stroke because drawWater
+  // drops the A/B crossfade while playing (one frame, not two). In DARK mode the
+  // water composites additively and glows on the dark ground, so a dark casing
+  // would be invisible — skip it and let the bloom (below) do the separating.
+  if (!waterAdditive) {
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = CASING;
+    ctx.lineWidth = colorWidth + edge;
+    ctx.globalAlpha = 0.6 * alphaMul;
+    ctx.stroke(path);
+  }
+  // Colour pass on top. LIGHT gets NO bloom whatsoever — shadowBlur is a
+  // same-colour halo under every stroke, and even the old 1-device-px floor
+  // softened ~30k edges into a visible haze on the pale ground (that floor is
+  // gone; shadow glow is a dark-ground technique). DARK keeps its additive
+  // bloom so floods read as luminous water. Guide types shadowBlur =
+  // blur * dpr; dropped while playing at city zoom so the sweep holds 60fps.
+  ctx.shadowColor = spec.color;
+  if (waterAdditive) {
+    const bloom = spec.blur + 2;
+    const blurPx = Math.max(2, bloom * zoomScale * dpr);
+    ctx.shadowBlur = zoomScale < 0.5 && waterPlaying ? 0 : blurPx;
+  } else {
+    ctx.shadowBlur = 0;
+  }
+  ctx.strokeStyle = spec.color;
+  ctx.lineWidth = colorWidth;
+  ctx.globalAlpha = base * alphaMul;
   ctx.stroke(path);
 }
 

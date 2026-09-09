@@ -159,7 +159,7 @@ const ROUTING_CSS = `
 .wf6-route-result strong{ color:var(--ink); font-weight:600; }
 .wf6-route-result ul{ margin:4px 0 0; padding-left:16px; }
 .wf6-route-float{ position:absolute; top:var(--header-h,56px); right:8px; z-index:40;
-  background:rgba(10,14,23,0.97); border:1px solid var(--line); border-radius:10px;
+  background:var(--glass, rgba(255,255,255,0.9)); border:1px solid var(--line); border-radius:10px;
   padding:8px; width:300px; color:var(--ink-dim); font-size:12px; }
 `;
 

@@ -1,49 +1,150 @@
 /* JALADHAR presentation dashboard — values typed verbatim from
    docs/FRONTEND-DESIGN-GUIDE.md sections 4 and 5. Derivations are marked. */
 
+/* ============================================================================
+   JALADHAR style guide — macOS-esque (Apple HIG, light).
+   Apple-Maps-light basemap and clean light system materials, one system-blue
+   accent, vibrant translucent panels, SF typography, soft floating shadows.
+   Saturation is spent only on the flood depth ramp (the data), never on chrome.
+   ========================================================================== */
 :root {
-  color-scheme: dark;
+  color-scheme: light;
 
-  /* ground */
-  --bg-deep:      #05070D;   /* page, outermost */
-  --bg:           #0A0E17;   /* map ground */
-  --panel:        #10151F;   /* panels */
-  --panel-hi:     #161C28;   /* hover / raised */
-  --line:         #1E2634;   /* hairlines, borders */
+  /* ground — macOS light system materials (clean, luminous) */
+  --bg-deep:      #ECECEE;   /* window ground */
+  --bg:           #E8E6E0;   /* behind the map canvas */
+  --panel:        #FFFFFF;   /* raised surface */
+  --panel-hi:     #F0F0F3;   /* hover / selected */
+  --line:         rgba(0, 0, 0, 0.10);  /* hairline separator */
 
-  /* ink */
-  --ink:          #E9EDF5;   /* primary text */
-  --ink-dim:      #94A0B4;   /* secondary */
-  --ink-faint:    #5A6579;   /* tertiary, captions */
+  /* ink — macOS light label hierarchy (dark text on light) */
+  --ink:          #1D1D1F;   /* primary label */
+  --ink-dim:      rgba(0, 0, 0, 0.56);  /* secondary label */
+  --ink-faint:    rgba(0, 0, 0, 0.36);  /* tertiary label */
 
-  /* geography */
-  --road-dry:     #232B3A;   /* dry road */
-  --road-major:   #2C3546;   /* arterials, slightly brighter */
-  --lake:         #0C2438;   /* lake fill */
-  --lake-edge:    #16405E;   /* lake outline */
-  --drain:        #33415A;   /* rajakaluve network */
+  /* geography — Apple-Maps-light basemap: warm light ground, white roads,
+     light-blue water. The flood ramp is the only saturated thing. */
+  --road-dry:     #FFFFFF;   /* dry road (white lines on warm gray ground) */
+  --road-major:   #FFFFFF;   /* arterials */
+  --lake:         #B6D9F0;   /* lake fill — light blue */
+  --lake-edge:    #8FC1E4;   /* lake outline */
+  --drain:        #C4C2BC;   /* rajakaluve network */
+  --ward-fill:    #EAE8E1;   /* administrative ground tint */
+  --ward-edge:    #DAD8D0;   /* ward outline */
 
-  /* water depth ramp — the only saturated colours on screen */
-  --d1:           #22D3EE;   /* 0.10–0.15 m  passable */
-  --d2:           #FACC15;   /* 0.15–0.30 m  caution */
-  --d3:           #FB923C;   /* 0.30–0.50 m  hazardous */
-  --d4:           #EF4444;   /* > 0.50 m     impassable */
-  --surcharge:    #F43F5E;   /* node discharging to surface */
+  /* map ground — warm light radial wash, brighter under the city centre */
+  --map-g0:       #F1EFE9;   /* centre */
+  --map-g1:       #E9E7E0;   /* mid */
+  --map-g2:       #E2E0D8;   /* edge */
 
-  --accent:       #38BDF8;   /* UI accent: focus, active tab, slider */
+  /* water depth ramp — the data. Deepened for legibility on the light map. */
+  --d1:           #0EA5C4;   /* 0.10–0.15 m  passable */
+  --d2:           #F3A008;   /* 0.15–0.30 m  caution */
+  --d3:           #F97316;   /* 0.30–0.50 m  hazardous */
+  --d4:           #DC2626;   /* > 0.50 m     impassable */
+  --surcharge:    #E11D48;   /* node discharging to surface */
+  --flood-casing: #48484D;   /* light-mode flood-line under-stroke (edge on pale ground) */
+  --water-additive: 0;       /* 0 = source-over + casing (light); 1 = additive glow (dark) */
+  /* segmented controls + status chip — themed so the thumb/track read on both */
+  --seg-track:    rgba(0, 0, 0, 0.06);   /* recessed segmented-control track */
+  --seg-thumb:    #FFFFFF;               /* selected segment (raised) */
+  --chip-bg:      rgba(255, 255, 255, 0.55); /* status-chip container */
+
+  --accent:       #007AFF;   /* macOS systemBlue (light) — selection, focus, active */
+
+  /* macOS Sonoma / Sequoia vibrancy — NSVisualEffectView-style translucent
+     materials. Clean and restrained: a hairline rim and a whisper of top
+     highlight, no heavy specular sheen. The map shows through, blurred and
+     saturated, but the material stays legible for ops use. */
+  --glass:        rgba(255, 255, 255, 0.78);   /* HUD / sidebar material */
+  --glass-strong: rgba(250, 250, 252, 0.84);   /* toolbar material */
+  --glass-border: rgba(0, 0, 0, 0.08);         /* hairline rim */
+  /* Light mode refracts half as hard as dark: on the pale Apple-Maps ground a
+     36 px backdrop smear reads as a blurry screen, while 16 px keeps the
+     vibrancy without mushing the map behind the panels. */
+  --glass-blur:   16px;
+  --glass-refract: blur(16px) saturate(160%) brightness(1.02);
+  --glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.65);
+  --glass-sheen:  linear-gradient(180deg,
+                     rgba(255, 255, 255, 0.30) 0,
+                     rgba(255, 255, 255, 0) 44px);
+  --hud-gap:      12px;
+  /* crisp two-layer elevation: soft ambient + tighter key shadow (light) */
+  --shadow-hud:   0 16px 44px rgba(0, 0, 0, 0.16), 0 3px 10px rgba(0, 0, 0, 0.10);
+  --radius-card:  12px;      /* panels / popovers (Sonoma window radius) */
+  --radius-ctl:   6px;       /* buttons / controls */
 
   /* motion */
   --ease: cubic-bezier(0.4, 0, 0.2, 1);
   --fast: 160ms; --base: 240ms; --slow: 420ms;
 
-  /* layout dimensions — guide section 5 */
-  --header-h: 56px;
+  /* layout dimensions */
+  --header-h: 52px;
   --rail-w: 340px;
-  --bottom-h: 96px;
+  --bottom-h: 92px;
 
-  font-family: ui-sans-serif, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
-  /* Every number uses tabular numerals — guide calls this the highest-ratio detail. */
+  /* SF on Apple platforms, graceful elsewhere */
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue",
+    "Segoe UI", Roboto, sans-serif;
   font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ============================================================================
+   Dark appearance — macOS dark system materials. A RICH near-black with depth
+   and vibrancy (not a flat mid-graphite): true-dark grounds, an Apple-Maps-dark
+   basemap, dark translucent glass, systemBlue (dark). The flood ramp is left
+   unchanged — on the dark ground the water composites additively and glows,
+   which is the data-optimal look; keeping the hues identical also keeps the
+   legend swatches in sync with the map (render.js DEPTH mirrors --d1..d4).
+   Only the colour TOKENS are redefined here; every component styles through
+   them, so the whole UI swaps from this one block. Driven by data-theme, set by
+   the toggle (and a no-flash <head> script) from localStorage / OS preference.
+   ========================================================================== */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --bg-deep:      #161618;
+  --bg:           #0C0C0E;
+  --panel:        #1C1C1E;
+  --panel-hi:     #2C2C2F;
+  --line:         rgba(255, 255, 255, 0.12);
+
+  --ink:          #F5F5F7;
+  --ink-dim:      rgba(235, 235, 245, 0.60);
+  --ink-faint:    rgba(235, 235, 245, 0.34);
+
+  /* Apple-Maps-dark basemap: dark ground, lighter-gray roads, deep-blue water */
+  --road-dry:     #3A3A3E;
+  --road-major:   #515158;
+  --lake:         #103A56;
+  --lake-edge:    #1C5375;
+  --drain:        #3C3C42;
+  --ward-fill:    #1A1A1E;
+  --ward-edge:    #2A2A30;
+
+  --map-g0:       #262629;   /* lifted under the city centre */
+  --map-g1:       #1E1E21;
+  --map-g2:       #161619;
+
+  --flood-casing: #000000;   /* unused in dark (additive skips the casing) */
+  --water-additive: 1;
+  --seg-track:    rgba(255, 255, 255, 0.07);
+  --seg-thumb:    #55555A;
+  --chip-bg:      rgba(255, 255, 255, 0.07);
+
+  --accent:       #0A84FF;   /* macOS systemBlue (dark) */
+
+  --glass:        rgba(30, 30, 32, 0.72);
+  --glass-strong: rgba(24, 24, 26, 0.82);
+  --glass-border: rgba(255, 255, 255, 0.10);
+  --glass-refract: blur(36px) saturate(170%) brightness(0.92);
+  --glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  --glass-sheen:  linear-gradient(180deg,
+                     rgba(255, 255, 255, 0.06) 0,
+                     rgba(255, 255, 255, 0) 44px);
+  --shadow-hud:   0 16px 44px rgba(0, 0, 0, 0.55), 0 3px 10px rgba(0, 0, 0, 0.45);
 }
 
 * { box-sizing: border-box; }
@@ -72,26 +173,85 @@ button, input {
 
 /* ---------------------------------------------------------------- layout */
 
+/* Map-immersive HUD: the map fills the viewport and every control floats over
+   it as frosted glass, instead of solid columns flanking a boxed-in map. */
 .app {
   position: relative;
-  display: grid;
-  grid-template-columns: 1fr var(--rail-w);
-  grid-template-rows: var(--header-h) 1fr var(--bottom-h);
   height: 100vh;
-  gap: 0;
+  width: 100%;
+  overflow: hidden;
 }
 
 /* header — 56px, hairline bottom border, product name left, run label right */
 
 .topbar {
-  grid-column: 1 / -1;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--header-h);
+  z-index: 30;
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 0 20px;
-  border-bottom: 1px solid var(--line);
-  background: linear-gradient(180deg, #070a11 0%, var(--bg-deep) 100%);
+  border-bottom: 1px solid var(--glass-border);
+  background: var(--glass-sheen) no-repeat, var(--glass-strong);
+  -webkit-backdrop-filter: var(--glass-refract);
+  backdrop-filter: var(--glass-refract);
+  box-shadow: var(--glass-highlight);
 }
+
+.topbar-left {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+/* macOS traffic-light window controls — functional, not decorative:
+   red hides the streets panel, yellow hides the detail rail, green fullscreens.
+   Glyphs reveal on group hover, exactly like macOS. */
+.traffic {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.tl {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  position: relative;
+  box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.20);
+  transition: filter var(--fast) var(--ease);
+}
+.tl-red { background: #FF5F57; }
+.tl-yellow { background: #FEBC2E; }
+.tl-green { background: #28C840; }
+.tl:active { filter: brightness(0.85); }
+.tl:focus-visible { outline: 1px solid var(--accent); outline-offset: 2px; }
+.tl::before {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+  color: rgba(0, 0, 0, 0.55);
+  opacity: 0;
+  transition: opacity var(--fast) var(--ease);
+}
+.traffic:hover .tl::before { opacity: 1; }
+.tl-red::before { content: "\00d7"; font-size: 10px; }      /* × */
+.tl-yellow::before { content: "\2212"; }                     /* − */
+.tl-green::before { content: "\2197"; font-size: 8px; }      /* ↗ */
+
+body.hide-left #watchlist { display: none !important; }
+body.hide-right .rail { display: none !important; }
 
 .brand {
   display: flex;
@@ -150,7 +310,9 @@ button, input {
 /* map — fills all space */
 
 .map-area {
-  position: relative;
+  position: absolute;
+  inset: 0;
+  z-index: 0;
   overflow: hidden;
   background: var(--bg);
   cursor: crosshair;
@@ -168,25 +330,37 @@ button, input {
 /* right rail — 320–360 px wide, panels separated by 12 px gaps */
 
 .rail {
-  grid-row: 2;
-  grid-column: 2;
+  position: absolute;
+  top: calc(var(--header-h) + var(--hud-gap));
+  right: var(--hud-gap);
+  bottom: calc(var(--bottom-h) + var(--hud-gap));
+  width: var(--rail-w);
+  z-index: 20;
   overflow-y: auto;
-  background: var(--bg-deep);
-  border-left: 1px solid var(--line);
-  padding: 16px;
+  background: var(--glass-sheen) no-repeat, var(--glass);
+  -webkit-backdrop-filter: var(--glass-refract);
+  backdrop-filter: var(--glass-refract);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-hud), var(--glass-highlight);
+  padding: 2px 18px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 0;
 }
 
+/* The rail is one continuous instrument surface, not a stack of cards.
+   Sections are separated by a hairline and vertical rhythm — border, fill and
+   radius are spent only where one block must be lifted (the live readout, a
+   semantic alert), never stamped on every block. */
 .panel {
-  background: linear-gradient(180deg, #131926 0%, var(--panel) 100%);
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  padding: 16px 18px;
-  /* Depth from surface lightness (guide §4) + a 1px top highlight so panels
-     read as lit from above, not as flat rectangles. No heavy drop shadows. */
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 18px 0 20px;
+}
+.panel + .panel {
+  border-top: 1px solid var(--line);
 }
 
 .panel-heading {
@@ -200,15 +374,17 @@ button, input {
 
 .now-heading {
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
 }
 
 .now-lead {
-  font-size: 11px;
+  font-size: 10px;
   color: var(--ink-faint);
-  letter-spacing: 0.14em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
+  font-weight: 500;
 }
 
 .hero-value {
@@ -354,6 +530,43 @@ button, input {
   color: var(--ink-faint);
 }
 
+/* Provenance / diagnostics disclosure — bottom-bar toggle wired by app.js.
+   Default collapsed so the working view is operator-facing; one click on the
+   labelled "Provenance" control reveals the full tier (manifest paths, hashes,
+   model notes). Signposted disclosure, not silent removal. The comparison
+   overlay keeps its provenance always-on — it is a dedicated analysis view. */
+.diag-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 5px 12px;
+  font-size: 11px;
+  color: var(--ink-dim);
+  background: transparent;
+  cursor: pointer;
+  user-select: none;
+  transition: color var(--fast) var(--ease), border-color var(--fast) var(--ease),
+    background var(--fast) var(--ease);
+}
+.diag-toggle:hover { color: var(--ink); border-color: var(--ink-faint); }
+.diag-toggle.on {
+  color: var(--accent);
+  border-color: rgba(0, 122, 255, 0.4);
+  background: rgba(0, 122, 255, 0.08);
+}
+body:not(.show-diag) .rail .provenance-line,
+body:not(.show-diag) .rail .prov-line,
+body:not(.show-diag) .rail .diag-schema,
+body:not(.show-diag) .rail .fingerprint,
+body:not(.show-diag) #watchlist .wf6-statusline { display: none; }
+
+/* LIVE with no run: hide the empty numeric readouts (no bare "—" placeholders).
+   The LIVE FORECAST panel carries the honest no-run explanation instead. */
+body.live-empty #status-panel,
+body.live-empty #deepest-panel { display: none; }
+
 .fingerprint {
   font-family: ui-monospace, "SF Mono", Menlo, monospace;
   font-size: 11px;
@@ -366,14 +579,21 @@ button, input {
 /* bottom bar — 96px: scrubber, play, layer toggles */
 
 .bottombar {
-  grid-column: 1;
-  grid-row: 3;
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: var(--bottom-h);
+  z-index: 25;
   display: flex;
   align-items: center;
   gap: 20px;
   padding: 0 20px;
-  border-top: 1px solid var(--line);
-  background: var(--bg-deep);
+  border-top: 1px solid var(--glass-border);
+  background: var(--glass-strong);
+  -webkit-backdrop-filter: var(--glass-refract);
+  backdrop-filter: var(--glass-refract);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14);
 }
 
 .play-btn {
@@ -466,19 +686,23 @@ button, input {
   position: absolute;
   left: 16px;
   bottom: 16px;
-  background: rgba(11, 15, 23, 0.97);
-  -webkit-backdrop-filter: blur(10px);
-  backdrop-filter: blur(10px);
-  border: 1px solid #263042;
-  border-radius: 11px;
+  background: var(--glass);
+  -webkit-backdrop-filter: var(--glass-refract);
+  backdrop-filter: var(--glass-refract);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-card);
   padding: 13px 15px;
   font-size: 11px;
   color: var(--ink-dim);
   display: grid;
   gap: 7px;
   max-width: 258px;
-  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--shadow-hud);
 }
+
+/* No flood data in the live empty state — the depth legend is meaningless and
+   would only ghost through the empty watchlist glass above it. */
+body.live-empty #legend { display: none !important; }
 
 .legend-title {
   font-size: 11px;
@@ -496,7 +720,7 @@ button, input {
 
 .swatch {
   width: 22px;
-  height: 4px;
+  height: 6px;
   border-radius: 999px;
   flex: none;
 }
@@ -537,7 +761,7 @@ button, input {
 
 .map-overlay .overlay-card {
   pointer-events: auto;
-  background: rgba(16, 21, 31, 0.92);
+  background: var(--glass);
   border: 1px solid var(--line);
   border-radius: 10px;
   padding: 20px 26px;
@@ -586,7 +810,7 @@ button, input {
 /* Palette/type/motion tokens verbatim from guide §4; no invented values. */
 .comparison-entry-btn{
   display:inline-flex; align-items:center; gap:6px;
-  border:1px solid transparent; border-radius:8px;
+  border:1px solid transparent; border-radius:var(--radius-ctl);
   padding:6px 12px; font-size:12px; font-weight:500;
   letter-spacing:0.005em; text-transform:none;
   color:var(--ink-dim); background:transparent;
@@ -594,6 +818,22 @@ button, input {
 }
 .comparison-entry-btn:hover{ background:var(--panel); border-color:var(--line); color:var(--ink); }
 .comparison-entry-btn:focus-visible{ outline:1px solid var(--accent); outline-offset:2px; }
+
+/* Appearance toggle — a compact icon button (macOS Light/Dark). Shows the
+   current appearance: sun in light, moon in dark; click flips it. */
+.theme-toggle{
+  display:inline-flex; align-items:center; justify-content:center;
+  width:30px; height:30px; flex:none; margin-left:2px; padding:0;
+  border:1px solid var(--line); border-radius:var(--radius-ctl);
+  background:transparent; color:var(--ink-dim); cursor:pointer;
+  transition:background var(--fast) var(--ease), border-color var(--fast) var(--ease), color var(--fast) var(--ease);
+}
+.theme-toggle:hover{ background:var(--panel); border-color:var(--ink-faint); color:var(--ink); }
+.theme-toggle:focus-visible{ outline:1px solid var(--accent); outline-offset:2px; }
+.theme-toggle svg{ width:16px; height:16px; display:block; }
+.theme-toggle .icon-moon{ display:none; }
+:root[data-theme="dark"] .theme-toggle .icon-sun{ display:none; }
+:root[data-theme="dark"] .theme-toggle .icon-moon{ display:block; }
 
 .jal-comp-overlay{
   position:absolute; inset:0; z-index:45;
@@ -604,6 +844,13 @@ button, input {
 }
 .jal-comp-overlay.hidden{ display:none !important; opacity:0; transform:translateY(6px); }
 .jal-comp-overlay[hidden]{ display:none !important; }
+
+/* The comparison is a modal view: the floating search box sits at z-index 50,
+   above this overlay's 45, so it must be parked while the modal is open
+   (body class toggled by comparison.js open/close). */
+body.comparison-open .wf6-search{
+  opacity:0; visibility:hidden; pointer-events:none;
+}
 
 /* Entrance: overlay + panels rise in at 240ms ease-out (guide §4 motion). */
 @keyframes comp-overlay-in{
@@ -644,7 +891,7 @@ button, input {
 .jal-comp-panel canvas{ position:absolute; inset:0; width:100%; height:100%; }
 .jal-comp-panel-label{
   position:absolute; top:12px; left:12px; z-index:2;
-  background:rgba(16,21,31,0.92); border:1px solid var(--line); border-radius:999px;
+  background:var(--glass); border:1px solid var(--line); border-radius:999px;
   padding:4px 12px; font-size:11px; font-weight:600; letter-spacing:0.08em; text-transform:uppercase; color:var(--ink-dim);
   pointer-events:none;
 }
@@ -672,7 +919,7 @@ button, input {
 /* Legends inside comparison panels reuse main legend styling */
 .jal-comp-legend{
   position:absolute; bottom:12px; left:12px; z-index:2;
-  background:rgba(16,21,31,0.92); border:1px solid var(--line); border-radius:10px;
+  background:var(--glass); border:1px solid var(--line); border-radius:10px;
   padding:10px 12px; font-size:11px; color:var(--ink-dim); display:grid; gap:6px; pointer-events:none; max-width:220px; min-width:180px;
 }
 .jal-comp-legend-title{ font-size:11px; font-weight:600; letter-spacing:0.14em; text-transform:uppercase; color:var(--ink-dim); }
@@ -694,31 +941,37 @@ button, input {
 /* Tokens verbatim from FRONTEND-DESIGN-GUIDE.md §4 — no invented values. */
 .live-run-btn{
   display:inline-flex; align-items:center; gap:7px;
-  border:1px solid var(--line); border-radius:8px;
+  border:1px solid var(--line); border-radius:var(--radius-ctl);
   padding:6px 13px; font-size:12px; font-weight:500;
   letter-spacing:0.005em; text-transform:none;
   color:var(--ink); background:var(--panel);
   cursor:pointer; transition:background var(--fast) var(--ease), border-color var(--fast) var(--ease), color var(--fast) var(--ease);
 }
-/* leading pulse dot marks this as the compute action */
+/* leading dot marks this as the compute action */
 .live-run-btn::before{
   content:""; width:6px; height:6px; border-radius:999px; flex:none;
-  background:var(--accent); box-shadow:0 0 0 3px rgba(56,189,248,0.15);
+  background:var(--accent);
 }
 .live-run-btn:hover:not(:disabled){ background:var(--panel-hi); border-color:var(--ink-faint); }
 .live-run-btn:disabled{ opacity:0.55; cursor:default; }
 .live-run-btn:focus-visible{ outline:1px solid var(--accent); outline-offset:2px; }
 
-.live-panel{ border-left:3px solid var(--accent); }
+/* The live readout is lifted by a faint tint bleeding to the rail edges, not by
+   an accent bar on a card. */
+.live-panel{
+  background:rgba(0,122,255,0.035);
+  margin:0 -18px; padding-left:18px; padding-right:18px;
+}
+.live-panel .panel-heading{ color:var(--accent); }
 .live-tile-hint{ font-size:10px; font-weight:400; letter-spacing:0.06em; color:var(--ink-faint); text-transform:none; margin-left:8px; }
 .live-status{ display:grid; gap:8px; font-size:12px; line-height:1.5; color:var(--ink-dim); }
 .live-idle{ color:var(--ink-dim); }
 .live-scope-note{ font-size:11px; color:var(--ink-faint); line-height:1.45; }
 .live-scope-note.scope-emphasis{ color:var(--ink-dim); border-top:1px solid var(--line); padding-top:8px; margin-top:8px; }
-.live-card{ display:grid; gap:6px; padding:10px 12px; background:rgba(16,21,31,0.6); border:1px solid var(--line); border-radius:10px; }
+.live-card{ display:grid; gap:6px; padding:10px 12px; background:rgba(255,255,255,0.55); border:1px solid var(--line); border-radius:10px; }
 .live-card.live-queued{ border-color:var(--ink-faint); }
 .live-card.live-running{ border-color:var(--accent); }
-.live-card.live-completed{ border-color:rgba(56,189,248,0.35); }
+.live-card.live-completed{ border-color:rgba(0,122,255,0.35); }
 .live-card.live-failed{ border-color:rgba(244,63,94,0.45); }
 .live-state-label{ display:flex; align-items:center; gap:8px; font-size:11px; font-weight:600; letter-spacing:0.08em; text-transform:uppercase; color:var(--ink); }
 .live-running .live-state-label{ color:var(--accent); }
@@ -762,7 +1015,7 @@ button, input {
   display:inline-flex;align-items:center;gap:8px;
   line-height:1.2;
   padding:4px 6px 4px 4px;border-radius:999px;
-  border:1px solid var(--line);background:rgba(12,16,25,0.6);
+  border:1px solid var(--line);background:var(--chip-bg);
 }
 .mode-chip-main{
   position:relative;
@@ -775,10 +1028,10 @@ button, input {
   content:"";position:absolute;left:9px;top:50%;transform:translateY(-50%);
   width:6px;height:6px;border-radius:999px;background:var(--ink-faint);
 }
-body.mode-live .mode-chip-main{color:var(--accent);background:rgba(56,189,248,0.12);}
-body.mode-live .mode-chip-main::before{background:var(--accent);box-shadow:0 0 0 3px rgba(56,189,248,0.18);}
-body.mode-demo .mode-chip-main{color:#FBBF7A;background:rgba(251,146,60,0.12);}
-body.mode-demo .mode-chip-main::before{background:var(--d3);box-shadow:0 0 0 3px rgba(251,146,60,0.18);}
+body.mode-live .mode-chip-main{color:var(--accent);background:rgba(0,122,255,0.12);}
+body.mode-live .mode-chip-main::before{background:var(--accent);}
+body.mode-demo .mode-chip-main{color:#C2410C;background:rgba(249,115,22,0.12);}
+body.mode-demo .mode-chip-main::before{background:var(--d3);}
 .mode-chip-sub{
   font-size:10px;font-weight:400;letter-spacing:0.02em;color:var(--ink-faint);text-transform:none;
   padding-right:6px;
@@ -787,7 +1040,7 @@ body.mode-demo .mode-chip-main::before{background:var(--d3);box-shadow:0 0 0 3px
 /* base pill button — sentence case, calm */
 .mode-toggle-btn{
   display:inline-flex;align-items:center;gap:6px;
-  border:1px solid var(--line);border-radius:8px;
+  border:1px solid var(--line);border-radius:var(--radius-ctl);
   padding:6px 13px;font-size:12px;font-weight:500;
   letter-spacing:0.005em;text-transform:none;
   color:var(--ink);background:var(--panel);
@@ -798,12 +1051,12 @@ body.mode-demo .mode-chip-main::before{background:var(--d3);box-shadow:0 0 0 3px
 /* primary switch: filled accent so the mode action is the clear next step */
 .mode-toggle-btn#btn-demo-toggle,
 .mode-toggle-btn.live-return{
-  border-color:rgba(56,189,248,0.45);
-  background:rgba(56,189,248,0.14);color:var(--accent);font-weight:600;
+  border-color:rgba(0,122,255,0.45);
+  background:rgba(0,122,255,0.14);color:var(--accent);font-weight:600;
 }
 .mode-toggle-btn#btn-demo-toggle:hover:not(:disabled),
 .mode-toggle-btn.live-return:hover:not(:disabled){
-  background:rgba(56,189,248,0.22);border-color:rgba(56,189,248,0.6);color:#7DD3FC;
+  background:rgba(0,122,255,0.20);border-color:rgba(0,122,255,0.45);color:var(--accent);
 }
 .mode-toggle-btn.hidden{ display:none !important; }
 #gate-note.hidden{ display:none !important; }

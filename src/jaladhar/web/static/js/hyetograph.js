@@ -33,7 +33,7 @@ function palette() {
   const v = (name, fallback) => css.getPropertyValue(name).trim() || fallback;
   return {
     bar: v("--d1", "#22D3EE"),
-    line: v("--line", "#1E2634"),
+    line: v("--line", "rgba(0,0,0,0.1)"),
     faint: v("--ink-faint", "#5A6579"),
     accent: v("--accent", "#38BDF8"),
   };

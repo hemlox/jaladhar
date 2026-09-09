@@ -16,12 +16,6 @@ function fmt(v, dp){
   if(v==null||!Number.isFinite(Number(v))) return "—";
   return Number(v).toFixed(dp);
 }
-function formatTimeUTC(iso){
-  if(!iso) return "—";
-  const m = /T(\d{2}):(\d{2})(?::(\d{2}))?/.exec(iso);
-  if(!m) return String(iso);
-  return m[3] ? `${m[1]}:${m[2]}:${m[3]}Z` : `${m[1]}:${m[2]}Z`;
-}
 function formatValidForLabel(iso){
   const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(iso ?? "");
   if(!m) return String(iso ?? "—");
@@ -72,7 +66,6 @@ function ensureOverlay(){
     </div>
     <div class="jal-comp-strip" id="jal-comp-strip">
       <div class="jal-comp-metrics" id="jal-comp-metrics"></div>
-      <div class="jal-comp-disclosures" id="jal-comp-disclosures"></div>
     </div>
   `;
   host.appendChild(overlay);
@@ -123,15 +116,16 @@ async function openComparison(){
   if(!overlay) return;
   overlay.classList.remove("hidden");
   overlay.removeAttribute("hidden");
+  // Modal state marker: parks the floating search (z 50 above this overlay)
+  // via the styles.css body.comparison-open rule.
+  document.body.classList.add("comparison-open");
   requestAnimationFrame(()=> overlay.querySelector(".jal-comp-close")?.focus());
   const metricsHost = document.getElementById("jal-comp-metrics");
-  const disclosuresHost = document.getElementById("jal-comp-disclosures");
   const leftCanvas = document.getElementById("jal-comp-left-canvas");
   const rightCanvas = document.getElementById("jal-comp-right-canvas");
   const leftLabel = document.getElementById("jal-comp-left-label");
   const rightLabel = document.getElementById("jal-comp-right-label");
   metricsHost.textContent = "Loading comparison…";
-  disclosuresHost.textContent = "";
   let payload=null;
   try{
     payload = await getJson("/api/comparison2022");
@@ -143,11 +137,7 @@ async function openComparison(){
   try{ globalThis.__JALADHAR_COMPARISON_PAYLOAD = payload; }catch{}
   const left = payload.left ?? {};
   const right = payload.right ?? {};
-  const counts = payload.counts ?? {};
   const metrics = payload.metrics ?? {};
-  const offset = payload.offset ?? {};
-  const banned = payload.banned_note ?? "";
-  const provenance = payload.provenance ?? {};
   if(leftLabel){
     const lt = left.valid_time_utc ? formatValidForLabel(left.valid_time_utc) : "valid time";
     leftLabel.textContent = `FORECAST — 3h forecast at ${lt} \u00b7 ${left.n_flooded ?? ""} flooded`;
@@ -183,12 +173,6 @@ async function openComparison(){
     const podLR = metrics.pod_left_given_right;
     const farL = metrics.far_left_only_share;
     const farR = metrics.far_right_only_share;
-    const union = counts.union;
-    const nLeft = counts.n_left_flooded ?? left.n_flooded;
-    const nRight = counts.n_right_flooded ?? right.n_flooded;
-    const nBoth = counts.n_both;
-    const nLeftOnly = counts.n_left_only;
-    const nRightOnly = counts.n_right_only;
     metricsHost.append(
       mk("Jaccard (CSI) — forecast∩replay / union", fmt(jacc,3)),
       mk("Dice — 2·both / (left+right)", fmt(dice,3)),
@@ -197,50 +181,9 @@ async function openComparison(){
       mk("FAR left-only share", fmt(farL,3)),
       mk("FAR right-only share", fmt(farR,3))
     );
-    const countsLine = document.createElement("p");
-    countsLine.className="jal-comp-caption";
-    countsLine.style.fontVariantNumeric="tabular-nums";
-    countsLine.textContent = `left ${Number(nLeft).toLocaleString()} \u00b7 right ${Number(nRight).toLocaleString()} \u00b7 both ${Number(nBoth).toLocaleString()} \u00b7 left-only ${Number(nLeftOnly).toLocaleString()} \u00b7 right-only ${Number(nRightOnly).toLocaleString()} \u00b7 union ${Number(union).toLocaleString()}`;
-    metricsHost.appendChild(countsLine);
-    if(offset && offset.disclosure){
-      const p=document.createElement("p");
-      p.className="jal-comp-caption";
-      p.textContent=offset.disclosure + (offset.minutes!=null ? ` (${offset.minutes} min)` : "");
-      metricsHost.appendChild(p);
-    }
-    if(banned){
-      const p=document.createElement("p"); p.className="jal-comp-caption"; p.style.borderLeft="2px solid var(--line)"; p.style.paddingLeft="10px";
-      p.textContent=banned;
-      metricsHost.appendChild(p);
-    }
   }catch(err){
     console.warn("strip render failed", err);
   }
-  try{
-    disclosuresHost.replaceChildren();
-    if(offset && offset.minutes!=null){
-      const p=document.createElement("p");
-      p.textContent=`offset ${offset.minutes} min — forecast ${formatTimeUTC(left.valid_time_utc)} vs replay ${formatTimeUTC(right.valid_time_utc)}`;
-      disclosuresHost.appendChild(p);
-    }
-    if(left.valid_time_utc && right.valid_time_utc){
-      const p=document.createElement("p");
-      p.textContent=`forecast valid ${formatTimeUTC(left.valid_time_utc)} \u00b7 replay valid ${formatTimeUTC(right.valid_time_utc)}`;
-      disclosuresHost.appendChild(p);
-    }
-    if(left.source_csv || right.source_csv){
-      const p=document.createElement("p"); p.className="provenance-line";
-      p.textContent=`source ${provenance.run_manifest ?? ""} \u00b7 ${left.source_csv ?? ""} \u00b7 ${right.source_csv ?? ""}`;
-      disclosuresHost.appendChild(p);
-    } else if(provenance.run_manifest){
-      const p=document.createElement("p"); p.className="provenance-line";
-      p.textContent=`source ${provenance.run_manifest}`;
-      disclosuresHost.appendChild(p);
-    }
-    if(banned){
-      const p=document.createElement("p"); p.textContent=banned; disclosuresHost.appendChild(p);
-    }
-  }catch{}
 
   let basemapMeta, roads, lakes, leftFrame=null, rightFrame=null;
   let leftIndex = null;
@@ -324,7 +267,14 @@ async function openComparison(){
     const rightHost = document.getElementById("jal-comp-right");
     function sizeCanvas(canvas, host){
       const rect = host.getBoundingClientRect();
-      const dpr = window.devicePixelRatio||1;
+      // Same supersample guard as engine.js: a DPR-1 browser composited onto a
+      // physically HiDPI screen upscales these canvases and softens every
+      // stroke; a 2x backing on large screens gives the compositor real pixels.
+      const reported = window.devicePixelRatio||1;
+      const dpr =
+        reported >= 2 || (window.screen && window.screen.width >= 2400)
+          ? Math.max(reported, 2)
+          : reported;
       const w = Math.max(1, Math.round(rect.width));
       const h = Math.max(1, Math.round(rect.height));
       canvas.width = Math.round(w*dpr);
@@ -473,6 +423,7 @@ function closeComparison(){
   if(!overlay || overlay.classList.contains("hidden")) return;
   overlay.classList.add("hidden");
   overlay.setAttribute("hidden","");
+  document.body.classList.remove("comparison-open");
   if(overlay._cleanup) try{ overlay._cleanup(); }catch{}
   const tl = globalThis.__JALADHAR_TIMELINE;
   const scrubber = document.getElementById("scrubber");

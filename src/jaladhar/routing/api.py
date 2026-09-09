@@ -24,8 +24,9 @@ The honest demo narrative under G1 FAIL is therefore: "wading + snap gates
 visibly unblocked; routing execution awaits the scientific gate."
 
 HTTP surface note: ``serve`` accepts an optional ``--cors-origin`` naming the
-ONE allow-listed browser origin permitted to call this API cross-origin.  Only
-a request whose ``Origin`` exactly equals it receives CORS headers; a mismatched
+allow-listed browser origin(s) permitted to call this API cross-origin — one
+origin, or a comma-separated list for the multi-dashboard demo stack.  Only a
+request whose ``Origin`` equals one of them receives CORS headers; a mismatched
 or absent Origin — like an unset configuration — receives no CORS headers at
 all, never a wildcard.  This flag widens nothing by default and exists for the
 demo stack only.
@@ -689,14 +690,17 @@ class _RoutingHandler(BaseHTTPRequestHandler):
 
     def _apply_cors(self, request_origin: str | None) -> None:
         """Emit CORS headers only when --cors-origin is configured AND the
-        request's Origin exactly equals it (allow-list semantics).  A missing
-        or mismatched Origin receives no CORS headers at all; unset
+        request's Origin equals one of the allow-listed values (comma-
+        separated, so the demo stack's several dashboard ports can call this
+        one API; a single configured value behaves exactly as before).  A
+        missing or mismatched Origin receives no CORS headers at all; unset
         configuration emits nothing.  Never a wildcard."""
 
         configured = getattr(self.server, "cors_origin", None)
         if not configured or not request_origin:
             return
-        if request_origin != configured:
+        allowed = {origin.strip() for origin in str(configured).split(",") if origin.strip()}
+        if request_origin not in allowed:
             return
         self.send_header("Origin", request_origin)
         self.send_header("Access-Control-Allow-Origin", request_origin)
@@ -889,9 +893,9 @@ def serve(
     cors_origin: str | None = typer.Option(
         None,
         help=(
-            "Allow-listed browser origin for cross-origin calls: only requests whose "
-            "Origin exactly equals this value get CORS headers. Default None emits no "
-            "CORS header at all."
+            "Allow-listed browser origin(s) for cross-origin calls: only requests whose "
+            "Origin equals one of these comma-separated values get CORS headers. Default None "
+            "emits no CORS header at all."
         ),
     ),
 ) -> None:

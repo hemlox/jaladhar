@@ -60,7 +60,7 @@ export function showNotice({ title = "", message = "", tone = "info" }) {
   }
   card.className = "jal-notice-card tone-" + tone;
   if (tone === "alert") card.style.borderColor = "rgba(244,63,94,.45)";
-  else if (tone === "calm") card.style.borderColor = "rgba(56,189,248,.4)";
+  else if (tone === "calm") card.style.borderColor = "rgba(0,122,255,.4)";
   else card.style.borderColor = "";
   card.querySelector(".jal-notice-title").textContent = title;
   card.querySelector(".jal-notice-message").textContent = message;

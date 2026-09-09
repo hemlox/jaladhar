@@ -67,13 +67,22 @@ echo "Starting services"
 
 nohup "$PY" -m jaladhar.web.app serve \
   --host 127.0.0.1 --port "$DASH_PORT" \
+  --geometry data/interim/terrain/roads_centrelines.gpkg \
   > "${REPO}/logs/deploy_dashboard.log" 2>&1 &
+
+# The dashboards call this API cross-origin (different port = different
+# origin), so the browser needs an explicit allow-list or it blocks /policies
+# and the vehicle-class selector stays permanently disabled. One origin per
+# dashboard served alongside this API; override with CORS_ORIGINS if the
+# dashboard set changes.
+CORS_ORIGINS="${CORS_ORIGINS:-http://127.0.0.1:${DASH_PORT},http://127.0.0.1:8511,http://127.0.0.1:8512}"
 
 nohup "$PY" -m jaladhar.routing.api serve \
   --depth-product-file runs/wf3_uncoupled_3h_forecast_warm_product/products/segment_status.csv \
   --gate-report-file runs/wf3_replay2_gates_v7_excluded/g1_score.json \
   --vehicle-policy-file data/curation/vehicle_wading_policy.json \
   --server-max-snap-distance-m 25.0 \
+  --cors-origin "$CORS_ORIGINS" \
   --host 127.0.0.1 --port "$API_PORT" \
   > "${REPO}/logs/deploy_routing.log" 2>&1 &
 

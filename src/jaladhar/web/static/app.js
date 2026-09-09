@@ -13,14 +13,14 @@ import {
   loadProductFrame,
   loadSeriesFrame,
 } from "./js/data.js";
-import { DEPTH, pickSegment as renderPickSegment, prewarmWaterWorld } from "./js/render.js";
+import { DEPTH, pickSegment as renderPickSegment, prewarmWaterWorld, refreshPalette } from "./js/render.js";
 import { Timeline } from "./js/timeline.js";
 import { Rail } from "./js/rail.js";
 import * as states from "./js/states.js";
 
 // WF-6 INT integration: the self-mounting operator panels join the import
-// graph here (watchlist + search mount themselves idempotently), and the
-// causal panel is driven explicitly after every segment selection below.
+// graph here (watchlist + search mount themselves idempotently). The causal
+// panel was removed from the rail with the drain sections (owner 2026-09-10).
 import "./js/watchlist.js";
 import "./js/search.js";
 // GAP-1 deferred routing: avoid ERR_CONNECTION_REFUSED on standalone dashboard
@@ -47,7 +47,6 @@ document.addEventListener("click", (e)=>{
 }, {capture:true});
 // Also trigger on first interaction anywhere that hints at routing (route button)
 // GAP-1: no auto-load observer — routing stays deferred until explicit user interaction (click or route-request)
-import { CausalPanel } from "./js/causal.js";
 import "./js/comparison.js";
 import "./js/live.js";
 
@@ -71,11 +70,6 @@ const elements = {
 };
 
 const rail = new Rail(elements);
-// fetch bound to the global: CausalPanel invokes fetchImpl as a method, and
-// an unbound `fetch` with a non-global `this` throws Illegal invocation in
-// Chromium, which would silently degrade every causal payload to its empty
-// state (observed live: predicted hits rendered as none_measured).
-const causalPanel = new CausalPanel({ fetchImpl: fetch.bind(globalThis) });
 
 // ---- B7 mode: LIVE default, explicit toggle, localStorage persist only after click ----
 const MODE_KEY = "jaladhar_mode";
@@ -107,6 +101,8 @@ function updateChip(mode){
   }
   document.body.classList.toggle("mode-live", mode==="live");
   document.body.classList.toggle("mode-demo", mode==="demo");
+  // demo (or any populated mode) clears the live-empty state; enterLive re-adds it
+  if(mode!=="live") document.body.classList.remove("live-empty");
   const demoBtn=document.getElementById("btn-demo-toggle");
   const liveBtn=document.getElementById("btn-live-return");
   const restartBtn=document.getElementById("btn-demo-restart");
@@ -449,10 +445,12 @@ function currentTimelineContext() {
 }
 
 // The SAME selection path as a pointer pick, exposed to wf6:select-street:
-// highlight, inspector panel, then the causal-link panel (A5).
+// highlight + inspector panel (the causal-link panel was removed with the
+// drain sections, owner 2026-09-10).
 async function selectSegmentLikePick(segmentId) {
   const index = env.roads.indexOfSegment(segmentId);
   if (index == null) return; // not in the realized network — nothing to claim
+  document.body.classList.remove("hide-right"); // a selection owns the detail rail again
   env.selectedSeg = index;
   engine.invalidateUI();
   await rail.selectSegment(
@@ -461,7 +459,6 @@ async function selectSegmentLikePick(segmentId) {
     env.roads,
     env.drains?.meta ?? null
   );
-  await causalPanel.show(segmentId);
 }
 
 let hoverPending = false;
@@ -488,6 +485,7 @@ engine.attachPointerHandlers({
       rail.clearSelection();
       return;
     }
+    document.body.classList.remove("hide-right"); // a pick owns the detail rail again
     const segmentId = env.roads.segmentIds[hit];
     await rail.selectSegment(
       segmentId,
@@ -495,7 +493,6 @@ engine.attachPointerHandlers({
       env.roads,
       env.drains?.meta ?? null
     );
-    await causalPanel.show(segmentId);
   },
 });
 
@@ -641,6 +638,11 @@ function _installBeyondObserver(){
 
 async function boot() {
   states.loading();
+  // Owner 2026-09-09: the detail rail starts HIDDEN — its startup summary
+  // lives in the watchlist's Overview view instead. The rail still pops up
+  // for any street/ward/intersection selection (see the selection paths
+  // below); the yellow traffic light toggles it manually either way.
+  document.body.classList.add("hide-right");
   env.reducedMotion = engine.reducedMotion();
   window.__bootStage = "state";
   let basemapMeta=null;
@@ -662,6 +664,9 @@ async function boot() {
     let mode = hasExplicit ? stored : "live";
     updateChip(mode);
     wireModeToggles(basemapMeta);
+    wireDiagToggle();
+    wireTrafficLights();
+    wireThemeToggle();
     if(mode==="live"){
       await enterLive(basemapMeta);
       window.__bootStage="done";
@@ -769,6 +774,9 @@ async function enterLive(basemapMeta){
     }
   }catch{}
   globalThis.__JALADHAR_STATE={mode:"live", liveEmpty:true, frameIndex:null};
+  // Hide the empty numeric readouts so LIVE never shows bare "—" placeholders;
+  // the LIVE FORECAST panel already explains the no-run state.
+  document.body.classList.add("live-empty");
   globalThis.__JALADHAR_TIMELINE = timeline;
   if(elements.gateNote) elements.gateNote.textContent="";
 }
@@ -805,6 +813,76 @@ async function reloadForMode(mode, basemapMeta){
   }catch(err){
     states.showOverlay({title:"Dashboard failed closed", message: String(err), error:true});
   }
+}
+
+// Provenance / diagnostics disclosure. Default collapsed so the working view is
+// operator-facing; the labelled toggle keeps the full provenance one click away
+// (manifest paths, hashes, model notes stay reachable — never deleted).
+function wireDiagToggle(){
+  const btn=document.getElementById("btn-diag");
+  if(!btn) return;
+  const KEY="jaladhar.showDiag";
+  let on=false;
+  try{ on = localStorage.getItem(KEY)==="1"; }catch{}
+  const apply=()=>{
+    document.body.classList.toggle("show-diag", on);
+    btn.setAttribute("aria-pressed", on ? "true" : "false");
+    btn.classList.toggle("on", on);
+  };
+  apply();
+  btn.addEventListener("click", ()=>{
+    on=!on;
+    try{ localStorage.setItem(KEY, on ? "1" : "0"); }catch{}
+    apply();
+  });
+}
+
+// macOS Light/Dark appearance toggle. The initial data-theme was set before
+// first paint by the inline <head> script (from localStorage, else the OS
+// preference); here we persist the user's explicit choice and, on each flip,
+// re-read the renderer palette and repaint every canvas so the map (ground,
+// roads, lakes, and the water technique — additive glow in dark, source-over +
+// casing in light) swaps in step with the CSS chrome.
+function wireThemeToggle(){
+  const btn=document.getElementById("btn-theme");
+  if(!btn) return;
+  const KEY="jaladhar.theme";
+  const root=document.documentElement;
+  const syncAria=()=> btn.setAttribute("aria-pressed", root.getAttribute("data-theme")==="dark" ? "true" : "false");
+  syncAria();
+  btn.addEventListener("click", ()=>{
+    const next = root.getAttribute("data-theme")==="dark" ? "light" : "dark";
+    root.setAttribute("data-theme", next);
+    try{ localStorage.setItem(KEY, next); }catch{}
+    syncAria();
+    refreshPalette();          // re-read theme-dependent colours into the renderer
+    engine.invalidateStatic(); // basemap: ground / wards / lakes / roads / drains
+    engine.invalidateDynamic();// water layer (+ its composite/casing switch)
+    engine.invalidateUI();     // ward labels ride the UI canvas
+  });
+}
+
+// macOS traffic-light controls, wired to real, reversible actions so none is a
+// dead button: red toggles the streets panel, yellow the detail rail, green
+// toggles browser full screen.
+function wireTrafficLights(){
+  const red=document.querySelector(".tl-red");
+  const yellow=document.querySelector(".tl-yellow");
+  const green=document.querySelector(".tl-green");
+  if(red) red.addEventListener("click", ()=>{
+    document.body.classList.toggle("hide-left");
+    // search.js repositions off this event — without it the search box would
+    // keep sitting beside a panel that is no longer there.
+    document.dispatchEvent(new CustomEvent("wf6:watchlist-toggle", {
+      detail: { open: !document.body.classList.contains("hide-left") },
+    }));
+  });
+  if(yellow) yellow.addEventListener("click", ()=> document.body.classList.toggle("hide-right"));
+  if(green) green.addEventListener("click", ()=>{
+    const el=document.documentElement;
+    if(!document.fullscreenElement){ el.requestFullscreen?.(); }
+    else { document.exitFullscreen?.(); }
+  });
 }
 
 function wireModeToggles(basemapMeta){
@@ -1198,12 +1276,24 @@ document.addEventListener("wf6:select-ward", (event) => {
     });
 });
 
-// Escape restores hero: clear street/ward selection, reset highlight
+// Escape restores hero: clear street/ward selection, reset highlight, and
+// return the detail rail to its hidden start state (it belongs to a
+// selection; with none, the watchlist Overview carries the summary).
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") {
     try { env.selectedSeg = null; engine.invalidateUI(); } catch {}
     try { rail.clearSelection(); } catch {}
+    try { document.body.classList.add("hide-right"); } catch {}
   }
+});
+
+// A ward or intersection selection also owns the detail rail (owner
+// 2026-09-09: it must pop up for zoom-ins via map, search, or watchlist).
+document.addEventListener("wf6:select-ward", () => {
+  document.body.classList.remove("hide-right");
+});
+document.addEventListener("wf6:select-intersection", () => {
+  document.body.classList.remove("hide-right");
 });
 
 boot();

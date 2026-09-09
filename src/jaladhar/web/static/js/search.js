@@ -62,22 +62,22 @@ const SEARCH_CSS = `
   font-size:13px; transition:left var(--base,240ms) var(--ease,ease);
 }
 .wf6-search input{
-  width:100%; padding:9px 14px 9px 36px; border-radius:9px;
-  border:1px solid var(--line);
-  background:rgba(12,16,25,0.92)
-    no-repeat left 13px center / 15px 15px
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%235A6579' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='M21 21l-4.3-4.3'/%3E%3C/svg%3E");
-  -webkit-backdrop-filter:blur(8px); backdrop-filter:blur(8px);
-  box-shadow:0 6px 18px rgba(0,0,0,0.28);
+  width:100%; padding:10px 14px 10px 38px; border-radius:var(--radius-ctl,10px);
+  border:1px solid var(--glass-border, rgba(255,255,255,0.16));
+  background:var(--glass, rgba(255,255,255,0.72))
+    no-repeat left 14px center / 15px 15px
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='rgba(0,0,0,0.42)' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='M21 21l-4.3-4.3'/%3E%3C/svg%3E");
+  -webkit-backdrop-filter:var(--glass-refract, blur(32px) saturate(180%)); backdrop-filter:var(--glass-refract, blur(32px) saturate(180%));
+  box-shadow:var(--shadow-hud, 0 12px 40px rgba(0,0,0,0.4)), var(--glass-highlight, inset 0 1px 0 rgba(255,255,255,0.3));
   color:var(--ink); font-size:13px; outline:none;
   transition:border-color var(--fast,160ms) var(--ease,ease), box-shadow var(--fast,160ms) var(--ease,ease);
 }
 .wf6-search input::placeholder{ color:var(--ink-faint); }
-.wf6-search input:focus{ border-color:var(--accent); box-shadow:0 6px 18px rgba(0,0,0,0.28), 0 0 0 3px rgba(56,189,248,0.16); }
+.wf6-search input:focus{ border-color:var(--accent); box-shadow:var(--shadow-hud, 0 12px 40px rgba(0,0,0,0.4)), 0 0 0 3px rgba(10,132,255,0.30); }
 .wf6-search input:focus-visible{ outline:1px solid var(--accent); outline-offset:2px; }
 .wf6-search-list{
   position:absolute; left:0; right:0; top:calc(100% + 4px); margin:0; padding:4px;
-  list-style:none; background:rgba(16,21,31,0.97); border:1px solid var(--line);
+  list-style:none; background:var(--glass, rgba(255,255,255,0.9)); border:1px solid var(--line);
   border-radius:10px; max-height:320px; overflow-y:auto; box-sizing:border-box;
 }
 .wf6-search-list[hidden]{ display:none; }
@@ -170,8 +170,21 @@ export class LocationSearch {
   // either module can load standalone).
   reposition() {
     const panel = document.getElementById("watchlist");
-    const open = !!(panel && !panel.classList.contains("wf6-collapsed"));
-    this.root.style.left = open ? `${320 + 12}px` : "12px";
+    // The red traffic light (body.hide-left) removes the panel entirely — the
+    // search returns to the map's left margin. When the panel is collapsed to
+    // its 40 px rail instead, the search must sit CLEAR of it: at 12 px it
+    // would cover the rail's expand chevron and the panel could never be
+    // reopened (owner bug report 2026-09-09).
+    const hidden =
+      document.body.classList.contains("hide-left") ||
+      !panel ||
+      getComputedStyle(panel).display === "none";
+    if (hidden) {
+      this.root.style.left = "12px";
+      return;
+    }
+    const open = !panel.classList.contains("wf6-collapsed");
+    this.root.style.left = open ? `${12 + 320 + 12}px` : `${12 + 40 + 12}px`;
   }
 
   // ------------------------------------------------------------------ data

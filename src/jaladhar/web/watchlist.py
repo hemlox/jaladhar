@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -416,6 +417,62 @@ def _modal_name(names: list[str]) -> str:
 _NO_LEAD = 10**9
 
 
+# ----------------------------------------------------------------- first flood
+
+#: segment_id -> earliest realized flooding, cached per source. Frames are
+#: immutable and byte-verified (same SHA rule as the single-frame path), so a
+#: per-source cache can never serve stale rows.
+_FIRST_FLOOD_CACHE_LOCK = threading.Lock()
+_FIRST_FLOOD_CACHE: dict[tuple[Any, ...], dict[int, dict[str, Any]]] = {}
+
+
+def first_flood_index(source: ProductSource) -> dict[int, dict[str, Any]]:
+    """Earliest realized flooding per segment across a frame-series source.
+
+    Returns ``{segment_id: {"valid_time_utc": str, "offset_minutes": int}}``
+    for every segment flooded in ANY realized frame; frames are taken in
+    manifest order, so the first hit per segment is its earliest flood. Flat
+    products carry a single lead by construction — the index is empty there
+    and the row-level fallback keeps today's ordering. Every frame CSV is
+    byte-verified against the manifest before its rows are trusted (V1); a
+    mismatch refuses the index instead of aggregating unverified rows.
+    """
+
+    if source.kind != "frame":
+        return {}
+    key = (
+        source.run_id,
+        tuple((f.tag, f.csv_sha256) for f in source.frames),
+    )
+    with _FIRST_FLOOD_CACHE_LOCK:
+        cached = _FIRST_FLOOD_CACHE.get(key)
+    if cached is not None:
+        return cached
+
+    import pandas as pd
+
+    index: dict[int, dict[str, Any]] = {}
+    for entry in source.frames:
+        realized_sha = sha256_file(entry.csv_path)
+        if realized_sha != entry.csv_sha256:
+            raise WatchlistError(
+                f"{entry.tag}: frame CSV sha mismatch realized {realized_sha} != "
+                f"manifest {entry.csv_sha256}; refusing the first-flood index"
+            )
+        table = pd.read_csv(entry.csv_path, usecols=["segment_id", "flood_status"])
+        flooded = table.loc[table["flood_status"] == "flooded", "segment_id"]
+        offset_minutes = entry.offset_seconds // 60
+        for seg in flooded.astype(int).unique():
+            if seg not in index:  # manifest order => first hit is the earliest
+                index[seg] = {
+                    "valid_time_utc": entry.valid_time_utc,
+                    "offset_minutes": offset_minutes,
+                }
+    with _FIRST_FLOOD_CACHE_LOCK:
+        _FIRST_FLOOD_CACHE[key] = index
+    return index
+
+
 def severity_key(row: dict[str, Any]) -> tuple[int, int, str]:
     """Primary watchlist order: depth DESC, soonest lead, then name."""
 
@@ -424,9 +481,18 @@ def severity_key(row: dict[str, Any]) -> tuple[int, int, str]:
 
 
 def soonest_key(row: dict[str, Any]) -> tuple[int, int, str]:
-    """Alternate order: soonest lead first, then severity DESC, then name."""
+    """Alternate order: first flood across the series, then severity, name.
 
-    lead = row["lead_minutes"] if row["lead_minutes"] is not None else _NO_LEAD
+    A frame-series row is ordered by its earliest realized flooding
+    (first_flood_offset_minutes — an offset from series start, never a
+    forecast lead). Flat products have no series: the field is None there and
+    the key falls back to the row's own lead_minutes, which keeps the
+    historical flat-product order byte-for-byte.
+    """
+
+    lead = row.get("first_flood_offset_minutes")
+    if lead is None:
+        lead = row["lead_minutes"] if row["lead_minutes"] is not None else _NO_LEAD
     return (lead, -row["worst_depth_cm"], row["street_name"])
 
 
@@ -439,9 +505,10 @@ def build_watchlist(
     """Build the severity-ranked street watchlist (JSON-safe dict).
 
     Ranking: worst_depth_cm DESC, tie-break soonest lead_minutes ASC, then
-    street_name ASC.  ``alternates.soonest_asc`` re-orders the same rows'
-    ranks by lead first so the UI can offer a time-ordered view without
-    conflating its meaning (lead_kind travels with every row).
+    street_name ASC.  ``alternates.soonest_asc`` re-orders the same rows' ranks
+    by first flood across the realized series first (offset semantics, A2) so
+    the UI can offer a time-ordered view without conflating its meaning
+    (lead_kind travels with every row).
 
     ``status`` is a STREET-LEVEL OR over member segments (flooded if any
     member is flooded; unknown otherwise-if-any; else not_flooded) — the
@@ -459,6 +526,9 @@ def build_watchlist(
     segments = load_classified_named_segments(repo_root=root)
     entities = merge_street_entities(segments)
     ward_by_segment = load_ward_join(repo_root=root)
+    # A2/soonest: each street's earliest realized flooding across the series
+    # (cached per source; empty for flat products).
+    first_flood = first_flood_index(source)
 
     rows_out: list[dict[str, Any]] = []
     flooded_streets = 0
@@ -491,6 +561,18 @@ def build_watchlist(
         if entity_status == "flooded":
             flooded_streets += 1
         ward = ward_by_segment.get(worst_seg["segment_id"])
+        member_first = [
+            first_flood[seg["segment_id"]]
+            for seg, _ in known
+            if seg["segment_id"] in first_flood
+        ]
+        if member_first:
+            first = min(member_first, key=lambda f: f["offset_minutes"])
+            first_time: str | None = first["valid_time_utc"]
+            first_offset: int | None = int(first["offset_minutes"])
+        else:
+            first_time = None
+            first_offset = None
         rows_out.append(
             {
                 "street_name": _modal_name([seg["name"] for seg, _ in known]),
@@ -505,6 +587,8 @@ def build_watchlist(
                 "lead_minutes": status["lead_minutes"],
                 "lead_kind": "hindcast_offset" if source.kind == "frame" else "forecast_lead",
                 "valid_time_utc": status["valid_time_utc"],
+                "first_flood_valid_time_utc": first_time,
+                "first_flood_offset_minutes": first_offset,
                 "segment_ids": [seg["segment_id"] for seg, _ in known],
                 "worst_segment_id": int(worst_seg["segment_id"]),
                 "length_m": round(sum(seg["length_m"] for seg, _ in known), 1),

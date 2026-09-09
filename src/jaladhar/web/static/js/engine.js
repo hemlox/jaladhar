@@ -44,7 +44,18 @@ export class Engine {
     const cssW = Math.max(1, host.clientWidth);
     const cssH = Math.max(1, host.clientHeight);
     // devicePixelRatio scaling done correctly (guide section 7 item 2).
-    this.dpr = window.devicePixelRatio || 1;
+    // Supersample guard: a DPR-1 browser window composited onto a physically
+    // HiDPI screen (X11 desktop scaling, owner's 3200x1800 panel) upscales the
+    // canvas ~1.6-2x and every thin map stroke goes soft — the "still too
+    // blurry" report. `screen.width` still reports PHYSICAL pixels there, so a
+    // large screen with an under-reported DPR renders at 2x backing and the
+    // compositor downscales instead: genuinely sharp. Real DPR >= 2 and true
+    // low-DPI screens are left exactly as they were.
+    const reported = window.devicePixelRatio || 1;
+    this.dpr =
+      reported >= 2 || (window.screen && window.screen.width >= 2400)
+        ? Math.max(reported, 2)
+        : reported;
     for (const canvas of [this.staticCanvas, this.dynCanvas, this.uiCanvas]) {
       canvas.width = Math.round(cssW * this.dpr);
       canvas.height = Math.round(cssH * this.dpr);
@@ -244,10 +255,12 @@ export class Engine {
 // styles.css is never touched.
 
 const WF6_CONTROL_CSS = `
-.wf6ctl-cluster{position:absolute;top:12px;right:12px;display:flex;flex-direction:column;align-items:center;gap:6px;z-index:6;}
-.wf6ctl-btn{width:34px;height:34px;border-radius:6px;border:1px solid var(--line);background:rgba(16,21,31,0.92);color:var(--ink-dim);font-size:15px;line-height:1;cursor:pointer;padding:0;transition:background var(--fast) var(--ease),border-color var(--fast) var(--ease),color var(--fast) var(--ease);}
-.wf6ctl-btn:hover:not(:disabled){background:var(--panel-hi);border-color:var(--ink-faint);color:var(--ink);}
-.wf6ctl-north{display:flex;flex-direction:column;align-items:center;gap:1px;padding:5px 9px;border:1px solid var(--line);border-radius:6px;background:rgba(16,21,31,0.92);color:var(--ink-dim);font-size:10px;font-weight:600;letter-spacing:0.14em;user-select:none;}
+.wf6ctl-cluster{position:absolute;top:calc(var(--header-h,56px) + 12px);right:calc(var(--rail-w,340px) + 24px);display:flex;flex-direction:column;align-items:center;gap:6px;z-index:6;}
+.wf6ctl-btn{width:34px;height:34px;border-radius:var(--radius-ctl,10px);border:1px solid var(--glass-border,rgba(255,255,255,0.16));background:var(--glass, rgba(255,255,255,0.72));-webkit-backdrop-filter:var(--glass-refract,blur(32px) saturate(180%));backdrop-filter:var(--glass-refract,blur(32px) saturate(180%));box-shadow:var(--shadow-hud,0 8px 24px rgba(0,0,0,0.35)),var(--glass-highlight,inset 0 1px 0 rgba(255,255,255,0.3));color:var(--ink-dim);font-size:15px;line-height:1;cursor:pointer;padding:0;transition:background var(--fast) var(--ease),border-color var(--fast) var(--ease),color var(--fast) var(--ease);}
+.wf6ctl-btn:hover:not(:disabled){background:var(--panel-hi);border-color:rgba(255,255,255,0.24);color:var(--ink);}
+/* Static compass — an indicator, not a control: no button chrome, no hover,
+   so it never reads as a dead button. */
+.wf6ctl-north{display:flex;flex-direction:column;align-items:center;gap:0;padding:2px 0 6px;background:none;border:none;box-shadow:none;color:var(--ink-faint);font-size:10px;font-weight:600;letter-spacing:0.12em;user-select:none;pointer-events:none;}
 .wf6ctl-arrow{font-size:12px;font-weight:400;}
 `;
 
