@@ -61,3 +61,8 @@ logs/
 .codex/
 .claude/settings.local.json
 .claude/RESUME.md
+
+# Internal workflow docs — kept locally, never published.
+AGENTS.md
+CLAUDE.md
+docs/HANDOVER.md
