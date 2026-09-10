@@ -1,39 +1,4 @@
-"""Ward/locality context assets for the operator dashboard (WF-6 build unit U0f).
-
-Builds, from REALISED BBMP boundary sources, the three artefacts the N2 label,
-N5 search and N10 inspector consumers read:
-
-* ``data/interim/context/wards_<vintage>.bin`` (+ ``.meta.json`` sidecar) --
-  ward polygons packed exactly like the basemap lake blob: little-endian
-  ``n_rings:u32 | ring_offsets:u32[n+1] | interleaved f32 x,y`` coordinates in
-  EPSG:32643 world metres, so the existing Canvas 2D loaders consume them
-  unchanged;
-* ``data/interim/context/segment_ward_<vintage>.csv.gz`` -- segment_id ->
-  ward join for the classified named street subset (centroid-within predicate);
-* ``data/interim/context/search_index.json`` -- ward + street lookup entries
-  with lowercased keys.
-
-Nothing here synthesises geography.  The KML sources are parsed as XML with
-the standard library because the installed fiona build carries no KML driver
-(audit-confirmed); every coordinate comes from the realised files and their
-sha256 hashes travel in the manifest and the meta payloads.
-
-VINTAGE ADJUDICATION (owner, binding).  ``bbmp_wards_2022.kml`` is CANONICAL
-for locality labels: the operator product replays the September 2022 event,
-while BBMP's December-2022/2023 restructuring changed ward numbers and
-boundaries substantially (measured divergence below; ward NAMES are
-comparatively stable).  Both layers are always built and reported; which layer
-a consumer resolves by default is keyed to the product's event window through
-``configs/context.yaml`` (owner adjudication item 4 relocated the lookup from
-code constants into config; there is deliberately NO code fallback -- a
-missing or incomplete config fails the build at startup, rule 7), overridable
-with ``--ward-vintage``.
-
-No PIN codes are held by this module and none are sought (rule 3): the search
-index carries ward and street names only.
-
-Run standalone: ``python -m jaladhar.web.wards build [--ward-vintage 2022|2023]``
-"""
+"Ward/locality context assets for the operator dashboard (WF-6 build unit U0f). Builds, from REALISED BBMP boundary sources, the three artefacts the N2 label, N5 search and N10 inspector consumers read: * ``data/interim/context/wards_<vintage>.bin`` (+ ``.meta.json`` sidecar) -- ward polygons packed exactly like the basemap lake blob: little-endian ``n_rings:u32 | ring_offsets:u32[n+1] | interleaved f32 x,y`` coordinates in EPSG:32643 world metres, so the existing Canvas 2D loaders consume them unchanged; * ``data/interim/context/segment_ward_<vintage>.csv.gz`` -- segment_id -> ward join for the classified named street subset (centroid-within predicate); * ``data/interim/context/search_index.json`` -- ward + street lookup entries with lowercased keys. Nothing here synthesises geography. The KML sources are parsed as XML with the standard library because the installed fiona build carries no KML driver (audit-confirmed); every coordinate comes from the realised files and their sha256 hashes travel in the manifest and the meta payloads. VINTAGE ADJUDICATION (owner, binding). ``bbmp_wards_2022.kml`` is CANONICAL for locality labels: the operator product replays the September 2022 event, while BBMP's December-2022/2023 restructuring changed ward numbers and boundaries substantially (measured divergence below; ward NAMES are comparatively stable). Both layers are always built and reported; which layer a consumer resolves by default is keyed to the product's event window through ``configs/context.yaml`` (owner adjudication item 4 relocated the lookup from code constants into config; there is deliberately NO code fallback -- a missing or incomplete config fails the build at startup, rule 7), overridable with ``--ward-vintage``. No PIN codes are held by this module and none are sought (rule 3): the search index carries ward and street names only. Run standalone: ``python -m jaladhar.web.wards build [--ward-vintage 2022|2023]``"  # noqa: E501
 
 from __future__ import annotations
 
@@ -51,7 +16,7 @@ import typer
 
 from jaladhar.provenance import write_json_atomic
 
-if TYPE_CHECKING:  # heavy geo imports stay lazy, matching basemap.py's pattern
+if TYPE_CHECKING:
     import geopandas as gpd
     import pandas as pd
 
@@ -60,7 +25,7 @@ app = typer.Typer(add_completion=False, no_args_is_help=True)
 
 @app.callback()
 def _main() -> None:
-    """Ward/locality context asset builder (dashboard N2/N5/N10 consumers)."""
+    pass
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -72,15 +37,8 @@ KML_PATHS: dict[int, Path] = {
 SEGMENT_LOOKUP_PATH = REPO_ROOT / "data" / "interim" / "terrain" / "roads_segment_lookup.csv"
 ROADS_GPKG_PATH = REPO_ROOT / "data" / "interim" / "terrain" / "roads_centrelines.gpkg"
 
-#: Owner-adjudicated ward-vintage configuration (item 4, M3).  This file is
-#: the single source of truth for the event-window -> vintage lookup; it was
-#: relocated here from the code constants this module carried before.  There
-#: is deliberately NO code fallback: a missing file or missing key fails at
-#: startup with an aggregated error naming EVERY unresolved key (rule 7).
 CONTEXT_CONFIG_PATH = REPO_ROOT / "configs" / "context.yaml"
 
-#: Every config key a build run will ever touch -- resolved up front, all of
-#: them checked in one pass so one missing key cannot cost a rebuild cycle.
 CONTEXT_CONFIG_REQUIRED_KEYS: tuple[str, ...] = (
     "ward_layer_rule",
     "ward_vintage_by_product_kind",
@@ -91,12 +49,6 @@ _CONTEXT_CONFIG_CACHE: dict[str, Any] | None = None
 
 
 def _resolve_context_config(path: Path) -> dict[str, Any]:
-    """Parse and fully validate ``configs/context.yaml`` in ONE pass.
-
-    Aggregates every problem found -- absent file, unparsable YAML, missing
-    keys, unknown vintages -- into a single error listing ALL of them, so a
-    run dies in its first second instead of after the heavy work.
-    """
 
     import yaml
 
@@ -172,8 +124,6 @@ def _resolve_context_config(path: Path) -> dict[str, Any]:
                 else:
                     resolved["default_vintage"] = default_vintage
     elif parsed_ok or not path.is_file():
-        # Unparsable-into-a-mapping payload OR an absent file: every required
-        # key goes unresolved, so the aggregated error names them all.
         for key in CONTEXT_CONFIG_REQUIRED_KEYS:
             problems.append(f"unresolved required key: {key}")
 
@@ -187,12 +137,6 @@ def _resolve_context_config(path: Path) -> dict[str, Any]:
 
 
 def context_config() -> dict[str, Any]:
-    """The resolved ward-context config (cached; call :func:`reset_context_config_cache`).
-
-    Tests that repoint :data:`CONTEXT_CONFIG_PATH` must reset the cache first,
-    otherwise a previously resolved payload would be served (a declaration of
-    intent masquerading as realized state).
-    """
 
     global _CONTEXT_CONFIG_CACHE
     if _CONTEXT_CONFIG_CACHE is None:
@@ -201,7 +145,6 @@ def context_config() -> dict[str, Any]:
 
 
 def reset_context_config_cache() -> None:
-    """Drop the cached resolution (test seam; production loads once)."""
 
     global _CONTEXT_CONFIG_CACHE
     _CONTEXT_CONFIG_CACHE = None
@@ -216,12 +159,6 @@ WARD_VINTAGE_DECISION_REASON: str = (
     "with the boundary vintage of its own event window."
 )
 
-#: Highway classes of the classified named street subset the audit measured.
-#: WF-6 A1's prose also lists residential, but the audit's reconciled figures
-#: (9,404 joined of an implied 10,318 denominator) exclude it; including
-#: residential yields 23,985 named-classified segments, which does not
-#: reconcile to any audit figure.  The ten values below reproduce the implied
-#: denominator exactly (measured 10,318).
 CLASSIFIED_HIGHWAYS = frozenset(
     {
         "motorway",
@@ -245,24 +182,20 @@ _TRAILING_WARD_RE = re.compile(r"\s+ward$")
 
 
 class WardContextError(RuntimeError):
-    """A realised ward-context input could not be parsed or failed self-check."""
+    pass
 
 
 class WardContextConfigError(WardContextError):
-    """configs/context.yaml is missing, unparsable, or incomplete (rule 7)."""
+    pass
 
 
 def sha256_file(path: Path) -> str:
-    """Hex sha256 of the file's bytes (rule-3 traceability)."""
 
     digest = hashlib.sha256()
     with path.open("rb") as handle:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
-
-
-# --------------------------------------------------------------------- parsing
 
 
 def _parse_coordinates(text: str) -> list[tuple[float, float]]:
@@ -278,7 +211,6 @@ def _parse_coordinates(text: str) -> list[tuple[float, float]]:
 
 
 def _parse_kml_placemarks(path: Path) -> list[dict[str, Any]]:
-    """Parse placemarks as XML (fiona's KML driver is absent in this env)."""
 
     try:
         root = ET.parse(path).getroot()
@@ -321,11 +253,6 @@ def _ward_fields(vintage: int, fields: dict[str, str]) -> tuple[int, str]:
 
 
 def load_wards(vintage: int) -> gpd.GeoDataFrame:
-    """Return the reprojected ward GeoDataFrame for ``vintage`` (EPSG:32643).
-
-    Kept as a thin loader so tests can exercise parsing + reprojection without
-    touching emitted artefacts.
-    """
 
     import geopandas as gpd
     import shapely
@@ -359,8 +286,6 @@ def load_wards(vintage: int) -> gpd.GeoDataFrame:
             if geometry.is_empty:
                 raise WardContextError(f"ward {ward_no} ({name}) produced an empty geometry")
             if geometry.geom_type not in {"Polygon", "MultiPolygon"}:
-                # make_valid can return a GeometryCollection with stray lines
-                # for self-touching rings; keep the polygonal area only.
                 polygonal = [
                     part
                     for part in getattr(geometry, "geoms", [geometry])
@@ -381,8 +306,6 @@ def load_wards(vintage: int) -> gpd.GeoDataFrame:
     wards = gpd.GeoDataFrame(records, crs="EPSG:4326").to_crs(TARGET_CRS)
     total_area_km2 = float(wards.area.sum()) / 1e6
     if not 650.0 <= total_area_km2 <= 750.0:
-        # BBMP covers roughly 709-717 km^2 depending on vintage; anything far
-        # outside that band means parsing or reprojection broke silently.
         raise WardContextError(
             f"{path.name}: reprojected total area {total_area_km2:.1f} km^2 is outside "
             "the plausible BBMP band 650-750 km^2"
@@ -391,22 +314,16 @@ def load_wards(vintage: int) -> gpd.GeoDataFrame:
 
 
 def normalise_key(name: str) -> str:
-    """Lowercased, whitespace-collapsed lookup key."""
 
     return _NAME_NORMALISE_RE.sub(" ", name.strip().lower())
 
 
 def short_key(name: str) -> str:
-    """Lookup key additionally stripped of a trailing 'ward' token."""
 
     return _TRAILING_WARD_RE.sub("", normalise_key(name))
 
 
-# ------------------------------------------------------------- binary emission
-
-
 def _pack_ring_blob(rings: list[np.ndarray]) -> bytes:
-    """Basemap-lakes layout: ``n:u32 | offsets:u32[n+1] | interleaved f32 xy``."""
 
     offsets = np.zeros(len(rings) + 1, dtype="<u4")
     np.cumsum([len(ring) // 2 for ring in rings], dtype="<i8", out=offsets[1:])
@@ -418,7 +335,6 @@ def _pack_ring_blob(rings: list[np.ndarray]) -> bytes:
 def ward_rings(
     wards: gpd.GeoDataFrame,
 ) -> tuple[list[np.ndarray], list[list[tuple[int, int]]], list[int]]:
-    """Flatten ward geometries into float32 rings + per-ward vertex ranges."""
 
     rings: list[np.ndarray] = []
     ranges_per_ward: list[list[tuple[int, int]]] = []
@@ -447,11 +363,7 @@ def ward_rings(
 
 
 def validate_bundle(blob: bytes, meta: dict[str, Any]) -> None:
-    """Realized-state self-check binding the emitted bytes to their metadata.
-
-    Used by the build (after re-reading from disk) and by the tests, so a
-    corrupted bundle reddens the same code path that green-lights a clean one.
-    """
+    "Realized-state self-check binding the emitted bytes to their metadata. Used by the build (after re-reading from disk) and by the tests, so a corrupted bundle reddens the same code path that green-lights a clean one."  # noqa: E501
 
     n_rings = int(np.frombuffer(blob[:4], dtype="<u4")[0])
     offsets = np.frombuffer(blob[4 : 4 + 4 * (n_rings + 1)], dtype="<u4")
@@ -472,7 +384,7 @@ def validate_bundle(blob: bytes, meta: dict[str, Any]) -> None:
         raise WardContextError("bundle contains non-finite coordinates")
     bounds = meta["bbox"]
     xs, ys = coords[0::2], coords[1::2]
-    pad = 1.0  # metres of slack for float32 rounding
+    pad = 1.0
     if (
         xs.min() < bounds[0] - pad
         or ys.min() < bounds[1] - pad
@@ -481,8 +393,6 @@ def validate_bundle(blob: bytes, meta: dict[str, Any]) -> None:
     ):
         raise WardContextError("bundle coordinates fall outside the declared bbox")
 
-    # Per-ward vertex ranges must partition the realised vertex space exactly;
-    # this is what reddens a ranges-vs-rings bookkeeping slip in the metadata.
     cursor = 0
     for entry in meta["wards"]:
         vertex_count = 0
@@ -506,7 +416,6 @@ def validate_bundle(blob: bytes, meta: dict[str, Any]) -> None:
 
 
 def emit_vintage(vintage: int, *, started_iso: str) -> dict[str, Any]:
-    """Parse, reproject and write one vintage's bin + meta sidecar. Returns meta."""
 
     CONTEXT_DIR.mkdir(parents=True, exist_ok=True)
     wards = load_wards(vintage)
@@ -567,17 +476,11 @@ def _repo_relative(path: Path) -> str:
         return str(path.resolve())
 
 
-# ------------------------------------------------------------------ divergence
-
-
 def measure_divergence() -> dict[str, Any]:
-    """Load BOTH layers and report the 2022-vs-2023 divergence (binding cond. 2)."""
 
     import numpy as np
 
     wards_by_year = {year: load_wards(year) for year in sorted(KML_PATHS)}
-    # Audit-reconciled match rule: whitespace-collapsed lowercase with a
-    # trailing ' ward' token stripped (plain lowercase leaves 86/68/157).
     names_by_year = {
         year: {short_key(str(name)): str(name) for name in frame["name"]}
         for year, frame in wards_by_year.items()
@@ -615,8 +518,6 @@ def measure_divergence() -> dict[str, Any]:
         )
 
     # Both name-pairing rules are reported (V10: derivation beside the number).
-    # The audit's quoted 13.18% median corresponds to the plain-lowercase
-    # pairing; ward-stripped pairing pairs two more wards and lands on 13.17%.
     stripped_median, stripped_worst_pct, stripped_worst = _delta_stats(area_by_key, common)
     plain_common = sorted(set(plain_area_by_key[2022]) & set(plain_area_by_key[2023]))
     plain_median, plain_worst_pct, _ = _delta_stats(plain_area_by_key, plain_common)
@@ -650,17 +551,7 @@ def measure_divergence() -> dict[str, Any]:
     }
 
 
-# ------------------------------------------------------- segment -> ward join
-
-
 def _safe_points_frame(segments: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
-    """Centroid point frame built WITHOUT the pandas-3.0 truncation trap.
-
-    Under the environment's pandas 3.0.5, ``GeoDataFrame(dict, geometry=<GeoSeries>)``
-    silently returned 1,247 of 10,318 rows during U0f scratch verification.
-    Geometry therefore enters as a plain ndarray and the row count is asserted
-    against the source frame immediately.
-    """
 
     import geopandas as gpd
 
@@ -681,11 +572,7 @@ def _safe_points_frame(segments: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
 
 
 def join_segments_to_wards(vintage: int) -> dict[str, Any]:
-    """Classified named segments -> ward via centroid-within (audit predicate).
-
-    Also measures the intersects predicate for the manifest.  Returns the
-    assignment table plus both predicates' realised counts.
-    """
+    "Classified named segments -> ward via centroid-within (audit predicate). Also measures the intersects predicate for the manifest. Returns the assignment table plus both predicates' realised counts."  # noqa: E501
 
     import geopandas as gpd
 
@@ -739,7 +626,6 @@ def join_segments_to_wards(vintage: int) -> dict[str, Any]:
 
 
 def write_join_table(assignments: pd.DataFrame, vintage: int) -> dict[str, Any]:
-    """Persist the join table as csv.gz (pyarrow is absent, parquet unavailable)."""
 
     path = CONTEXT_DIR / f"segment_ward_{vintage}.csv.gz"
     assignments.to_csv(path, index=False, compression="gzip")
@@ -754,13 +640,9 @@ def write_join_table(assignments: pd.DataFrame, vintage: int) -> dict[str, Any]:
     return {"path": _repo_relative(path), "rows": int(len(realized))}
 
 
-# ---------------------------------------------------------------- search index
-
-
 def build_search_index(
     join_result: dict[str, Any], vintage: int, *, started_iso: str
 ) -> dict[str, Any]:
-    """Ward + street lookup entries with lowercased keys.  No PIN codes."""
 
     wards = load_wards(vintage)
     entries: list[dict[str, Any]] = []
@@ -825,9 +707,6 @@ def build_search_index(
     return {"path": _repo_relative(path), "kind_counts": index["kind_counts"]}
 
 
-# -------------------------------------------------------------------- manifest
-
-
 def _git_info() -> dict[str, Any]:
     def _git(*args: str) -> str:
         try:
@@ -843,9 +722,6 @@ def _git_info() -> dict[str, Any]:
     return {"git_sha": sha, "git_dirty_paths": dirty}
 
 
-# ------------------------------------------------------------------------- CLI
-
-
 @app.command()
 def build(
     ward_vintage: int = typer.Option(
@@ -856,19 +732,7 @@ def build(
         help="Override the event-window vintage used for the join/index layers.",
     ),
 ) -> None:
-    """Build ward context assets from the realised BBMP boundary sources.
 
-    Both polygon layers (2022 and 2023) are ALWAYS emitted so the dashboard can
-    swap them by config; ``--ward-vintage`` selects which vintage the segment
-    join and the search index are built against (default: configs/context.yaml's
-    ``default_vintage`` -- the canonical 2022 layer keyed to the September 2022
-    replay product).  The config is resolved BEFORE any heavy work (rule 7):
-    a missing or incomplete configs/context.yaml aborts here, listing every
-    unresolved key.
-    """
-
-    # Rule-7 pre-flight: touch every config key this run will ever need now,
-    # not after the KML parse / vector joins.
     config = context_config()
     selected_vintage = ward_vintage if ward_vintage is not None else int(config["default_vintage"])
     started_at = datetime.now(UTC)

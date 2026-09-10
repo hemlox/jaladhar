@@ -1,31 +1,17 @@
 """WF-1 graph_io tests: writer/loader roundtrip on a synthetic record set + V5 red demos.
-
-Toy fixture (in-test only, no repo data touched): 8 NodeRec / 10 EdgeRec forming one
 connected DAG (component_count_post_stitch=1) with observed primary/secondary edges
 carrying the full capacity field set, synthetic connectors carrying NULL capacity plus
-the exact disclaimer basis, and contrib-area values satisfying cells*100 identity.
-
 Scope note (V7): these tests exercise the schema/assertion domain of graph_io at toy
-scale (8 nodes / 10 edges). Full-domain WF-1 behaviour (1033 reaches, 365 components,
-walk outcomes) is covered by tests/drainage/test_stitch.py end-to-end; the capacity
-field semantics are produced by capacity.py and only their load-time enforcement is
-checked here.
-
 V5 RED DEMOS (deliberate mutations, each asserted against its SPECIFIC refusal reason):
-  1. manifest graph_fingerprint tampered on disk -> fingerprint mismatch refusal.
-  2a. edge_source flipped alone -> bidirectional tag assertion.
-  2b. edge_source+order flipped consistently on a connector -> V-SYNTHVISIBLE fraction
-      mismatch (fingerprint unaffected: order change keeps tags valid and moves length
-      between the synthesised/observed buckets).
-  3. width_m injected on a synthetic connector -> synth-separability refusal.
-  4. component_count_post_stitch=3 without override -> refuse; with the override pair
-     (--allow-disconnected + non-empty adjudication ref) against a
-     stopped_owner_adjudication manifest -> loads.
-  5. artefact copied to publish paths while post-stitch>1 -> placement guard, even with
-     the override pair.
-  6. zero_length_dropped_count=1 -> degenerate-count refusal.
-  7. n_manning=0.020 (not in the allowed pairing table) -> pairing refusal.
-"""
+1. manifest graph_fingerprint tampered on disk -> fingerprint mismatch refusal.
+2a. edge_source flipped alone -> bidirectional tag assertion.
+2b. edge_source+order flipped consistently on a connector -> V-SYNTHVISIBLE fraction
+between the synthesised/observed buckets).
+3. width_m injected on a synthetic connector -> synth-separability refusal.
+4. component_count_post_stitch=3 without override -> refuse; with the override pair
+stopped_owner_adjudication manifest -> loads.
+6. zero_length_dropped_count=1 -> degenerate-count refusal.
+7. n_manning=0.020 (not in the allowed pairing table) -> pairing refusal."""
 
 from __future__ import annotations
 
@@ -55,9 +41,6 @@ TRANSFORM = [10.0, 0.0, 766440.0, 0.0, -10.0, 1454850.0]
 
 def P(col: float, row: float) -> tuple[float, float]:
     return (TRANSFORM[2] + 10.0 * col + 5.0, TRANSFORM[5] + TRANSFORM[4] * row - 5.0)
-
-
-# --------------------------------------------------------------------------- fixture
 
 
 def _node(
@@ -150,7 +133,7 @@ def _edge(
     )
     if cap:
         for k, v in cap.items():
-            setattr(e, k, v)  # capacity.py output shape
+            setattr(e, k, v)
     elif source == "synthesised":
         # Contract: synthetic connectors carry capacity_basis = the exact disclaimer text.
         e.capacity_basis = SYNTHETIC_CAPACITY_BASIS  # type: ignore[attr-defined]
@@ -239,8 +222,7 @@ def _stitch_metrics(post: int) -> dict:
 
 
 def _write_elevation(tmp_path: Path) -> Path:
-    """Standalone elevation surface whose REALIZED bytes are bound into the manifest;
-    the reader hashes whatever the binding names."""
+    """Standalone elevation surface whose REALIZED bytes are bound into the manifest;"""
     import numpy as np
 
     p = tmp_path / "elevation.tif"
@@ -301,9 +283,7 @@ def _build(
     unmet_policy: bool = False,
 ):
     """init -> finalize -> write; returns (paths dict, manifest dict).
-    unmet_policy=True appends a detached observed component WITHOUT any outfall
-    (nodes 90->91, 4000 m) so the outfall-terminating length fraction drops
-    below the 0.95 policy target."""
+    unmet_policy=True appends a detached observed component WITHOUT any outfall"""
     elev = _write_elevation(tmp_path)
     cfg = _cfg(tmp_path, elev)
     run_dir = Path(cfg["outputs"]["run_dir"])
@@ -348,16 +328,12 @@ def _build(
 
 
 def _rewrite_gpkg(paths: dict, mutate) -> None:
-    """Apply mutate(edges_gdf)->edges_gdf to the drain_edges layer, rewriting the gpkg."""
     nodes_gdf = gpd.read_file(paths["gpkg"], layer="drain_nodes")
     edges_gdf = gpd.read_file(paths["gpkg"], layer="drain_edges")
     edges_gdf = mutate(edges_gdf)
     Path(paths["gpkg"]).unlink()
     nodes_gdf.to_file(paths["gpkg"], layer="drain_nodes", driver="GPKG")
     edges_gdf.to_file(paths["gpkg"], layer="drain_edges", driver="GPKG")
-
-
-# ------------------------------------------------------------------------------ green
 
 
 def test_write_read_roundtrip_and_realized_schema(tmp_path: Path) -> None:
@@ -367,7 +343,6 @@ def test_write_read_roundtrip_and_realized_schema(tmp_path: Path) -> None:
     nodes_gdf, edges_gdf = art["nodes_gdf"], art["edges_gdf"]
     assert len(nodes_gdf) == 8 and len(edges_gdf) == 10
     # Realized dtypes: PK columns are integer after the GPKG roundtrip; nullable
-    # contrib_area_cells degrades to float in storage and is coerced back integral.
     assert str(edges_gdf["edge_id"].dtype) == "int64"
     assert str(nodes_gdf["node_id"].dtype) == "int64"
     cells = nodes_gdf.set_index("node_id")["contrib_area_cells"]
@@ -396,9 +371,6 @@ def test_write_read_roundtrip_and_realized_schema(tmp_path: Path) -> None:
 
 
 def test_topo_order_exact_and_independently_valid(tmp_path: Path) -> None:
-    """If topo_order were wrong we would observe a sequence violating edge directions;
-    it is checked twice: exact expected Kahn output AND an independent re-derivation
-    from the LOADED gpkg rows."""
     paths, _ = _build(tmp_path)
     art = read_artefact(paths["gpkg"], paths["adjacency"], paths["manifest"])
     assert art["adjacency"]["topo_order"] == [8, 1, 2, 3, 4, 5, 6, 7]
@@ -422,8 +394,6 @@ def test_topo_order_exact_and_independently_valid(tmp_path: Path) -> None:
 
 
 def test_fingerprint_recomputes_byte_exact_from_loaded_gpkg(tmp_path: Path) -> None:
-    """If the GPKG roundtrip altered any geometry byte or coordinate, the consumer-side
-    recomputation over LOADED rows would diverge from the producer fingerprint."""
     paths, manifest = _build(tmp_path)
     art = read_artefact(paths["gpkg"], paths["adjacency"], paths["manifest"])
     rows = art["edges_gdf"].sort_values("edge_id").to_dict("records")
@@ -517,7 +487,6 @@ def test_manifest_carries_every_producer_guarantee_field(tmp_path: Path) -> None
     assert loaded["lake_receiving_water_names"] == []
     assert loaded["stub_counters"]["stub_count"] == 1
     assert loaded["unresolved_outfall_count"] == 0
-    # Fraction headline recomputed from edges, unclamped, denominator recorded.
     edges = _edges()
     frac = sum(e.length_m for e in edges if e.edge_source == "synthesised") / 767_300.0
     assert abs(loaded["synthesised_fraction_of_total_length"] - frac) <= 1e-12
@@ -610,8 +579,6 @@ def test_publish_only_when_connected_and_copy_is_faithful(tmp_path: Path) -> Non
 
 
 def test_adjacency_reruns_byte_identical(tmp_path: Path) -> None:
-    """Adjacency JSON must be deterministic across writes (the gpkg container embeds
-    gpkg_contents.last_change and is excluded from this byte-equality claim)."""
     p1, _ = _build(tmp_path / "a")
     p2, m2 = _build(tmp_path / "b")
     assert Path(p1["adjacency"]).read_bytes() == Path(p2["adjacency"]).read_bytes()
@@ -638,9 +605,6 @@ def test_cli_inspect_pass_exit_zero(tmp_path: Path) -> None:
     )
     assert result.exit_code == 0, result.output
     assert "PASS" in result.output
-
-
-# ------------------------------------------------------------------------------ red
 
 
 def test_red_mutated_manifest_fingerprint_refused(tmp_path: Path) -> None:
@@ -673,10 +637,7 @@ def test_red_bidirectional_tag_violation(tmp_path: Path) -> None:
 def test_red_synthesised_fraction_mismatch(tmp_path: Path) -> None:
     """V5 RED DEMO 2b. Mutation: edge_source+order flipped CONSISTENTLY on connector 4
     and capacity_basis nulled (tags valid; edge masquerades as an observed secondary in
-    the blocked all-NULL state). The field-level assertions therefore pass and the
-    observable that MUST fire is V-SYNTHVISIBLE: the fraction recomputed from the
-    written gpkg no longer matches the manifest value (edge 4's 40 m left the
-    synthesised bucket; tol 1e-9)."""
+    the blocked all-NULL state). The field-level assertions therefore pass and the"""
 
     def flip(gdf):
         mask = gdf["edge_id"] == 4
@@ -692,8 +653,7 @@ def test_red_synthesised_fraction_mismatch(tmp_path: Path) -> None:
 
 
 def test_red_width_injected_on_synthetic_edge(tmp_path: Path) -> None:
-    """V5 RED DEMO 3 (SYNTH-SEPARABILITY). Mutation: width_m injected on connector 10 -
-    a D8 routing conduit carrying invented hydraulics violates rule 1."""
+    """V5 RED DEMO 3 (SYNTH-SEPARABILITY). Mutation: width_m injected on connector 10 -"""
 
     def inject(gdf):
         gdf.loc[gdf["edge_id"] == 10, "width_m"] = 6.71
@@ -707,8 +667,7 @@ def test_red_width_injected_on_synthetic_edge(tmp_path: Path) -> None:
 
 def test_red_disconnected_without_override_then_loads_with_pair(tmp_path: Path) -> None:
     """V5 RED DEMO 4. Artefact whose component policy is UNMET: refused without the
-    startup-resolved override pair; loads with status stopped_owner_adjudication +
-    allow_disconnected_load + non-empty owner_adjudication_ref."""
+    startup-resolved override pair; loads with status stopped_owner_adjudication +"""
     paths, man = _build(tmp_path / "disc", post=3, unmet_policy=True)
     with pytest.raises(RefuseLoadError, match=r"component_policy.*fraction"):
         read_artefact(paths["gpkg"], paths["adjacency"], paths["manifest"])
@@ -725,7 +684,6 @@ def test_red_disconnected_without_override_then_loads_with_pair(tmp_path: Path) 
 
 def test_red_placement_guard_at_publish_paths_even_with_override(tmp_path: Path) -> None:
     """V5 RED DEMO 5. Mutation: candidate copied to config publish paths while
-    post-stitch>1. The guard fires REGARDLESS of the override pair - placement, not
     permission, is the violated invariant."""
     paths, _ = _build(tmp_path / "disc", post=3, unmet_policy=True)
     snap = json.loads(Path(paths["manifest"]).read_text())["config_snapshot"]["outputs"]
@@ -750,15 +708,13 @@ def test_red_placement_guard_at_publish_paths_even_with_override(tmp_path: Path)
         allow_disconnected_load=True,
         owner_adjudication_ref="ref",
     )
-    assert len(art["edges_gdf"]) == 11  # 10 base + detached policy-unmet edge
+    assert len(art["edges_gdf"]) == 11
 
 
 def test_zero_length_counter_recorded_not_refused(tmp_path: Path) -> None:
     """V6 AMENDED 2026-08-26 (contract v1.2.0, D-G owner adjudication): the SPEC was
     amended - zero_length_dropped_count is a RECORDED PROPERTY, not a refusal ('the
-    42 dropped zero-length edges are a build fact, not a defect'). The former red
-    demo test_red_zero_length_counter_refused asserted the old refusal; under the
-    amended contract the same mutation must LOAD and echo the count in the result."""
+    demo test_red_zero_length_counter_refused asserted the old refusal; under the"""
     elev = _write_elevation(tmp_path)
     cfg = _cfg(tmp_path, elev)
     man = init_manifest(cfg["outputs"]["run_dir"], cfg)
@@ -773,14 +729,11 @@ def test_zero_length_counter_recorded_not_refused(tmp_path: Path) -> None:
     paths = write_candidate(_nodes(), _edges(), man, str(out))
     art = read_artefact(paths["gpkg"], paths["adjacency"], paths["manifest"])
     assert art["dropped_zero_length_count"] == 1
-    # the recorded property is visible without any override flags:
     assert "dropped_zero_length_count" in art
 
 
 def test_null_capacity_edge_class_accepted_and_guarded(tmp_path: Path) -> None:
     """V6 AMENDED 2026-08-26 (contract v1.2.0, D-G): an observed edge with a declared
-    'no capacity claim; routing only' basis and ALL numeric capacity fields NULL is a
-    legal NULL-CAPACITY EDGE CLASS member; a declared-null edge carrying ANY numeric
     field is refused - null class is NOT loadable as zero."""
     elev = _write_elevation(tmp_path)
     cfg = _cfg(tmp_path, elev)
@@ -806,9 +759,7 @@ def test_null_capacity_edge_class_accepted_and_guarded(tmp_path: Path) -> None:
         "contributing area 12779 ha exceeds the rational method validity limit "
         "5000 ha: no capacity claim; routing only"
     )
-    man = finalize_manifest(
-        man, nodes=_nodes(), edges=edges, stitch_metrics=_stitch_metrics(1)
-    )
+    man = finalize_manifest(man, nodes=_nodes(), edges=edges, stitch_metrics=_stitch_metrics(1))
     out = tmp_path / "cand_nullclass"
     paths = write_candidate(_nodes(), edges, man, str(out))
     art = read_artefact(paths["gpkg"], paths["adjacency"], paths["manifest"])
@@ -863,7 +814,6 @@ def test_cli_inspect_refused_exit_two(tmp_path: Path) -> None:
     man = json.loads(mp.read_text())
     man["status"] = "stopped_owner_adjudication"
     mp.write_text(json.dumps(man))
-    # sanity: the unmet candidate genuinely fails policy
     assert man["component_policy"]["met"] is False
     result = CliRunner().invoke(
         app,
@@ -882,9 +832,7 @@ def test_cli_inspect_refused_exit_two(tmp_path: Path) -> None:
 
 
 def test_m5b_self_loop_override_loads_with_enumeration(tmp_path: Path) -> None:
-    """Owner adjudication M5b (2026-08-25): input-geometry self-loops are a data
-    fact; a sanctioned consumer may load when dropped ids are enumerated and an
-    owner_adjudication_ref is present. Without the ref the refusal stands."""
+    """owner_adjudication_ref is present. Without the ref the refusal stands."""
     paths, _ = _build(tmp_path / "m5b", post=1)
     mp = Path(paths["manifest"])
     man = json.loads(mp.read_text())

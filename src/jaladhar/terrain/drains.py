@@ -1,43 +1,8 @@
-"""Drain-capacity PRIOR for the JALADHAR terrain pipeline.
-
-Bengaluru's actual stormwater drain network is NOT open data (PROMPT.md
-§14.2 — the largest single source of error, and a data-availability
-problem, not a modelling one). Everything this module writes is an
-EXPLICIT, DOCUMENTED, ARBITRARY starting point for Phase 3 gradient-descent
+"""§14.2 — the largest single source of error, and a data-availability
 calibration against observed flooding, never a measurement — see
-`configs/domain_bengaluru.yaml`'s `drains:` section, which spells out why
-setting a documented model-parameter starting point is what PROMPT.md
-§6.1 item 5 itself asks for ("a per-cell removal rate capped by an
-ASSUMED capacity"), not a CLAUDE.md rule 1 violation (that rule prohibits
 fabricating and presenting DATA/observations as real, which this is not).
-
-Two network representations supported:
-
-  1. BBMP SWD Rajakaluve Network 2022 (Primary, Secondary, Tertiary — 6,839
-     features, 1,988.47 km total length, Public Domain via OpenCity, 2.33x
-     the OSM network). 2D horizontal centrelines only.
-  2. OSM waterway=drain|ditch|stream lines (853.44 km).
-
-Ingredients:
-  - REAL: distance to the nearest mapped drain feature (genuine geometry, not
-    invented).
-  - ARBITRARY (documented as such throughout): a uniform baseline capacity
-    and an exponential decay length, both explicit Phase-3 calibration
-    targets. The config's `baseline_capacity_by_landuse_mm_per_hr` is
-    intentionally the SAME value across every class — differentiating them
-    without a source to justify the differences would imply false
-    precision we don't have.
-  - CLASS-INDEPENDENT PRIOR: Although the BBMP dataset differentiates
-    Primary / Secondary / Tertiary classes, open administrative data provides
-    no standardized citywide cross-sectional dimensions, depths, or hydraulic
-    capacities by class (dimensions are site-specific per DPR). Per CLAUDE.md
-    Rule 1, no arbitrary capacity ratios are fabricated between classes; a
-    single class-independent uniform prior is applied.
-
-Distance computed via a raster Euclidean distance transform (`scipy.ndimage.
-distance_transform_edt`), not a per-cell geometric query against the line
-network.
-"""
+without a source to justify the differences would imply false
+Rule 1, no arbitrary capacity ratios are fabricated between classes; a"""
 
 from __future__ import annotations
 
@@ -62,17 +27,12 @@ from jaladhar.terrain.grid import build_grid, load_boundary, load_config, run_st
 app = typer.Typer(add_completion=False)
 REPO = Path(__file__).resolve().parents[3]
 
-# Ensure fiona can read KML and LIBKML layers
 fiona.drvsupport.supported_drivers["KML"] = "rw"
 fiona.drvsupport.supported_drivers["LIBKML"] = "rw"
 
 
 class DrainFetchError(Exception):
-    """The drain waterway fetch/load failed or returned nothing usable.
-
-    Per CLAUDE.md rule 1: stop and report — never fall back to a uniform
-    (distance-blind) capacity raster silently.
-    """
+    """Per CLAUDE.md rule 1: stop and report — never fall back to a uniform"""
 
 
 def _publish_canonical_artifacts(source_artifacts: dict[Path, Path]) -> None:
@@ -102,11 +62,6 @@ def load_bbmp_waterways(
     grid_crs: Any,
     clip_box_proj: Any | None = None,
 ) -> tuple[gpd.GeoDataFrame, dict[str, Any]]:
-    """Load BBMP SWD Rajakaluve Primary, Secondary, and Tertiary KML networks.
-
-    Returns the combined reprojected GeoDataFrame and a detailed class breakdown
-    dictionary with feature counts and lengths.
-    """
     classes = [
         ("primary", "primary_drains_2022.kml"),
         ("secondary", "secondary_drains_2022.kml"),
@@ -124,7 +79,9 @@ def load_bbmp_waterways(
         try:
             gdf = gpd.read_file(kml_path, engine="fiona")
         except Exception as e:
-            raise DrainFetchError(f"Failed to read BBMP KML {kml_path}: {type(e).__name__}: {e}") from e
+            raise DrainFetchError(
+                f"Failed to read BBMP KML {kml_path}: {type(e).__name__}: {e}"
+            ) from e
 
         n_raw = len(gdf)
         gdf = gdf[gdf.geometry.geom_type.isin(["LineString", "MultiLineString"])]
@@ -157,7 +114,7 @@ def load_bbmp_waterways(
             "length_m": round(length_m, 2),
             "length_km": round(length_m / 1000.0, 3),
             "capacity_assignment": (
-                "Class-independent uniform prior (no standardized cross-sectional dimensions in 2D centerline dataset)"
+                "Class-independent uniform prior (no standardized cross-sectional dimensions in 2D centerline dataset)"  # noqa: E501
             ),
         }
 
@@ -202,7 +159,6 @@ def fetch_waterways(
 
 
 def _baseline_value(by_landuse: dict[str, float]) -> float:
-    """The single uniform baseline value — see module docstring for why."""
     values = set(by_landuse.values())
     if len(values) != 1:
         raise ValueError(
@@ -219,10 +175,7 @@ def build_drains(
     repo_root: Path = REPO,
     source: str | None = None,
 ) -> dict[str, Any]:
-    """Rebuild distance-to-drain and drain capacity rasters from the BBMP or OSM drain network.
-
-    Writes new BBMP-derived rasters alongside existing OSM rasters (without overwriting).
-    """
+    """Writes new BBMP-derived rasters alongside existing OSM rasters (without overwriting)."""
     grid, grid_diag = build_grid(cfg, repo_root)
     buffer_m = float(cfg["dem"]["buffer_m"])
     buffered_grid = grid.buffered(buffer_m)
@@ -295,7 +248,6 @@ def build_drains(
     else:
         raise ValueError(f"Unknown drain source: {chosen_source!r}. Must be 'bbmp' or 'osm'.")
 
-    # Rasterize on the BUFFERED grid
     drain_mask_buffered = rasterize(
         [(geom, 1) for geom in gdf_proj.geometry],
         out_shape=(buffered_grid.height, buffered_grid.width),
@@ -310,7 +262,6 @@ def build_drains(
             f"{n_features} waterway features loaded, but rasterized mask has zero drain cells."
         )
 
-    # distance_transform_edt on the BUFFERED grid
     distance_m_buffered = distance_transform_edt(
         drain_mask_buffered == 0, sampling=(grid.resolution, grid.resolution)
     ).astype(np.float32)
@@ -320,11 +271,10 @@ def build_drains(
     if d_cfg["distance_decay"]["functional_form"] != "exponential":
         raise ValueError(
             f"drains.distance_decay.functional_form="
-            f"{d_cfg['distance_decay']['functional_form']!r} not implemented (only 'exponential' is)"
+            f"{d_cfg['distance_decay']['functional_form']!r} not implemented (only 'exponential' is)"  # noqa: E501
         )
     capacity_buffered = (baseline * np.exp(-distance_m_buffered / decay_m)).astype(np.float32)
 
-    # Crop to canonical grid
     distance_m_canonical = distance_m_buffered[
         buf_cells : buf_cells + grid.height, buf_cells : buf_cells + grid.width
     ]
@@ -336,11 +286,9 @@ def build_drains(
     ]
     n_drain_cells_canonical = int((drain_mask_canonical == 1).sum())
 
-    # Write vector GeoPackage
     waterways_path = interim_dir / waterways_filename
     gdf_proj.to_file(waterways_path, driver="GPKG")
 
-    # Write interim buffered rasters
     buffered_dist_path = interim_dir / dist_buf_filename
     with rasterio.open(
         buffered_dist_path, "w", **buffered_grid.profile(dtype="float32", nodata=None)
@@ -353,7 +301,6 @@ def build_drains(
     ) as dst:
         dst.write(capacity_buffered, 1)
 
-    # Write interim canonical rasters
     dist_path = interim_dir / dist_filename
     with rasterio.open(dist_path, "w", **grid.profile(dtype="float32", nodata=None)) as dst:
         dst.write(distance_m_canonical, 1)
@@ -362,7 +309,6 @@ def build_drains(
     with rasterio.open(capacity_path, "w", **grid.profile(dtype="float32", nodata=None)) as dst:
         dst.write(capacity_canonical, 1)
 
-    # Also write to processed/ and processed/buffered/ (side-by-side)
     proc_dist_path = processed_dir / dist_filename
     with rasterio.open(proc_dist_path, "w", **grid.profile(dtype="float32", nodata=None)) as dst:
         dst.write(distance_m_canonical, 1)
@@ -424,7 +370,6 @@ def build_drains(
     except Exception:
         pass
 
-    # Compute GT point distance statistics
     gt_mean_dist = None
     gt_median_dist = None
     gt_csv_path = repo_root / "data/raw/groundtruth/sept2022_points.csv"
@@ -444,7 +389,6 @@ def build_drains(
         except Exception:
             pass
 
-    # Distance buffer coverage table
     total_cells = grid.height * grid.width
     thresholds = [0, 50, 100, 200, 500, 1000]
     coverage_table: dict[str, Any] = {}
@@ -467,8 +411,8 @@ def build_drains(
         "capacity_assignment_note": (
             f"Class-independent uniform prior ({baseline:.1f} mm/hr baseline, "
             f"{decay_m:.0f}m exponential decay). "
-            "BBMP 2D centerline dataset does not contain cross-sectional geometry or invert levels; "
-            "fabricating class-differentiated capacities without measured channel dimensions or published "
+            "BBMP 2D centerline dataset does not contain cross-sectional geometry or invert levels; "  # noqa: E501
+            "fabricating class-differentiated capacities without measured channel dimensions or published "  # noqa: E501
             "design standards would violate CLAUDE.md Rule 1."
         ),
         "baseline_capacity_mm_per_hr": baseline,
@@ -523,7 +467,6 @@ def main(
         "bbmp", help="Drain network source: 'bbmp' (2022 SWD KMLs) or 'osm' (Overpass)"
     ),
 ) -> None:
-    """Fetch/load waterways, compute a distance-decayed drain-capacity PRIOR (not a measurement)."""
     cfg = load_config(config)
 
     def _runner(c: dict[str, Any], r: Path) -> dict[str, Any]:
@@ -537,27 +480,27 @@ def main(
 
     typer.echo(
         f"Drain source: {result['source']} ({result['source_description']})\n"
-        f"Waterway features: {result['n_features']} | Total length: {result['total_length_km']:.2f} km\n"
-        f"Drain cells on grid: {result['n_drain_cells']:,} (canonical) / {result['n_drain_cells_buffered']:,} (buffered)"
+        f"Waterway features: {result['n_features']} | Total length: {result['total_length_km']:.2f} km\n"  # noqa: E501
+        f"Drain cells on grid: {result['n_drain_cells']:,} (canonical) / {result['n_drain_cells_buffered']:,} (buffered)"  # noqa: E501
     )
     typer.echo(
         f"Distance to nearest drain (domain-wide full grid): "
-        f"min={result['distance_m_min']:.1f}m mean={result['distance_m_mean']:.1f}m median={result['distance_m_median']:.1f}m max={result['distance_m_max']:.1f}m"
+        f"min={result['distance_m_min']:.1f}m mean={result['distance_m_mean']:.1f}m median={result['distance_m_median']:.1f}m max={result['distance_m_max']:.1f}m"  # noqa: E501
     )
     if result["distance_m_mean_bbmp_boundary"] is not None:
         typer.echo(
             f"Distance within BBMP municipal boundary (717 km²): "
-            f"mean={result['distance_m_mean_bbmp_boundary']:.1f}m median={result['distance_m_median_bbmp_boundary']:.1f}m"
+            f"mean={result['distance_m_mean_bbmp_boundary']:.1f}m median={result['distance_m_median_bbmp_boundary']:.1f}m"  # noqa: E501
         )
     if result["gt_points_mean_distance_m"] is not None:
         typer.echo(
             f"Distance at 24 Ground-Truth Points: "
-            f"mean={result['gt_points_mean_distance_m']:.1f}m median={result['gt_points_median_distance_m']:.1f}m"
+            f"mean={result['gt_points_mean_distance_m']:.1f}m median={result['gt_points_median_distance_m']:.1f}m"  # noqa: E501
         )
     typer.echo(
         f"Capacity prior [{result['capacity_status']}]:\n"
-        f"  baseline={result['baseline_capacity_mm_per_hr']:.1f} mm/hr | decay={result['distance_decay_m']:.0f}m\n"
-        f"  range=[{result['capacity_min_mm_per_hr']:.3e}, {result['capacity_max_mm_per_hr']:.3f}] mm/hr"
+        f"  baseline={result['baseline_capacity_mm_per_hr']:.1f} mm/hr | decay={result['distance_decay_m']:.0f}m\n"  # noqa: E501
+        f"  range=[{result['capacity_min_mm_per_hr']:.3e}, {result['capacity_max_mm_per_hr']:.3f}] mm/hr"  # noqa: E501
     )
     typer.echo(
         f"Wrote vector: {result['waterways_vector_path']}\n"

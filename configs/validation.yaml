@@ -1,6 +1,6 @@
 # JALADHAR — Validation Configuration
 #
-# Single source of truth for validation inputs, SAR scoring, and density stratification.
+# Single source of truth for validation inputs and gate scoring.
 # Parameterises paths and parameters so validation stages can re-run cleanly when
 # terrain or forcing stacks are rebuilt.
 
@@ -37,52 +37,3 @@ g1:
 # Signed SIH-26085 G3 gate (docs/SIH-26085-ALIGNMENT.md §6).
 g3:
   in_band_minimum: 0.40
-
-# Urban density stratification for SAR scoring (PROMPT.md §8 item 3)
-density_stratification:
-  building_mask_path: "data/processed/building_mask.tif"
-  output_building_fraction_path: "data/processed/building_fraction.tif"
-  output_density_classes_path: "data/processed/urban_density_classes.tif"
-  runs_dir: "runs/density_stratification"
-
-  # Moving window parameter:
-  # 100 m window (10x10 or 11x11 cells on 10 m grid, radius = 5 cells / kernel size = 11 cells ~ 110 m).
-  # Rationale: Sentinel-1 SAR GRD effective spatial resolution is ~20 m.
-  # Layover, radar shadow, and double-bounce effects operate over neighborhood/block scales
-  # (~100 m / 1 hectare). A 100 m moving average provides smooth built-up density representation
-  # without single-pixel boundary noise.
-  window_size_m: 100.0
-
-  # Density classes:
-  # Measured distribution cuts derived from building fraction raster:
-  # OPEN: low building fraction (water bodies, parks, open fields, peri-urban)
-  # MODERATE: medium building fraction (suburban layouts, low-rise residential)
-  # DENSE: high building fraction (dense urban core, commercial, high-density settlements)
-  classes:
-    - id: 0
-      name: "OPEN"
-    - id: 1
-      name: "MODERATE"
-    - id: 2
-      name: "DENSE"
-
-# SAR Water Classifier Investigation (Phase 3 Gate Rescore & Instrument Validation)
-sar_water_classifier:
-  flood_scene_tif: "data/raw/sentinel1/flood_20220905/measurement/s1a-iw-grd-vv-20220905t004028-20220905t004053-044862-055bb0-001-cog.tiff"
-  flood_calibration_xml: "data/raw/sentinel1/flood_20220905/annotation/calibration/calibration-s1a-iw-grd-vv-20220905t004028-20220905t004053-044862-055bb0-001-cog.xml"
-  flood_annotation_xml: "data/raw/sentinel1/flood_20220905/annotation/s1a-iw-grd-vv-20220905t004028-20220905t004053-044862-055bb0-001-cog.xml"
-  pre_scene_tif: "data/raw/sentinel1/pre_20220812/measurement/s1a-iw-grd-vv-20220812t004026-20220812t004051-044512-054fd9-001-cog.tiff"
-  pre_calibration_xml: "data/raw/sentinel1/pre_20220812/annotation/calibration/calibration-s1a-iw-grd-vv-20220812t004026-20220812t004051-044512-054fd9-001-cog.xml"
-  pre_annotation_xml: "data/raw/sentinel1/pre_20220812/annotation/s1a-iw-grd-vv-20220812t004026-20220812t004051-044512-054fd9-001-cog.xml"
-  osm_water_gpkg: "data/raw/osm/osm_water.gpkg"
-  basin_class_path: "data/processed/basin_class.tif"
-  elevation_path: "data/processed/elevation.tif"
-  slope_path: "data/processed/slope.tif"
-  flow_accumulation_path: "data/processed/flow_accumulation.tif"
-  density_classes_path: "data/processed/urban_density_classes.tif"
-  depth_sar_instant_path: "runs/phase3_validation/depth_sar_instant_20220905_004028Z.tif"
-  runs_dir: "runs/phase3_validation/sar_water_classifier"
-  positive_erosion_m: 30.0
-  negative_distance_m: 500.0
-  null_draws: 5000
-  water_threshold_db: -16.0

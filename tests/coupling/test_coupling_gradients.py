@@ -50,8 +50,8 @@ from jaladhar.coupling.exchange import (
 from jaladhar.coupling.router import DrainGraph, build_drain_graph
 from jaladhar.solver.state import StaticFields
 
-DT_MAIN = 0.48  # host dt [s], the realized coupled schedule value
-RAIN_RATE_M_S = 20e-3 / 3600.0  # 20 mm/hr declared design storm (synthetic, not observed)
+DT_MAIN = 0.48
+RAIN_RATE_M_S = 20e-3 / 3600.0
 
 CONTRACT_PATH = (
     Path(__file__).resolve().parents[2] / "configs" / "contracts" / "coupling_iface.json"
@@ -76,15 +76,12 @@ def _v5_clause_a_minimums(contract_path: Path = CONTRACT_PATH) -> tuple[int, int
     return int(m_tile.group(1)), int(m_steps.group(1))
 
 
-# ---------------------------------------------------------------------------
-# Self-contained fixtures (declared-synthetic; PRODUCTION assembly path)
-# ---------------------------------------------------------------------------
-
-
 def _static_zero(shape: tuple[int, int]) -> StaticFields:
-    """Dry StaticFields shell with drain_cap EXACTLY zero (coupled-mode state)."""
     hh, ww = shape
-    z = lambda *s: torch.zeros(*s, dtype=torch.float32)  # noqa: E731
+
+    def z(*s):
+        return torch.zeros(*s, dtype=torch.float32)
+
     return StaticFields(
         dz_x=z(hh, ww - 1),
         dz_y=z(hh - 1, ww),
@@ -107,7 +104,6 @@ def _static_zero(shape: tuple[int, int]) -> StaticFields:
 
 
 def _preset_state(heads: list[float], n: int | None = None) -> NodeState:
-    """NodeState preset to given f32 heads, zero books."""
     n = len(heads) if n is None else n
     hs = torch.tensor(heads + [0.0] * (n - len(heads)), dtype=torch.float32)
     z64 = torch.zeros(n, dtype=torch.float64)
@@ -115,11 +111,6 @@ def _preset_state(heads: list[float], n: int | None = None) -> NodeState:
 
 
 def _toy_graph(nmap: torch.Tensor, widths: torch.Tensor) -> DrainGraph:
-    """Toy DAG whose single edge is NULL-capacity (Q == 0 ALWAYS, D-C pin) so the
-    tracked physics is pure surface exchange; production ``build_drain_graph``
-    cannot accept an empty edge set. ``widths`` may carry autograd — the
-    assembly's ``.to(dev, dtype)`` is identity here, so tracking survives into
-    L_weir / A_open / plan areas (verified by the green controls below)."""
     mapped_max = int(nmap.max().item()) if bool((nmap >= 0).any()) else 2
     num_nodes = max(mapped_max, 2)
     if widths.numel() < num_nodes:
@@ -144,9 +135,6 @@ def _toy_graph(nmap: torch.Tensor, widths: torch.Tensor) -> DrainGraph:
 
 
 def _lattice_graph_512(base_widths: torch.Tensor, capacity_scale: torch.Tensor) -> DrainGraph:
-    """512x512 tile fully partitioned into an 8x8 lattice of 64 nodes (64x64-cell
-    blocks, every cell allocated), rightward+downward capacity-bearing edges only
-    => strict DAG. Declared-synthetic topology for the contract-scale scope."""
     n_side, block, per_row = 512, 64, 8
     nmap = torch.full((n_side, n_side), -1, dtype=torch.int32)
     for i in range(per_row):
@@ -159,15 +147,15 @@ def _lattice_graph_512(base_widths: torch.Tensor, capacity_scale: torch.Tensor) 
         for j in range(per_row):
             nid = i * per_row + j + 1
             if j + 1 < per_row:
-                edges.append((nid, nid + 1, 3.0))  # rightward only => DAG
+                edges.append((nid, nid + 1, 3.0))
             if i + 1 < per_row:
-                edges.append((nid, nid + per_row, 3.0))  # downward only
+                edges.append((nid, nid + per_row, 3.0))
     return build_drain_graph(
         edge_from=torch.tensor([e[0] - 1 for e in edges], dtype=torch.int64),
         edge_to=torch.tensor([e[1] - 1 for e in edges], dtype=torch.int64),
         capacity_bearing=torch.ones(len(edges), dtype=torch.bool),
         q_cap_nom_m3s=torch.tensor([float(e[2]) for e in edges], dtype=torch.float64),
-        width_mean_m=base_widths * capacity_scale,  # THE tracked capacity-scaling path
+        width_mean_m=base_widths * capacity_scale,
         shaft_length_proxy_m=1.0,
         node_elev_m=torch.linspace(10.0, 0.0, num_nodes, dtype=torch.float64),
         contrib_area_m2=torch.zeros(num_nodes, dtype=torch.float64),
@@ -180,16 +168,7 @@ def _lattice_graph_512(base_widths: torch.Tensor, capacity_scale: torch.Tensor) 
 
 
 def _delta_loss(h_in: torch.Tensor, res_h_new: torch.Tensor) -> torch.Tensor:
-    """Exchange-isolating loss: zero iff nothing moved. The direct h passthrough
-    carries NO capacity_scale gradient (h_in is a constant), so every bit of
-    d(loss)/d(capacity_scale) flows through capture/return/routing physics."""
     return ((h_in - res_h_new).to(torch.float64) ** 2).sum()
-
-
-# ---------------------------------------------------------------------------
-# Contract scope (a)+(b): >=512x512 tile, >=100 steps, surcharge active,
-# finite non-zero gradients w.r.t. capacity scaling
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.slow
@@ -224,11 +203,8 @@ def test_contract_512x512_100steps_surcharge_active_capacity_scale_grad() -> Non
     state = build_node_state(graph)
 
     rain_dt = RAIN_RATE_M_S * DT_MAIN
-    steps = 100  # contract minimum
-    # INV14 clause (a) MECHANICAL PIN (auditor finding: previously only one-third
-    # asserted — surcharge per step was checked, the tile/step literals lived in prose
-    # and bare constants with no runtime assert, so they could drift silently). Both
-    # minimums are read from the frozen contract bytes and enforced here.
+    steps = 100
+
     min_tile, min_steps = _v5_clause_a_minimums()
     assert h.shape == (min_tile, min_tile), (
         f"clause (a) tile floor violated: {tuple(h.shape)} < ({min_tile}, {min_tile}) "
@@ -244,12 +220,12 @@ def test_contract_512x512_100steps_surcharge_active_capacity_scale_grad() -> Non
     walls: list[float] = []
     for step in range(steps):
         t_step = time.perf_counter()
-        h_before = h + rain_dt  # host mass update analogue, out-of-place
+        h_before = h + rain_dt
         qx = torch.zeros(512, 511)
         qy = torch.zeros(511, 512)
         cr = couple_step(h_before, qx, qy, static, state, graph, DT_MAIN)
         walls.append(time.perf_counter() - t_step)
-        # ANTI-VACUITY: the gradient premise (return mechanism live) holds EVERY step
+
         assert cr.surcharging_nodes > 0, f"step {step}: no node surcharged — premise dead"
         assert bool(torch.isfinite(cr.h_new).all()), f"step {step}: non-finite surface depth"
         loss = loss + cr.h_new.to(torch.float64).pow(2).sum()
@@ -257,8 +233,7 @@ def test_contract_512x512_100steps_surcharge_active_capacity_scale_grad() -> Non
         cum_ret += cr.return_m3
         h, state = cr.h_new, cr.node_state_new
         if step == steps - 1:
-            # V1 realized-state spot check on the LAST step: the contract volume
-            # equals the realized field sum x cell area (not a carried declaration)
+
             field_m3 = float(cr.returned_depth_m.to(torch.float64).sum().item()) * 100.0
             assert cr.return_m3 == field_m3, (cr.return_m3, field_m3)
 
@@ -273,11 +248,9 @@ def test_contract_512x512_100steps_surcharge_active_capacity_scale_grad() -> Non
         f"[grad-512] cum_captured={cum_cap:.6e} m3 cum_returned={cum_ret:.6e} m3 "
         f"first_step_wall={walls[0] * 1e3:.1f} ms steady_wall={walls[-1] * 1e3:.1f} ms"
     )
-    # Compute-budget discipline: measured projection must sit inside the CPU
-    # smoke budget (30 min) BEFORE the claim ships; measured value is ~seconds.
+
     assert proj_band < 1800.0, f"projected 1000-step wall {proj_band:.0f}s exceeds budget"
-    # Surcharge anti-vacuity aggregate at the G2 bar (g2_anti_vacuity: fails if
-    # total_returned_m3 < 1.0 m3) — orders of magnitude above it here.
+
     assert cum_ret >= 1.0, f"window returned only {cum_ret!r} m3 — vacuous"
     assert cum_cap > 0.0, "capture never fired; wet-storm premise unrealized"
 
@@ -288,18 +261,10 @@ def test_contract_512x512_100steps_surcharge_active_capacity_scale_grad() -> Non
     assert grad_val != 0.0, "EXACTLY zero gradient w.r.t. capacity scaling — flow severed"
 
 
-# ---------------------------------------------------------------------------
 # Per-regime gradients (weir-phase vs orifice-phase), unit scale — PARTIAL by
-# construction, companions to the contract-scale test above
-# ---------------------------------------------------------------------------
 
 
 def _regime_probe_grad(pond_m: float) -> tuple[float, bool]:
-    """Single cell / single node / single step: d(delta-loss)/d(width-scale).
-
-    Returns (grad_value, is_finite). The null edge makes routing structurally
-    inert, so the gradient is PURE intake-capacity physics at the chosen pond
-    depth (regime set by h_eff against the 0.1 m switch)."""
     scale = torch.tensor(1.37, dtype=torch.float64, requires_grad=True)
     g = _toy_graph(torch.tensor([[1]], dtype=torch.int32), torch.tensor([6.71]) * scale)
     h = torch.full((1, 1), pond_m, dtype=torch.float32)
@@ -432,9 +397,7 @@ def test_return_path_capacity_scale_grad_finite_nonzero() -> None:
     ), f"return-path gradient severed or non-finite: {grad_val!r}"
 
 
-# ---------------------------------------------------------------------------
 # V5 RED demos — both contract-named mutation flavours, controls on SAME fixture
-# ---------------------------------------------------------------------------
 
 
 def test_v5_red_dead_where_branch_grad_nan_forward_finite(monkeypatch) -> None:
@@ -490,13 +453,13 @@ def test_v5_red_dead_where_branch_grad_nan_forward_finite(monkeypatch) -> None:
     assert bool(torch.isfinite(grad_green)) and green_val != 0.0, "control not green"
 
     def _unfloored(is_weir, weir_head, orifice_head, length_m, opening_area_m2):
-        weir_safe = torch.clamp(weir_head, min=xchg.HF_FLOOR_M)  # floor KEPT
+        weir_safe = torch.clamp(weir_head, min=xchg.HF_FLOOR_M)
         q_weir = xchg.WEIR_COEFF_CW * length_m * weir_safe.pow(1.5)
         q_orifice = (
             xchg.ORIFICE_COEFF_CD
             * opening_area_m2
             * torch.sqrt(2.0 * xchg.GRAVITY_M_S2 * orifice_head)
-        )  # NO hf_floor clamp — the dead branch carries sqrt(<0) = NaN
+        )
         return torch.where(is_weir, q_weir, q_orifice)
 
     monkeypatch.setattr(xchg, "_regime_q", _unfloored)

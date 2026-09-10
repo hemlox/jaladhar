@@ -1,41 +1,4 @@
-"""WF-6 build lane L2, module 3 — forcing (hyetograph) series re-derivation.
-
-Re-derives the [96, 16] float32 anchored interval-rate matrix EXACTLY per the
-flow-wiring audit's recipe and HARD-ASSERTS its SHA-256 against the identity
-the goal-D run froze in ``runs/goal_d_replay2_final_config/manifest.json``:
-
-    sha256(matrix.tobytes()) == forcing_identity.interval_rates_mm_per_halfhour_sha256
-
-Recipe (anchored_forcing.py:77-112, p3-integration; byte-exact chain verified
-there by ``verify_anchored_chain``):
-
-1. native IMERG cell mapping over the canonical grid
-   (:func:`jaladhar.forcing.imerg.compute_imerg_grid_mapping`) -> 16 distinct
-   cells as sorted unique (ilon, ilat) pairs;
-2. per 30-min granule whose START lies inside the window, incremental depth
-   ``max(precip[ilon, ilat], 0.0) * 0.5`` at those 16 cells
-   (:meth:`..._interval_rate_table_from_granules` semantics);
-3. multiply by the KSNDMC alert-anchor factors from
-   ``alert_anchor_factors_v1.npz`` (float32), giving float32 [96, 16].
-
-Rule 1 hard line: nothing is substituted when inputs are missing.  Absent
-granules raise :class:`ForcingUnavailable` carrying ``closes_how``; a matrix
-that does NOT reproduce the frozen identity raises :class:`ForcingIdentityError`
-with a full inventory dump — a legitimate BLOCKED outcome to report, never a
-reason to fabricate climatology.
-
-On success emits ``data/interim/context/forcing_series.json`` plus a rule-6
-derivation manifest (written at run START with ``status: "running"``, updated
-in place on completion/failure) under
-``data/interim/context/forcing_derivation_manifest.json``.
-
-Frame alignment (recorded in both outputs): solver frame i (i < 96) starts at
-interval i of this series; frame index 96 ("frame 97", offset 172800 s =
-96 x 1800 s) is the post-final-interval end state.
-
-Run standalone:
-``python -m jaladhar.web.forcing derive [--out ...] [--manifest-out ...]``
-"""
+'WF-6 build lane L2, module 3 — forcing (hyetograph) series re-derivation. Re-derives the [96, 16] float32 anchored interval-rate matrix EXACTLY per the flow-wiring audit\'s recipe and HARD-ASSERTS its SHA-256 against the identity the goal-D run froze in ``runs/goal_d_replay2_final_config/manifest.json``: sha256(matrix.tobytes()) == forcing_identity.interval_rates_mm_per_halfhour_sha256 Recipe (anchored_forcing.py:77-112, p3-integration; byte-exact chain verified there by ``verify_anchored_chain``): 1. native IMERG cell mapping over the canonical grid (:func:`jaladhar.forcing.imerg.compute_imerg_grid_mapping`) -> 16 distinct cells as sorted unique (ilon, ilat) pairs; 2. per 30-min granule whose START lies inside the window, incremental depth ``max(precip[ilon, ilat], 0.0) * 0.5`` at those 16 cells (:meth:`..._interval_rate_table_from_granules` semantics); 3. multiply by the KSNDMC alert-anchor factors from ``alert_anchor_factors_v1.npz`` (float32), giving float32 [96, 16]. Rule 1 hard line: nothing is substituted when inputs are missing. Absent granules raise :class:`ForcingUnavailable` carrying ``closes_how``; a matrix that does NOT reproduce the frozen identity raises :class:`ForcingIdentityError` with a full inventory dump — a legitimate BLOCKED outcome to report, never a reason to fabricate climatology. On success emits ``data/interim/context/forcing_series.json`` plus a rule-6 derivation manifest (written at run START with ``status: "running"``, updated in place on completion/failure) under ``data/interim/context/forcing_derivation_manifest.json``. Frame alignment (recorded in both outputs): solver frame i (i < 96) starts at interval i of this series; frame index 96 ("frame 97", offset 172800 s = 96 x 1800 s) is the post-final-interval end state. Run standalone: ``python -m jaladhar.web.forcing derive [--out ...] [--manifest-out ...]``'  # noqa: E501
 
 from __future__ import annotations
 
@@ -54,7 +17,7 @@ app = typer.Typer(add_completion=False, no_args_is_help=True)
 
 @app.callback()
 def _main() -> None:
-    """Forcing hyetograph series derivation (dashboard A11 consumer)."""
+    pass
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -68,17 +31,11 @@ DEFAULT_MANIFEST_OUT = (
     REPO_ROOT / "data" / "interim" / "context" / "forcing_derivation_manifest.json"
 )
 
-#: Interval length implied by the IMERG half-hourly cadence and the frame
-#: series cadence (configs/contracts side); asserted against the manifest.
 INTERVAL_MINUTES = 30
 
 
 class ForcingUnavailable(RuntimeError):
-    """A required realised forcing input does not exist locally (rule 1).
-
-    Attributes carry the structured reason so callers (and the final report)
-    can state exactly how the blocker would close.
-    """
+    "A required realised forcing input does not exist locally (rule 1). Attributes carry the structured reason so callers (and the final report) can state exactly how the blocker would close."  # noqa: E501
 
     def __init__(self, message: str, closes_how: str, inventory: dict[str, Any]) -> None:
         super().__init__(message)
@@ -87,7 +44,6 @@ class ForcingUnavailable(RuntimeError):
 
 
 class ForcingIdentityError(RuntimeError):
-    """The derived matrix does not reproduce the frozen forcing identity."""
 
     def __init__(self, message: str, inventory: dict[str, Any]) -> None:
         super().__init__(message)
@@ -111,7 +67,6 @@ def _sha256_file(path: Path) -> str:
 
 
 def load_goal_d_identity(repo_root: Path | None = None) -> dict[str, Any]:
-    """The frozen forcing identity block every assertion here targets."""
 
     root = repo_root if repo_root is not None else REPO_ROOT
     path = GOAL_D_MANIFEST if repo_root is None else root / GOAL_D_MANIFEST.relative_to(REPO_ROOT)
@@ -125,7 +80,6 @@ def load_goal_d_identity(repo_root: Path | None = None) -> dict[str, Any]:
 
 
 def resolve_granules_dir(repo_root: Path | None = None) -> Path:
-    """Granules directory straight from configs/forcing.yaml (read-only use)."""
 
     import yaml
 
@@ -144,7 +98,6 @@ def resolve_granules_dir(repo_root: Path | None = None) -> Path:
 
 
 def inventory_granules(granules_dir: Path) -> list[Path]:
-    """Sorted *.HDF5 granules; rule-1 failure with closes_how when absent."""
 
     files = sorted(granules_dir.glob("*.HDF5")) if granules_dir.is_dir() else []
     if not files:
@@ -170,7 +123,6 @@ def inventory_granules(granules_dir: Path) -> list[Path]:
 
 
 def _grid_native_mapping(repo_root: Path) -> tuple[np.ndarray, np.ndarray, int]:
-    """(unique_pairs, native_cell_ids, n_cells) for the canonical grid."""
 
     import yaml
 
@@ -194,11 +146,7 @@ def derive_interval_rates(
     granules_dir: Path | None = None,
     factors_npz: Path | None = None,
 ) -> dict[str, Any]:
-    """Re-derive the [n_intervals, 16] float32 anchored interval-rate matrix.
-
-    Returns the matrix plus realised diagnostics; raises ForcingUnavailable /
-    ForcingIdentityError per the module docstring.
-    """
+    "Re-derive the [n_intervals, 16] float32 anchored interval-rate matrix. Returns the matrix plus realised diagnostics; raises ForcingUnavailable / ForcingIdentityError per the module docstring."  # noqa: E501
 
     from jaladhar.forcing.imerg import parse_granule_timestamp
 
@@ -258,7 +206,6 @@ def derive_interval_rates(
             {"factors_shape": list(factors.shape)},
         )
 
-    # --- granule sweep: incremental depth at native cells per window granule.
     rows: list[np.ndarray] = []
     seen: list[str] = []
     for path in files:
@@ -289,7 +236,7 @@ def derive_interval_rates(
             inv,
         )
 
-    rates_unanchored = np.stack(rows)  # float32 [96, 16]
+    rates_unanchored = np.stack(rows)
     anchored = rates_unanchored * factors[np.arange(rates_unanchored.shape[1])][None, :]
     anchored = anchored.astype(np.float32, copy=False)
 
@@ -366,9 +313,6 @@ def _identity_dump(**kw: Any) -> dict[str, Any]:
     }
 
 
-# ------------------------------------------------------------------ emission
-
-
 def _git_state(repo_root: Path) -> dict[str, Any]:
     try:
         sha = subprocess.check_output(
@@ -396,7 +340,6 @@ def _write_json(path: Path, payload: dict[str, Any]) -> None:
 def emit_series(
     derived: dict[str, Any], *, out: Path, frames_manifest: Path | None = None
 ) -> dict[str, Any]:
-    """Build and write forcing_series.json from a successful derivation."""
 
     matrix: np.ndarray = derived["matrix"]
     t0, t1 = derived["window_utc"]
@@ -421,7 +364,6 @@ def emit_series(
 
 
 def _frame_alignment(frames_manifest: Path | None = None) -> dict[str, Any]:
-    """Frame i (i<96) starts at interval i; frame 97 is the end state."""
 
     n_frames = 97
     last_offset_seconds = 96 * INTERVAL_MINUTES * 60
@@ -451,9 +393,6 @@ def _frame_alignment(frames_manifest: Path | None = None) -> dict[str, Any]:
     }
 
 
-# ------------------------------------------------------------------------- CLI
-
-
 @app.command()
 def derive(
     out: Path = typer.Option(DEFAULT_OUT, help="forcing_series.json output path"),
@@ -462,7 +401,7 @@ def derive(
     factors_npz: Path | None = typer.Option(None, help="Override anchor-factor NPZ path"),
     skip_series_write: bool = typer.Option(False, help="--check-only derivation"),
 ) -> None:
-    """Re-derive the anchored forcing series, asserting the frozen identity."""
+    "Re-derive the anchored forcing series, asserting the frozen identity."
 
     repo_root = REPO_ROOT
     resolved_inputs = {
@@ -472,7 +411,6 @@ def derive(
         "factors_npz_override": str(factors_npz) if factors_npz else None,
         "skip_series_write": skip_series_write,
     }
-    # Rule-6 lifecycle: manifest written at RUN START, updated in place.
     start_payload = {
         "stage": "wf6_forcing_series_derivation",
         "status": "running",

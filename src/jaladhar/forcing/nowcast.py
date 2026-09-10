@@ -1,26 +1,10 @@
-"""Fail-closed IMD nowcast adapter.
-
-The frozen ``nowcast_input`` contract describes an IMD WFS warning product,
-but the repository's live ledger still marks N-3 (DWR/rainfall-nowcast
+"""The frozen ``nowcast_input`` contract describes an IMD WFS warning product,
 access) BLOCKED.  Consequently this module has no default network source.
-``ImdNowcastAdapter`` accepts an explicitly supplied fetcher or a captured
 source response, parses only the frozen contract fields, and raises when
-neither is available.  It never falls back to KSNDMC, IMERG, Open-Meteo,
-climatology, persistence, or generated rainfall.
-
-The successful path is deliberately strict:
-
-* only the district IMD WFS product is implemented; station geometry and
-  interpolation are not specified by the frozen contract and are refused;
-* categorical IMD bands are converted to incremental millimetres per interval
-  using the declared contract mapping, with the heavy value retained as a
-  lower bound in provenance rather than presented as a measured intensity;
-* all timestamps are aware UTC, and interval starts are wall-clock aligned;
-* the canonical grid is 3421 x 3515 cells (height x width), 10 m, EPSG:32643;
-* a response that ends before the requested window is truncated at ``vupto``.
-
-No live source is claimed by this module while N-3 remains blocked.
-"""
+interpolation are not specified by the frozen contract and are refused;
+using the declared contract mapping, with the heavy value retained as a
+lower bound in provenance rather than presented as a measured intensity;
+No live source is claimed by this module while N-3 remains blocked."""
 
 from __future__ import annotations
 
@@ -76,7 +60,6 @@ DISTRICT_PRODUCT = "IMD_WFS_NowcastWarningDistrict"
 STATION_PRODUCT = "IMD_WFS_NowcastWarningStation"
 DISTRICT_NAME = "BANGLORE URBAN"
 
-# These are the machine-readable declared assumptions frozen in
 # configs/contracts/nowcast_input.json, not measured rainfall intensities.
 INTENSITY_MAPPING: dict[str, dict[str, float | bool | None] | str] = {
     "light": {
@@ -107,7 +90,6 @@ SOURCE_CACHE_DECISIONS = {"captured", "cache_hit", "fetched"}
 
 
 def git_sha() -> str:
-    """Return the current revision for CLI diagnostics without requiring a run."""
 
     try:
         return subprocess.check_output(
@@ -129,7 +111,6 @@ def _load_config(config_path: Path) -> dict[str, Any]:
 
 
 def _configured_interval_minutes(config: Mapping[str, Any]) -> int | None:
-    """Read only the frozen nowcast cadence; never borrow a legacy mode value."""
 
     nowcast_input = config.get("nowcast_input")
     if not isinstance(nowcast_input, Mapping):
@@ -236,14 +217,10 @@ def _parse_validity_times(
     vupto: Any,
     update_time: datetime,
 ) -> tuple[datetime, datetime]:
-    """Convert IMD's naive IST HHMM values using the update date."""
 
     local_update = update_time.astimezone(IST)
     issue_local = _local_time_for_date(local_update.date(), toi, "toi")
-    # A warning issued after midnight can still be represented by a previous
-    # local-day HHMM.  This deterministic date adjustment avoids inventing a
     # backfilled rainfall interval; the source's validity fields remain the
-    # authority for the usable window.
     if issue_local > local_update:
         issue_local -= timedelta(days=1)
 
@@ -273,8 +250,6 @@ def _feature_properties(
     properties = feature.get("properties")
     if not isinstance(properties, Mapping):
         raise NowcastUnavailableError("IMD WFS feature has no properties object.")
-    # WFS metadata normally lives under GeoJSON properties.  A top-level value
-    # is accepted only for the fetch URL/update time because those are response
     # provenance, never rainfall data; all warning fields remain strict.
     if "fetch_url" not in properties and "fetch_url" in payload:
         merged = dict(properties)
@@ -301,14 +276,8 @@ def _validate_grid(grid: Grid) -> None:
 
 
 class ImdNowcastAdapter(RainfallAdapter):
-    """IMD WFS district-warning adapter with an explicit unavailable default.
-
-    ``fetcher`` is an integration seam for a verified source client.  It must
-    return a captured GeoJSON ``FeatureCollection``; this class does not create
-    a client, poll an unverified endpoint, or fill missing observations.
-    ``raw_response`` is equivalent for a caller that already fetched a source
-    response and wants the adapter to validate it.
-    """
+    """``fetcher`` is an integration seam for a verified source client.  It must
+    ``raw_response`` is equivalent for a caller that already fetched a source"""
 
     def __init__(
         self,
@@ -339,7 +308,6 @@ class ImdNowcastAdapter(RainfallAdapter):
         self._config_gaps = self._find_config_gaps()
 
         # -1 is the uncovered/dry sentinel. The only valid source-native cell
-        # remains district ID 0, so distinct_native_cells stays exactly one.
         self.native_cell_ids = np.full(CANONICAL_SHAPE, -1, dtype=np.int32)
         self.native_cell_ids.flags.writeable = False
 

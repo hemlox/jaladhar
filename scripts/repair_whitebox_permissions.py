@@ -1,11 +1,3 @@
-"""Repair Whitebox executable bits when its installer sees a path with spaces.
-
-The upstream ``whitebox`` package downloads its Linux binaries during installation.
-Some releases invoke ``chmod`` without quoting the install path, so a checkout such
-as ``.../Local Disk/...`` leaves the downloaded binaries non-executable.  This tool
-only repairs execute bits on Whitebox binaries; it does not download or modify data.
-"""
-
 from __future__ import annotations
 
 import importlib.util
@@ -19,7 +11,6 @@ app = typer.Typer(add_completion=False)
 
 
 def whitebox_package_dir() -> Path:
-    """Return the installed Whitebox package directory without importing it."""
     spec = importlib.util.find_spec("whitebox")
     if spec is None or spec.submodule_search_locations is None:
         raise RuntimeError("whitebox is not installed; run `uv pip install -e .` first")
@@ -27,7 +18,6 @@ def whitebox_package_dir() -> Path:
 
 
 def executable_targets(package_dir: Path) -> list[Path]:
-    """Return all Linux executables the package installer must mark executable."""
     targets = [
         package_dir / "whitebox_tools",
         package_dir / "WBT" / "whitebox_tools",
@@ -45,7 +35,6 @@ def executable_targets(package_dir: Path) -> list[Path]:
 
 
 def repair_permissions(package_dir: Path) -> list[Path]:
-    """Add execute bits to Whitebox binaries, returning targets that changed."""
     changed: list[Path] = []
     execute_bits = stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH
     for target in executable_targets(package_dir):
@@ -60,7 +49,6 @@ def repair_permissions(package_dir: Path) -> list[Path]:
 def main(
     check: bool = typer.Option(False, "--check", help="Report instead of changing permissions."),
 ) -> None:
-    """Repair and then execute the installed Whitebox CLI as the health check."""
     package_dir = whitebox_package_dir()
     targets = executable_targets(package_dir)
     if check:

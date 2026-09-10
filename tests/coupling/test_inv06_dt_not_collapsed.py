@@ -107,7 +107,6 @@ from jaladhar.solver.state import StaticFields, load_solver_config
 
 REPO = Path(__file__).resolve().parents[2]
 
-# This file's own declared-synthetic envelope.
 GRID = (64, 64)
 N_NODES = 8
 STORM_MM = 110.0
@@ -117,16 +116,15 @@ MAX_STEPS = 250
 MASS_CHECK_EVERY = 60
 
 
-# ---------------------------------------------------------------------------
-# Fixtures (builder STYLE from test_solver_hook.py; values THIS FILE'S OWN)
-# ---------------------------------------------------------------------------
-
-
 def _static64() -> StaticFields:
-    """Flat CLOSED domain, LIVE legacy drain prior (zeroing must matter)."""
     hh, ww = GRID
-    z = lambda *s: torch.zeros(*s, dtype=torch.float32)  # noqa: E731
-    f = lambda *s, v=0.0: torch.full((*s,), v, dtype=torch.float32)  # noqa: E731
+
+    def z(*s):
+        return torch.zeros(*s, dtype=torch.float32)
+
+    def f(*s, v=0.0):
+        return torch.full((*s,), v, dtype=torch.float32)
+
     return StaticFields(
         dz_x=z(hh, ww - 1),
         dz_y=z(hh - 1, ww),
@@ -134,7 +132,7 @@ def _static64() -> StaticFields:
         n_y=f(hh - 1, ww, v=0.028),
         c_x=torch.ones(hh, ww - 1, dtype=torch.float32),
         c_y=torch.ones(hh - 1, ww, dtype=torch.float32),
-        drain_cap_m_s=f(hh, ww, v=4.1e-6),  # live prior; guard (a) zeroes out-of-place
+        drain_cap_m_s=f(hh, ww, v=4.1e-6),
         infil_rate_m_s=z(hh, ww),
         edge_w_n=f(hh, v=0.028),
         edge_e_n=f(hh, v=0.028),
@@ -144,16 +142,14 @@ def _static64() -> StaticFields:
         edge_e_s=f(hh, v=1.3e-4),
         edge_n_s=f(ww, v=1.3e-4),
         edge_s_s=f(ww, v=1.3e-4),
-        edge_open=(0.0, 0.0, 0.0, 0.0),  # sealed micro-domain: boundary_out == 0
+        edge_open=(0.0, 0.0, 0.0, 0.0),
         shape=GRID,
     )
 
 
 def _chain8() -> object:
-    """8-node capacity-bearing chain down one column; terminal node is the
-    outfall. Cells sit in-board so every node stays inside the grid."""
     rows, cols = GRID
-    base_r, base_c = rows // 6, cols // 6  # 10, 10 -> nodes at rows 10..17
+    base_r, base_c = rows // 6, cols // 6
     cells = [(base_r + i, base_c) for i in range(N_NODES)]
     assert cells[-1][0] < rows and cells[-1][1] < cols
     nmap = torch.full((rows, cols), -1, dtype=torch.int32)
@@ -199,16 +195,8 @@ def _coupling_cfg(out_dir: Path):
 def _solver_cfg() -> dict:
     scfg = load_solver_config(REPO / "configs" / "solver.yaml", REPO)
     scfg = copy.deepcopy(scfg)
-    scfg["boundaries"]["mode"] = "closed"  # sealed synthetic micro-domain
+    scfg["boundaries"]["mode"] = "closed"
     return scfg
-
-
-# ---------------------------------------------------------------------------
-# The runner — shared by the pytest green tier AND the /tmp red-demo driver.
-# The jaladhar import is LAZY ON PURPOSE: under the red driver,
-# sys.path[0] points at the mutated /tmp package tree, so this import binds
-# to the MUTANT; under pytest it binds to the installed (real) package.
-# ---------------------------------------------------------------------------
 
 
 def run_and_assert_dt_not_collapsed(
@@ -223,7 +211,7 @@ def run_and_assert_dt_not_collapsed(
     defence) before K1's window matters — bypassing that cadence isolates
     invariant #6's breach-without-halt world (TestK1Halt's recipe). The green
     tier keeps the default cadence and exercises it."""
-    from jaladhar.coupling.solver_hook import simulate_coupled  # lazy — see above
+    from jaladhar.coupling.solver_hook import simulate_coupled
 
     out_dir = Path(out_dir)
     cfg = _coupling_cfg(out_dir)
@@ -238,22 +226,19 @@ def run_and_assert_dt_not_collapsed(
         duration_s=DURATION_S,
         max_steps=MAX_STEPS,
         mass_check_every=mass_check_every,
-        snapshot_every_s=None,  # fall through to cfg.outputs.write_every_s
+        snapshot_every_s=None,
         smoke=True,
     )
 
-    # --- realized manifest bytes (V1), never the return object alone --------
     man = json.loads(cfg.outputs.manifest.read_text())
     k1 = man["kill_thresholds"]["K1"]
     steps = int(k1["coupled_steps"])
     n_unc = int(k1["uncoupled_equivalent_steps_at_final_tau"])
     min_frac = float(k1["min_fraction_of_uncoupled"])
-    # Driver formula replicated VERBATIM (solver_hook: allowed = math.floor(
-    # 1.0 / cfg.dt_policy.min_fraction_of_uncoupled * n_unc)).
+
     allowed = math.floor(1.0 / min_frac * n_unc)
     led = res.ledger
 
-    # (2) K1 armed and quiet — the comparison genuinely ran, nothing halted.
     assert man["status"] == "completed", (
         f"INV06: expected a completed run, got status={man['status']!r} "
         f"(halt_reason={k1['halt_reason']!r})"
@@ -264,7 +249,6 @@ def run_and_assert_dt_not_collapsed(
     assert k1["uncoupled_twin"]["role"].startswith("K1 denominator")
     assert int(k1["uncoupled_twin"]["steps"]) >= 1
 
-    # (1) THE RATIO PROPERTY — the invariant itself, on realized fields.
     assert steps <= allowed, (
         f"INV06 RED: dt collapsed below {100 * min_frac:.0f}% of the uncoupled "
         f"schedule with NO halt — coupled_steps={steps}, uncoupled_equivalent="
@@ -273,8 +257,6 @@ def run_and_assert_dt_not_collapsed(
         f"K1.fired={k1['fired']}"
     )
 
-    # (3) §10.5 monitor RECORDED — result object and manifest agree, and the
-    # observation was non-vacuous (real exchange perturbed h_max at least once).
     md = man["indirect_cfl_monitor"]
     mon = res.cfl_monitor
     assert md["steps_observed"] == res.steps > 0
@@ -303,11 +285,6 @@ def run_and_assert_dt_not_collapsed(
         "captured_m3": led.captured_to_drains_m3,
         "returned_m3": led.surcharge_returned_m3,
     }
-
-
-# ---------------------------------------------------------------------------
-# Green tier
-# ---------------------------------------------------------------------------
 
 
 class TestInv06DtNotCollapsed:

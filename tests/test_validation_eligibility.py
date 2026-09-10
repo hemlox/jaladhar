@@ -1,8 +1,6 @@
 """Synthetic checks for Phase 3 ground-truth scoring eligibility.
-
 Scope: date eligibility and snap-distance rejection only. These checks do not
-claim that the realized September replay or road-network snapping is valid.
-"""
+claim that the realized September replay or road-network snapping is valid."""
 
 import numpy as np
 import pytest
@@ -45,12 +43,8 @@ def _point(point_id: str, observed_date: str) -> GroundTruthPoint:
 
 
 def test_event_selection_excludes_records_outside_replay_dates() -> None:
-    """If broken, an Aug 30 ID appears in the Sep 4--5 scoring input.
-
-    Scope: three synthetic dates spanning both boundaries. Red mutation
-    demonstrated: replacing the selector body with ``return list(points), []``
-    admitted GT_14 and failed the eligible-ID assertion.
-    """
+    """Scope: three synthetic dates spanning both boundaries. Red mutation
+    admitted GT_14 and failed the eligible-ID assertion."""
     points = [
         _point("GT_14", "2022-08-30"),
         _point("GT_START", "2022-09-04"),
@@ -72,12 +66,10 @@ def test_event_selection_excludes_records_outside_replay_dates() -> None:
 
 
 def test_snap_threshold_rejects_over_limit_with_explicit_reason(monkeypatch) -> None:
-    """If broken, a point beyond the configured distance gets a scoreable ID.
-
-    Scope: two synthetic projected points at 10 m and 11 m from one road cell.
+    """Scope: two synthetic projected points at 10 m and 11 m from one road cell.
     Red mutation demonstrated: changing ``> max_distance_m`` to ``>=`` rejects
-    the boundary point and fails this check.
-    """
+    the boundary point and fails this check."""
+
     class IdentityTransformer:
         def transform(self, x: float, y: float) -> tuple[float, float]:
             return x, y
@@ -106,11 +98,8 @@ def test_snap_threshold_rejects_over_limit_with_explicit_reason(monkeypatch) -> 
 
 
 def test_snap_threshold_is_resolved_from_config() -> None:
-    """If broken, changing YAML-equivalent input does not change the resolved limit.
-
-    Scope: startup resolution of all three scoring keys. Red mutation
-    demonstrated: returning a literal 110.0 fails the 7.5 m assertion.
-    """
+    """Scope: startup resolution of all three scoring keys. Red mutation
+    demonstrated: returning a literal 110.0 fails the 7.5 m assertion."""
     start, end, max_snap_distance_m = resolve_groundtruth_scoring_config(
         {
             "scoring_event_window_start": "2022-09-04",
@@ -124,10 +113,7 @@ def test_snap_threshold_is_resolved_from_config() -> None:
 
 
 def test_segment_points_csv_is_resolved_from_config(tmp_path) -> None:
-    """If broken, segment scoring silently returns to the old hardcoded CSV.
-
-    Scope: startup resolution only; no road or replay artifacts are loaded.
-    """
+    """Scope: startup resolution only; no road or replay artifacts are loaded."""
     cfg = {
         "groundtruth": {
             "scoring_event_window_start": "2022-09-04",
@@ -145,36 +131,20 @@ def test_segment_points_csv_is_resolved_from_config(tmp_path) -> None:
         _resolve_segment_groundtruth_config(cfg, tmp_path)
 
 
-def test_segment_preflight_aggregates_later_sar_and_terrain_keys(tmp_path) -> None:
-    """Missing late-use paths must fail before density computation or scoring."""
-    with pytest.raises(KeyError, match="pre_scene_tif"):
+def test_segment_preflight_requires_retained_inputs(tmp_path) -> None:
+    with pytest.raises(KeyError, match="segment_validation"):
         resolve_segment_validation_config(
             {
                 "groundtruth": {"road_segment_id_path": "roads.tif", "bbmp_kml_dir": "bbmp"},
-                "density_stratification": {"output_density_classes_path": "density.tif"},
-                "segment_validation": {
-                    "roads_segment_lookup_path": "roads.csv",
-                    "underpass_register_csv": "underpasses.csv",
-                },
-                "sar_water_classifier": {
-                    "flood_scene_tif": "flood.tif",
-                    "flood_calibration_xml": "flood.xml",
-                    "basin_class_path": "basin.tif",
-                },
             },
             tmp_path,
         )
 
 
 def test_point_scoring_snap_distance_uses_realized_road_cells() -> None:
-    """If broken, the point scorer's distance is independent of road geometry.
-
-    Scope: a synthetic 3x3, 10 m grid with one positive road cell.
-    """
+    """Scope: a synthetic 3x3, 10 m grid with one positive road cell."""
     transform = rasterio.transform.from_origin(0.0, 30.0, 10.0, 10.0)
     roads = np.zeros((3, 3), dtype=np.int32)
     roads[1, 1] = 9
-    distances = groundtruth_road_snap_distances(
-        [(15.0, 15.0), (25.0, 15.0)], roads, transform
-    )
+    distances = groundtruth_road_snap_distances([(15.0, 15.0), (25.0, 15.0)], roads, transform)
     assert distances.tolist() == [0.0, 10.0]

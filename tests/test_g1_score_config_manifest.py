@@ -1,18 +1,10 @@
 """F4 fix verification — G1 scorer START manifest carries the exclusion block.
-
 Scope statement (V7): fixture-scale, 2x2 rasters, one segment, no scoring
-math exercised. The run under test deliberately FAILS immediately after the
 START manifest is written (the depth product is a malformed stand-in), which
 is exactly the artifact the finding targets: ``manifest.json``'s
-``resolved_config`` as written at run start, BEFORE any scoring happens.
-
-Observable if F4 were broken (independent of the code it checks): the start
 manifest's resolved_config would lack basin_class_raster /
-excluded_basin_classes / exclusion_mode even though exclusion flags were
 passed — the defect realized in runs/wf3_replay2_gates_v7_excluded/manifest.json.
-The no-flags companion pins backward compatibility: absent flags => manifest
-schema unchanged (no exclusion keys).
-"""
+The no-flags companion pins backward compatibility: absent flags => manifest"""
 
 from __future__ import annotations
 
@@ -41,7 +33,6 @@ def _load_scorer_module():
 
 
 def _fixture_repo(tmp_path: Path) -> tuple[Path, dict[str, Path]]:
-    """Minimal inputs that pass aggregated pre-flight and reach the product load."""
 
     repo = tmp_path / "repo"
     transform = from_origin(500000.0, 1450000.0, 10.0, 10.0)
@@ -63,7 +54,6 @@ def _fixture_repo(tmp_path: Path) -> tuple[Path, dict[str, Path]]:
     with rasterio.open(road_path, "w", dtype="int32", **profile) as target:
         target.write(np.array([[[1, 0], [0, 0]]], dtype=np.int32))
     with rasterio.open(basin_path, "w", dtype="int32", **profile) as target:
-        # class 1 touches segment 1's only cell; classes 2/3 are elsewhere
         target.write(np.array([[[1, 2], [2, 3]]], dtype=np.int32))
 
     lookup = repo / "data/test/lookup.csv"
@@ -86,8 +76,6 @@ def _fixture_repo(tmp_path: Path) -> tuple[Path, dict[str, Path]]:
         ),
         encoding="utf-8",
     )
-    # Malformed product stand-in: readable CSV, missing every required column,
-    # so load_depth_product raises DepthProductError right AFTER the START
     # manifest is written — the seeded failure this test observes around.
     product = repo / "runs/product/products/segment_status.csv"
     product.parent.mkdir(parents=True, exist_ok=True)
@@ -155,7 +143,7 @@ def test_start_manifest_resolved_config_carries_exclusion_block_iff_flags_passed
 
     output_dir = _run_scorer(module, repo, paths, exclude=exclude)
     manifest = json.loads((output_dir / "manifest.json").read_text(encoding="utf-8"))
-    assert manifest["status"] == "failed"  # seeded failure AFTER the start write
+    assert manifest["status"] == "failed"
     resolved = manifest["resolved_config"]
 
     if exclude:
@@ -171,7 +159,6 @@ def test_start_manifest_resolved_config_carries_exclusion_block_iff_flags_passed
 def test_missing_basin_raster_fails_aggregated_before_output_dir_exists(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Rule-7 style: exclusion flags without the basin raster fail at pre-flight."""
 
     module = _load_scorer_module()
     monkeypatch.setattr(

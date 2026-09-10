@@ -20,7 +20,6 @@ class DepthProductContractError(ValueError):
 
 @dataclass(frozen=True)
 class DepthProductRequirements:
-    """Machine-resolved constants from ``depth_product.json``."""
 
     version: str
     depth_convention: str
@@ -112,7 +111,6 @@ def resolve_repo_file(repo_root: Path, value: Any, field: str) -> Path:
 
 
 def resolve_repo_file_dir(repo_root: Path, value: Any) -> Path:
-    """Like ``resolve_repo_file`` but for an existing repository-relative directory."""
 
     field = "depth_raster_dir"
     if not isinstance(value, str) or not value.strip():
@@ -187,8 +185,6 @@ def validate_uncoupled_baseline_admission(
     admission = _load_json(admission_path, "uncoupled-baseline admission")
     source = _load_json(source_manifest_path, "upstream depth manifest")
     # The realized historical manifests record the event window at top level as
-    # event_window.{start,end}; an explicit nested event block is accepted for
-    # forward-compatible producers.  Absence of either is a hard error.
     source_event = source.get("event")
     if not isinstance(source_event, dict):
         candidate = source.get("event_window")
@@ -262,11 +258,7 @@ def validate_frame_series_admission(
     repo_root: Path,
 ) -> dict[str, Any]:
     """Bind a retrospective frame-series admission to the realized raster bytes.
-
-    Every declared frame must exist with the declared offset and SHA-256, the
-    directory must contain no undeclared series files, the cadence must be
-    uniform, and the upstream solver manifest hash must match realized bytes.
-    """
+    uniform, and the upstream solver manifest hash must match realized bytes."""
 
     admission_path = admission_path.resolve()
     repo_root = repo_root.resolve()
@@ -375,7 +367,6 @@ def _find_key(payload: Any, key: str) -> Any | None:
 def _assert_coupled_depth_output_binding(
     upstream: dict[str, Any], depth_path: Path, manifest: dict[str, Any]
 ) -> None:
-    """Verify the coupled input is the upstream post-couple output, not a relabelled raster."""
 
     output = upstream.get("depth_raster_output")
     if not isinstance(output, dict):
@@ -442,7 +433,6 @@ def validate_product_manifest(
     if manifest.get("git_tree_clean") is not True:
         # WF-6 U0a: a dirty tree may be admitted only when the manifest RECORDS it
         # (realized porcelain paths + reason) instead of laundering it as clean.
-        # Default behaviour without an explicit admission is unchanged and strict.
         admission = manifest.get("source_tree_dirty_admission")
         admitted = (
             isinstance(admission, dict)
@@ -480,8 +470,6 @@ def validate_product_manifest(
         raise DepthProductContractError(
             f"manifest no-data count {no_data_expected} differs from rows {realized_no_data}"
         )
-    # WF-6 U0a: storage-water exclusion moves raster-present-but-unmodelable
-    # segments into no_data.  The frozen total still binds, extended by a
     # manifest-declared, measured delta that must reconcile exactly.
     exclusion = manifest.get("storage_water_exclusion")
     if exclusion is None:

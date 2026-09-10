@@ -1,5 +1,3 @@
-"""Deterministic CPU-only contract tests for the WF-3 product shells."""
-
 from __future__ import annotations
 
 import csv
@@ -42,123 +40,81 @@ from jaladhar.validation.depth_product_contract import (
     validate_uncoupled_baseline_admission,
 )
 from jaladhar.web.app import DashboardError, DashboardStore
+from tests.helpers.fixture_products import (
+    fixture_repo as _fixture_repo,
+)
+from tests.helpers.fixture_products import (
+    frame_series_repo as _frame_series_repo,
+)
+from tests.helpers.fixture_products import (
+    write_json as _write_json,
+)
 
 
-def _write_json(path: Path, payload: Any) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload), encoding="utf-8")
+def _score_module(name: str):
+    script = Path(__file__).resolve().parents[1] / "scripts/score_g1.py"
+    spec = importlib.util.spec_from_file_location(name, script)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
 
 
-def _fixture_repo(tmp_path: Path) -> tuple[Path, Path, dict[str, Any]]:
-    """Create schema-only no-data fixtures; no rainfall/depth/route state is invented."""
+def _load_product(repo: Path, product_dir: Path):
+    return load_depth_product(
+        product_dir / "segment_status.csv",
+        repo_root=repo,
+        lookup_path=repo / "data/interim/terrain/roads_segment_lookup.csv",
+        contract_path=repo / "configs/contracts/depth_product.json",
+    )
 
-    repo = tmp_path / "repo"
-    contract = {
-        "version": "test-frozen",
-        "schema_fields": {"flood_status": "PRIMARY_RULE D=0.15 m F=20% N=3-contiguous-cells"},
-        "manifest_guarantees_producer_writes": [
-            "depth_convention 'PRIMARY_RULE D0.15 F0.20 N3' + grid identity EPSG:32643 2x2 10m",
-            "band_convention 'min_max_over_canonical_cells_floor_cm'",
-        ],
-        "no_data_segments_measured_split": {
-            "total_canonical_absent": 1,
-            "buffered_margin_only": 1,
-            "fully_clipped_no_cells_anywhere": 0,
-        },
-    }
-    contract_path = repo / "configs/contracts/depth_product.json"
-    _write_json(contract_path, contract)
 
-    lookup = repo / "data/interim/terrain/roads_segment_lookup.csv"
-    lookup.parent.mkdir(parents=True, exist_ok=True)
+def _demo_common():
+    demo_dir = Path(__file__).resolve().parents[1] / "scripts/demo"
+    sys.path.insert(0, str(demo_dir))
+    try:
+        import _demo_common
+    finally:
+        sys.path.remove(str(demo_dir))
+    return _demo_common
+
+
+def _launch_demo():
+    demo_dir = Path(__file__).resolve().parents[1] / "scripts/demo"
+    sys.path.insert(0, str(demo_dir))
+    try:
+        import launch_demo
+    finally:
+        sys.path.remove(str(demo_dir))
+    return launch_demo
+
+
+def _two_node_network(tmp_path: Path, payload: bytes, *, with_metadata: bool = False):
+    graph = nx.MultiGraph()
+    graph.add_edge(1, 2, segment_id=1, length_m=5.0)
+    source = tmp_path / "roads.gpkg"
+    lookup = tmp_path / "lookup.csv"
+    source.write_bytes(payload)
     lookup.write_text("segment_id\n1\n", encoding="utf-8")
-    inputs = {
-        "depth_raster": repo / "data/test/depth.bin",
-        "road_raster": repo / "data/test/roads.bin",
-        "lookup_csv": lookup,
-        "buffered_road_raster": repo / "data/test/roads_buffered.bin",
-    }
-    for name, path in inputs.items():
-        if name != "lookup_csv":
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_bytes(name.encode("ascii"))
-
-    upstream = repo / "runs/upstream/manifest.json"
-    _write_json(
-        upstream,
-        {"status": "completed", "git_sha": "upstream-sha", "coupling_enabled": False},
+    return RoadNetwork(
+        graph=graph,
+        metadata={1: SegmentMetadata(1, 101, "primary", "road")} if with_metadata else {},
+        node_coordinates={1: (0.0, 0.0), 2: (5.0, 0.0)},
+        component_by_node={1: 1, 2: 1},
+        source_path=source,
+        lookup_path=lookup,
+        crs=CRS.from_epsg(32643),
+        edge_part_count=1,
     )
-    inputs["depth_source_manifest"] = upstream
 
-    run_dir = repo / "runs/product"
-    manifest_path = run_dir / "manifest.json"
-    row = {
-        "run_id": "product",
-        "segment_id": 1,
-        "band_low_cm": 0,
-        "band_high_cm": 0,
-        "confidence": "no_data",
-        "flood_status": "unknown",
-        "valid_time_utc": "2026-08-24T00:00:00+00:00",
-        "issue_time_utc": "2026-08-24T00:00:00+00:00",
-        "forecast_lead_minutes": 0,
-        "source_manifest_path": "runs/product/manifest.json",
-    }
-    relative_inputs = {name: path.relative_to(repo).as_posix() for name, path in inputs.items()}
-    manifest = {
-        "stage": "fixture_contract_reader",
-        "status": "completed",
-        "git_sha": "fixture-sha",
-        "git_tree_clean": True,
-        "run_id": "product",
-        "n_segments_expected": 1,
-        "n_no_data_segments": 1,
-        "no_data_segments_measured_split": {
-            "buffered_margin_only": 1,
-            "fully_clipped_no_cells_anywhere": 0,
-        },
-        "depth_convention": "PRIMARY_RULE D0.15 F0.20 N3",
-        "band_convention": "min_max_over_canonical_cells_floor_cm",
-        "coupling_enabled": False,
-        "depth_field_state": "uncoupled_source_depth",
-        "depth_source_manifest_path": "runs/upstream/manifest.json",
-        "surcharge_events_path": None,
-        "grid_identity": {
-            "shape": [2, 2],
-            "crs": "EPSG:32643",
-            "resolution_m": 10.0,
-        },
-        "input_paths": relative_inputs,
-        "input_sha256": {name: sha256_file(path) for name, path in inputs.items()},
-        "outputs": {
-            "csv": "runs/product/products/segment_status.csv",
-            "json": "runs/product/products/segment_status.json",
-        },
-    }
-    product_dir = run_dir / "products"
-    _write_json(
-        product_dir / "segment_status.json",
-        {
-            "schema": "depth_product/test-frozen",
-            "manifest_path": "runs/product/manifest.json",
-            "rows": [row],
-        },
-    )
-    product_dir.mkdir(parents=True, exist_ok=True)
-    with (product_dir / "segment_status.csv").open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=list(row))
-        writer.writeheader()
-        writer.writerow(row)
-    manifest["output_sha256"] = {
-        "csv": sha256_file(product_dir / "segment_status.csv"),
-        "json": sha256_file(product_dir / "segment_status.json"),
-    }
-    _write_json(manifest_path, manifest)
-    return repo, product_dir, row
+
+def _unavailable_policies() -> VehiclePolicyCatalog:
+    return VehiclePolicyCatalog(path=None, policies={}, error="fixture policy unavailable")
 
 
 def test_dashboard_treats_csv_json_as_one_twin(tmp_path: Path) -> None:
-    """Mutation target: loading each twin as a snapshot would duplicate lead zero."""
+    "Mutation target: loading each twin as a snapshot would duplicate lead zero."
 
     repo, product_dir, _row = _fixture_repo(tmp_path)
     store = DashboardStore(repo_root=repo, product=product_dir)
@@ -171,7 +127,6 @@ def test_dashboard_treats_csv_json_as_one_twin(tmp_path: Path) -> None:
 def test_segment_producer_writes_consumer_compatible_manifest(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The producer's completed fixture output loads through the independent routing consumer."""
 
     repo, _product_dir, _row = _fixture_repo(tmp_path)
     upstream = repo / "runs/upstream/manifest.json"
@@ -233,17 +188,14 @@ def test_segment_producer_writes_consumer_compatible_manifest(
     assert result["manifest"]["run_id"] == "product-built"
     assert result["manifest"]["n_no_data_segments"] == 1
     product = load_depth_product(
-        result["csv_path"],
-        repo_root=repo,
-        lookup_path=lookup,
-        contract_path=contract_path,
+        result["csv_path"], repo_root=repo, lookup_path=lookup, contract_path=contract_path
     )
     assert product.run_id == "product-built"
     assert product.rows[2].flood_status == "unknown"
 
 
 def test_dashboard_rejects_twin_disagreement(tmp_path: Path) -> None:
-    """V5 red: a valid but different JSON twin must redden the pair check."""
+    "V5 red: a valid but different JSON twin must redden the pair check."
 
     repo, product_dir, row = _fixture_repo(tmp_path)
     changed = {**row, "issue_time_utc": "2026-08-24T00:01:00+00:00"}
@@ -260,7 +212,7 @@ def test_dashboard_rejects_twin_disagreement(tmp_path: Path) -> None:
 
 
 def test_routing_rejects_incomplete_manifest_and_lead_181(tmp_path: Path) -> None:
-    """V5 red: missing Git provenance and an over-horizon lead both fail at load."""
+    "V5 red: missing Git provenance and an over-horizon lead both fail at load."
 
     repo, product_dir, row = _fixture_repo(tmp_path)
     manifest_path = repo / "runs/product/manifest.json"
@@ -268,12 +220,7 @@ def test_routing_rejects_incomplete_manifest_and_lead_181(tmp_path: Path) -> Non
     manifest.pop("git_sha")
     _write_json(manifest_path, manifest)
     with pytest.raises(DepthProductError, match="git_sha"):
-        load_depth_product(
-            product_dir / "segment_status.csv",
-            repo_root=repo,
-            lookup_path=repo / "data/interim/terrain/roads_segment_lookup.csv",
-            contract_path=repo / "configs/contracts/depth_product.json",
-        )
+        _load_product(repo, product_dir)
 
     manifest["git_sha"] = "fixture-sha"
     _write_json(manifest_path, manifest)
@@ -283,24 +230,16 @@ def test_routing_rejects_incomplete_manifest_and_lead_181(tmp_path: Path) -> Non
         writer.writeheader()
         writer.writerow(row)
     with pytest.raises(DepthProductError, match="0-180"):
-        load_depth_product(
-            product_dir / "segment_status.csv",
-            repo_root=repo,
-            lookup_path=repo / "data/interim/terrain/roads_segment_lookup.csv",
-            contract_path=repo / "configs/contracts/depth_product.json",
-        )
+        _load_product(repo, product_dir)
 
 
 def test_demo_numeric_provenance_does_not_inherit_from_ancestor(tmp_path: Path) -> None:
-    """V5 red: an arbitrary descendant number cannot borrow a root manifest path."""
+    "V5 red: an arbitrary descendant number cannot borrow a root manifest path."
 
     repo, _product_dir, _row = _fixture_repo(tmp_path)
-    demo_dir = Path(__file__).resolve().parents[1] / "scripts/demo"
-    sys.path.insert(0, str(demo_dir))
-    try:
-        from _demo_common import DemoError, verify_json_number_provenance
-    finally:
-        sys.path.remove(str(demo_dir))
+    demo_common = _demo_common()
+    DemoError = demo_common.DemoError
+    verify_json_number_provenance = demo_common.verify_json_number_provenance
 
     manifest = repo / "runs/product/manifest.json"
     payload = {
@@ -316,29 +255,18 @@ def test_demo_numeric_provenance_does_not_inherit_from_ancestor(tmp_path: Path) 
 
 
 def test_demo_http_success_is_not_readiness() -> None:
-    """V5 red: a 200 health payload with not_ready state must block launch."""
+    "V5 red: a 200 health payload with not_ready state must block launch."
 
-    demo_dir = Path(__file__).resolve().parents[1] / "scripts/demo"
-    sys.path.insert(0, str(demo_dir))
-    try:
-        from _demo_common import DemoError
-        from launch_demo import _require_ready_api_health
-    finally:
-        sys.path.remove(str(demo_dir))
+    DemoError = _demo_common().DemoError
+    _require_ready_api_health = _launch_demo()._require_ready_api_health
 
     with pytest.raises(DemoError, match="status='not_ready'"):
         _require_ready_api_health({"status": "not_ready"})
 
 
 def test_g1_null_is_spatial_and_point_scoped() -> None:
-    """A two-point pattern yields a point denominator and named spatial translation null."""
 
-    script = Path(__file__).resolve().parents[1] / "scripts/score_g1.py"
-    spec = importlib.util.spec_from_file_location("wf3_score_g1", script)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
+    module = _score_module("wf3_score_g1")
     road_xy = np.array([[0.0, 0.0], [10.0, 0.0], [0.0, 10.0], [10.0, 10.0]])
     score = module._spatial_null_score(
         flooded_by_id={1: True, 2: False},
@@ -361,7 +289,7 @@ def test_g1_null_is_spatial_and_point_scoped() -> None:
 
 
 def test_product_manifest_refuses_dirty_source_tree() -> None:
-    """V5 red: dirty provenance must refuse instead of producing a non-reproducible SHA."""
+    "V5 red: dirty provenance must refuse instead of producing a non-reproducible SHA."
 
     original = getattr(segment_status, "require_clean_git", None)
     try:
@@ -378,7 +306,7 @@ def test_product_manifest_refuses_dirty_source_tree() -> None:
 
 
 def test_manifest_config_paths_are_repository_relative() -> None:
-    """V5 target: a clean-mirror run must not embed that mirror's absolute root."""
+    "V5 target: a clean-mirror run must not embed that mirror's absolute root."
 
     value = {
         "depth": segment_status.REPO / "runs/upstream/depth.tif",
@@ -392,7 +320,7 @@ def test_manifest_config_paths_are_repository_relative() -> None:
 
 
 def test_consumer_rejects_dirty_product_manifest(tmp_path: Path) -> None:
-    """V5 red: a completed manifest cannot launder a dirty source tree."""
+    "V5 red: a completed manifest cannot launder a dirty source tree."
 
     repo, product_dir, _row = _fixture_repo(tmp_path)
     manifest_path = repo / "runs/product/manifest.json"
@@ -401,16 +329,11 @@ def test_consumer_rejects_dirty_product_manifest(tmp_path: Path) -> None:
     _write_json(manifest_path, manifest)
 
     with pytest.raises(DepthProductError, match="git_tree_clean"):
-        load_depth_product(
-            product_dir / "segment_status.csv",
-            repo_root=repo,
-            lookup_path=repo / "data/interim/terrain/roads_segment_lookup.csv",
-            contract_path=repo / "configs/contracts/depth_product.json",
-        )
+        _load_product(repo, product_dir)
 
 
 def test_product_bytes_are_bound_to_manifest_hashes(tmp_path: Path) -> None:
-    """V5 red: coordinated twin edits after completion must redden an immutable hash."""
+    "V5 red: coordinated twin edits after completion must redden an immutable hash."
 
     repo, product_dir, row = _fixture_repo(tmp_path)
     changed = {**row, "issue_time_utc": "2026-08-24T00:01:00+00:00"}
@@ -428,16 +351,11 @@ def test_product_bytes_are_bound_to_manifest_hashes(tmp_path: Path) -> None:
         writer.writerow(changed)
 
     with pytest.raises(DepthProductError, match="output_sha256"):
-        load_depth_product(
-            product_dir / "segment_status.csv",
-            repo_root=repo,
-            lookup_path=repo / "data/interim/terrain/roads_segment_lookup.csv",
-            contract_path=repo / "configs/contracts/depth_product.json",
-        )
+        _load_product(repo, product_dir)
 
 
 def test_product_manifest_must_live_at_runs_run_id(tmp_path: Path) -> None:
-    """V5 red: a same-named directory outside runs/ cannot satisfy the frozen path."""
+    "V5 red: a same-named directory outside runs/ cannot satisfy the frozen path."
 
     repo, _product_dir, row = _fixture_repo(tmp_path)
     manifest = json.loads((repo / "runs/product/manifest.json").read_text(encoding="utf-8"))
@@ -455,7 +373,7 @@ def test_product_manifest_must_live_at_runs_run_id(tmp_path: Path) -> None:
 
 
 def test_coupled_product_requires_upstream_depth_output_binding(tmp_path: Path) -> None:
-    """V5 red: coupling declarations cannot relabel an unrelated depth raster."""
+    "V5 red: coupling declarations cannot relabel an unrelated depth raster."
 
     repo, product_dir, _row = _fixture_repo(tmp_path)
     upstream_path = repo / "runs/upstream/manifest.json"
@@ -497,7 +415,7 @@ def test_coupled_product_requires_upstream_depth_output_binding(tmp_path: Path) 
 
 
 def test_dashboard_rejects_nonuniform_snapshot_timestamps(tmp_path: Path) -> None:
-    """V5 red: snapshot-level metadata cannot come from an arbitrary first row."""
+    "V5 red: snapshot-level metadata cannot come from an arbitrary first row."
 
     repo, product_dir, row = _fixture_repo(tmp_path)
     lookup = repo / "data/interim/terrain/roads_segment_lookup.csv"
@@ -537,15 +455,10 @@ def test_dashboard_rejects_nonuniform_snapshot_timestamps(tmp_path: Path) -> Non
 def test_demo_rejects_csv_json_value_disagreement(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """V5 red: matching IDs and manifest paths do not prove twin value equality."""
+    "V5 red: matching IDs and manifest paths do not prove twin value equality."
 
     repo, product_dir, row = _fixture_repo(tmp_path)
-    demo_dir = Path(__file__).resolve().parents[1] / "scripts/demo"
-    sys.path.insert(0, str(demo_dir))
-    try:
-        import _demo_common as demo_common
-    finally:
-        sys.path.remove(str(demo_dir))
+    demo_common = _demo_common()
     monkeypatch.setattr(demo_common, "REPO_ROOT", repo)
     monkeypatch.setattr(demo_common, "RUNS_ROOT", repo / "runs")
     monkeypatch.setattr(
@@ -566,22 +479,17 @@ def test_demo_rejects_csv_json_value_disagreement(
 
 
 def test_dashboard_http_success_is_not_readiness() -> None:
-    """V5 red: an HTTP-successful dashboard empty state must block demo launch."""
+    "V5 red: an HTTP-successful dashboard empty state must block demo launch."
 
-    demo_dir = Path(__file__).resolve().parents[1] / "scripts/demo"
-    sys.path.insert(0, str(demo_dir))
-    try:
-        from _demo_common import DemoError
-        from launch_demo import _require_ready_dashboard_state
-    finally:
-        sys.path.remove(str(demo_dir))
+    DemoError = _demo_common().DemoError
+    _require_ready_dashboard_state = _launch_demo()._require_ready_dashboard_state
 
     with pytest.raises(DemoError, match="status='empty'"):
         _require_ready_dashboard_state({"status": "empty"})
 
 
 def test_route_coordinate_snap_has_required_limit(tmp_path: Path) -> None:
-    """V5 red: a distant coordinate must be refused rather than snapped citywide."""
+    "V5 red: a distant coordinate must be refused rather than snapped citywide."
 
     source = tmp_path / "roads.gpkg"
     lookup = tmp_path / "lookup.csv"
@@ -603,7 +511,7 @@ def test_route_coordinate_snap_has_required_limit(tmp_path: Path) -> None:
 
 
 def test_vehicle_policy_requires_local_hashed_source_evidence(tmp_path: Path) -> None:
-    """V5 red: citation strings alone cannot make a threshold verified evidence."""
+    "V5 red: citation strings alone cannot make a threshold verified evidence."
 
     policy_path = tmp_path / "data/curation/policy.json"
     _write_json(
@@ -623,14 +531,9 @@ def test_vehicle_policy_requires_local_hashed_source_evidence(tmp_path: Path) ->
 
 
 def test_g1_reduced_point_scope_cannot_pass() -> None:
-    """V5 red: a green metric over 398 eligible points cannot close a 399-point gate."""
+    "V5 red: a green metric over 398 eligible points cannot close a 399-point gate."
 
-    script = Path(__file__).resolve().parents[1] / "scripts/score_g1.py"
-    spec = importlib.util.spec_from_file_location("wf3_score_g1_scope", script)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
+    module = _score_module("wf3_score_g1_scope")
 
     verdict, reason = module._gate_verdict(
         {"fixed_denominator_points": 398, "hit_rate": 0.99, "null": {"lift": 9.0}},
@@ -643,14 +546,9 @@ def test_g1_reduced_point_scope_cannot_pass() -> None:
 
 
 def test_g1_null_applies_same_snap_limit_and_fixed_denominator() -> None:
-    """V5 red: dropping far null points changes the denominator and inflates null rates."""
+    "V5 red: dropping far null points changes the denominator and inflates null rates."
 
-    script = Path(__file__).resolve().parents[1] / "scripts/score_g1.py"
-    spec = importlib.util.spec_from_file_location("wf3_score_g1_snap", script)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
+    module = _score_module("wf3_score_g1_snap")
 
     class AlwaysFarTree:
         data = np.array([[0.0, 0.0], [10.0, 10.0]])
@@ -682,15 +580,10 @@ def test_g1_null_applies_same_snap_limit_and_fixed_denominator() -> None:
 
 
 def test_g1_primary_status_mismatch_is_owner_blocker(tmp_path: Path) -> None:
-    """V5 red: primary status may not diverge from the product/UI without adjudication."""
+    "V5 red: primary status may not diverge from the product/UI without adjudication."
 
     repo, product_dir, _row = _fixture_repo(tmp_path)
-    product = load_depth_product(
-        product_dir / "segment_status.csv",
-        repo_root=repo,
-        lookup_path=repo / "data/interim/terrain/roads_segment_lookup.csv",
-        contract_path=repo / "configs/contracts/depth_product.json",
-    )
+    product = _load_product(repo, product_dir)
     frame = pd.DataFrame(
         [
             {
@@ -702,29 +595,15 @@ def test_g1_primary_status_mismatch_is_owner_blocker(tmp_path: Path) -> None:
             }
         ]
     )
-    script = Path(__file__).resolve().parents[1] / "scripts/score_g1.py"
-    spec = importlib.util.spec_from_file_location("wf3_score_g1_convention", script)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
+    module = _score_module("wf3_score_g1_convention")
 
     with pytest.raises(module.G1ScoringError, match="owner adjudication"):
         module._assert_product_matches_frame(product, frame, convention="local_max_3x3")
 
 
 def test_g3_reports_local_max_and_exact_cell_as_distinct_observables() -> None:
-    """V5 red: reusing one sampled depth for both conventions hides disagreement.
-
-    Scope: one strict row on a 3x3 field. The containing cell is in band while
-    one neighbor is above it, so exact-cell must count WITHIN and local-max ABOVE.
-    """
-    script = Path(__file__).resolve().parents[1] / "scripts/score_g1.py"
-    spec = importlib.util.spec_from_file_location("wf3_score_g3_conventions", script)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
+    "V5 red: reusing one sampled depth for both conventions hides disagreement. Scope: one strict row on a 3x3 field. The containing cell is in band while one neighbor is above it, so exact-cell must count WITHIN and local-max ABOVE."  # noqa: E501
+    module = _score_module("wf3_score_g3_conventions")
     point = module.StrictDepthPoint(
         point_id="GT_FIXTURE",
         location_name="fixture",
@@ -768,7 +647,7 @@ def test_g3_reports_local_max_and_exact_cell_as_distinct_observables() -> None:
 
 
 def test_dashboard_real_payloads_pass_strict_numeric_provenance(tmp_path: Path) -> None:
-    """V5 invariant: nested manifest numbers must own their provenance explicitly."""
+    "V5 invariant: nested manifest numbers must own their provenance explicitly."
 
     repo, product_dir, _row = _fixture_repo(tmp_path)
     store = DashboardStore(repo_root=repo, product=product_dir)
@@ -802,32 +681,10 @@ def test_dashboard_real_payloads_pass_strict_numeric_provenance(tmp_path: Path) 
 def test_routing_requires_server_snap_ceiling_and_rejects_caller_escalation(
     tmp_path: Path,
 ) -> None:
-    """V5 invariant: the caller cannot define its own citywide snap policy."""
+    "V5 invariant: the caller cannot define its own citywide snap policy."
 
-    graph = nx.MultiGraph()
-    graph.add_edge(1, 2, segment_id=1, length_m=5.0)
-    source = tmp_path / "roads.gpkg"
-    lookup = tmp_path / "lookup.csv"
-    source.write_bytes(b"route-fixture")
-    lookup.write_text("segment_id\n1\n", encoding="utf-8")
-    network = RoadNetwork(
-        graph=graph,
-        metadata={1: SegmentMetadata(1, 101, "primary", "road")},
-        node_coordinates={1: (0.0, 0.0), 2: (5.0, 0.0)},
-        component_by_node={1: 1, 2: 1},
-        source_path=source,
-        lookup_path=lookup,
-        crs=CRS.from_epsg(32643),
-        edge_part_count=1,
-    )
-    unavailable = VehiclePolicyCatalog(
-        path=None,
-        policies={},
-        error="fixture policy unavailable",
-        source_sha256=None,
-        evidence_path=None,
-        evidence_sha256=None,
-    )
+    network = _two_node_network(tmp_path, b"route-fixture", with_metadata=True)
+    unavailable = _unavailable_policies()
     service = RoutingService(network, None, "no product", unavailable, repo_root=tmp_path)
 
     assert service.health()["snap_policy"]["status"] == "unavailable_owner_gate"
@@ -844,7 +701,7 @@ def test_routing_requires_server_snap_ceiling_and_rejects_caller_escalation(
 
 
 def test_route_response_uses_relative_multi_source_provenance(tmp_path: Path) -> None:
-    """V5 red input: an absolute road path must redden the route-specific provenance check."""
+    "V5 red input: an absolute road path must redden the route-specific provenance check."
 
     repo, product_dir, row = _fixture_repo(tmp_path)
     road_path = repo / "data/interim/terrain/roads.gpkg"
@@ -906,12 +763,9 @@ def test_route_response_uses_relative_multi_source_provenance(tmp_path: Path) ->
         "avoided_segments": [],
         "route": None,
     }
-    demo_dir = Path(__file__).resolve().parents[1] / "scripts/demo"
-    sys.path.insert(0, str(demo_dir))
-    try:
-        from _demo_common import DemoError, verify_route_response_provenance
-    finally:
-        sys.path.remove(str(demo_dir))
+    demo_common = _demo_common()
+    DemoError = demo_common.DemoError
+    verify_route_response_provenance = demo_common.verify_route_response_provenance
 
     count = verify_route_response_provenance(
         payload,
@@ -938,7 +792,7 @@ def test_route_response_uses_relative_multi_source_provenance(tmp_path: Path) ->
 
 
 def test_road_graph_path_success_and_disconnection_are_distinct(tmp_path: Path) -> None:
-    """Fixture scope: one 3-node component exercises safe and blocked path observables."""
+    "Fixture scope: one 3-node component exercises safe and blocked path observables."
 
     graph = nx.MultiGraph()
     graph.add_edge(1, 2, segment_id=1, length_m=5.0)
@@ -967,12 +821,7 @@ def test_road_graph_path_success_and_disconnection_are_distinct(tmp_path: Path) 
 def test_routing_service_returns_no_safe_route_instead_of_flooded_baseline(
     tmp_path: Path,
 ) -> None:
-    """V5 red: using the baseline path after safe-path failure returns water-crossing edges.
-
-    Observable if broken: a same-component request whose only two edges exceed
-    the cited vehicle limit returns ``status=ok`` or a non-null route. Scope:
-    one three-node component with every connecting segment blocked.
-    """
+    "V5 red: using the baseline path after safe-path failure returns water-crossing edges. Observable if broken: a same-component request whose only two edges exceed the cited vehicle limit returns ``status=ok`` or a non-null route. Scope: one three-node component with every connecting segment blocked."  # noqa: E501
     repo = tmp_path / "repo"
     road_path = repo / "data/interim/terrain/roads.gpkg"
     lookup_path = repo / "data/interim/terrain/roads_segment_lookup.csv"
@@ -1076,14 +925,7 @@ def test_routing_service_returns_no_safe_route_instead_of_flooded_baseline(
 
 
 def test_uncoupled_admission_binds_realized_manifest_and_depth_bytes(tmp_path: Path) -> None:
-    """V5 red: an admission that binds only the manifest leaves the depth bytes unbound.
-
-    Observable if broken: swapping the depth raster beneath a recorded admission
-    would pass validation, because nothing compared the admission's recorded
-    ``depth_raster_sha256`` against realized bytes. Scope: one fixture upstream
-    manifest without coupling declarations and one admission sidecar under
-    data/curation; hash comparisons only, no scientific claim.
-    """
+    "V5 red: an admission that binds only the manifest leaves the depth bytes unbound. Observable if broken: swapping the depth raster beneath a recorded admission would pass validation, because nothing compared the admission's recorded ``depth_raster_sha256`` against realized bytes. Scope: one fixture upstream manifest without coupling declarations and one admission sidecar under data/curation; hash comparisons only, no scientific claim."  # noqa: E501
 
     repo = tmp_path / "repo"
     depth_path = repo / "runs/upstream/depth_event_maximum.tif"
@@ -1155,12 +997,7 @@ def test_uncoupled_admission_binds_realized_manifest_and_depth_bytes(tmp_path: P
 
 
 def test_dashboard_gate_report_binds_either_product_twin(tmp_path: Path) -> None:
-    """V5 red: gate reports bind the CSV twin; a JSON-only check dead-ends the panel.
-
-    Observable if broken: a report whose input_sha256.depth_product equals the CSV
-    bytes renders scientific_gate status='invalid' even though the twins were already
-    enforced row-identical at load. Scope: one fixture run + one hash-bound report.
-    """
+    "V5 red: gate reports bind the CSV twin; a JSON-only check dead-ends the panel. Observable if broken: a report whose input_sha256.depth_product equals the CSV bytes renders scientific_gate status='invalid' even though the twins were already enforced row-identical at load. Scope: one fixture run + one hash-bound report."  # noqa: E501
 
     repo, product_dir, _row = _fixture_repo(tmp_path)
     report = repo / "runs/gates/g1_score.json"
@@ -1188,7 +1025,7 @@ def test_dashboard_gate_report_binds_either_product_twin(tmp_path: Path) -> None
 
 
 def test_dashboard_offset_beyond_rows_is_typed_error(tmp_path: Path) -> None:
-    """V5 red: an offset past the realized row count must not escape as IndexError."""
+    "V5 red: an offset past the realized row count must not escape as IndexError."
 
     repo, product_dir, _row = _fixture_repo(tmp_path)
     store = DashboardStore(repo_root=repo, product=product_dir)
@@ -1198,34 +1035,10 @@ def test_dashboard_offset_beyond_rows_is_typed_error(tmp_path: Path) -> None:
 
 
 def test_non_positive_server_snap_cap_refuses_like_missing(tmp_path: Path) -> None:
-    """V5 red: a non-positive owner cap must refuse routes as unavailable_owner_gate.
+    "V5 red: a non-positive owner cap must refuse routes as unavailable_owner_gate. Observable if broken: cap=-5 falls through to the escalation branch and returns 400 snap_limit_exceeds_server_policy for every request instead of the 503 unavailable refusal that matches health(). Scope: one two-node fixture graph."  # noqa: E501
 
-    Observable if broken: cap=-5 falls through to the escalation branch and returns
-    400 snap_limit_exceeds_server_policy for every request instead of the 503
-    unavailable refusal that matches health(). Scope: one two-node fixture graph.
-    """
-
-    graph = nx.MultiGraph()
-    graph.add_edge(1, 2, segment_id=1, length_m=5.0)
-    source = tmp_path / "roads.gpkg"
-    lookup = tmp_path / "lookup.csv"
-    source.write_bytes(b"cap-fixture")
-    lookup.write_text("segment_id\n1\n", encoding="utf-8")
-    network = RoadNetwork(
-        graph=graph,
-        metadata={},
-        node_coordinates={1: (0.0, 0.0), 2: (5.0, 0.0)},
-        component_by_node={1: 1, 2: 1},
-        source_path=source,
-        lookup_path=lookup,
-        crs=CRS.from_epsg(32643),
-        edge_part_count=1,
-    )
-    unavailable = VehiclePolicyCatalog(
-        path=None,
-        policies={},
-        error="fixture policy unavailable",
-    )
+    network = _two_node_network(tmp_path, b"cap-fixture")
+    unavailable = _unavailable_policies()
     service = RoutingService(
         network,
         None,
@@ -1249,7 +1062,7 @@ def test_non_positive_server_snap_cap_refuses_like_missing(tmp_path: Path) -> No
 
 
 def test_demo_launcher_appends_owner_snap_cap() -> None:
-    """V5 red: without the helper the launcher cannot forward the server snap cap."""
+    "V5 red: without the helper the launcher cannot forward the server snap cap."
 
     demo_dir = Path(__file__).resolve().parents[1] / "scripts/demo"
     sys.path.insert(0, str(demo_dir))
@@ -1265,125 +1078,8 @@ def test_demo_launcher_appends_owner_snap_cap() -> None:
     assert base == ["python", "-m", "jaladhar.routing.api", "serve"]
 
 
-def _frame_series_repo(tmp_path: Path, *, n_frames: int = 3) -> dict[str, Any]:
-    """Tiny uncoupled frame series: n_frames tifs over one canonical + one lookup-only id.
-
-    Segment 1's depth varies per frame (the V5 observable: collapsed frames would
-    produce identical bands); segment 2 exists only in the buffered raster so the
-    frozen no-data synthesis applies every frame. No rainfall or terrain is
-    invented beyond these fixture rasters.
-    """
-
-    repo = tmp_path / "repo"
-    contract = {
-        "version": "test-frozen",
-        "schema_fields": {"flood_status": "PRIMARY_RULE D=0.15 m F=20% N=3-contiguous-cells"},
-        "manifest_guarantees_producer_writes": [
-            "depth_convention 'PRIMARY_RULE D0.15 F0.20 N3' + grid identity EPSG:32643 2x2 10m",
-            "band_convention 'min_max_over_canonical_cells_floor_cm'",
-        ],
-        "no_data_segments_measured_split": {
-            "total_canonical_absent": 1,
-            "buffered_margin_only": 1,
-            "fully_clipped_no_cells_anywhere": 0,
-        },
-    }
-    contract_path = repo / "configs/contracts/depth_product.json"
-    _write_json(contract_path, contract)
-    lookup = repo / "data/interim/terrain/roads_segment_lookup.csv"
-    lookup.parent.mkdir(parents=True, exist_ok=True)
-    lookup.write_text("segment_id\n1\n2\n", encoding="utf-8")
-
-    transform = from_origin(500000.0, 1450000.0, 10.0, 10.0)
-    profile = {
-        "driver": "GTiff",
-        "height": 2,
-        "width": 2,
-        "count": 1,
-        "transform": transform,
-        "crs": "EPSG:32643",
-    }
-    road_dir = repo / "data/processed"
-    road_dir.mkdir(parents=True, exist_ok=True)
-    road_path = road_dir / "road_segment_id.tif"
-    with rasterio.open(road_path, "w", dtype="int32", **profile) as target:
-        target.write(np.array([[[1, 0], [0, 0]]], dtype=np.int32))
-    buffered_path = road_dir / "road_segment_id_buffered.tif"
-    with rasterio.open(buffered_path, "w", dtype="int32", **profile) as target:
-        target.write(np.array([[[1, 2], [0, 0]]], dtype=np.int32))
-
-    series_dir = repo / "runs/upstream/depth_rasters"
-    series_dir.mkdir(parents=True, exist_ok=True)
-    depths = [0.00, 0.20, 0.05][:n_frames]
-    for offset in range(n_frames):
-        array = np.zeros((1, 2, 2), dtype=np.float32)
-        array[0, 0, 0] = np.float32(depths[offset])
-        with rasterio.open(
-            series_dir / f"depth_t{offset * 1800:07d}s.tif", "w", dtype="float32", **profile
-        ) as target:
-            target.write(array)
-
-    upstream = repo / "runs/upstream/manifest.json"
-    _write_json(
-        upstream,
-        {
-            "status": "completed",
-            "git_sha": "upstream-sha",
-            "stage": "phase3_uncalibrated_validation_gate",
-            "event": {"start": "2022-09-04T00:00:00Z", "end": "2022-09-05T23:30:00Z"},
-        },
-    )
-    baseline = repo / "data/curation/baseline_admission.json"
-    baseline.parent.mkdir(parents=True, exist_ok=True)
-    first_frame = sorted(series_dir.glob("depth_t*s.tif"))[0]
-    _write_json(
-        baseline,
-        {
-            "decision": "ADMITTED",
-            "product_label": "UNCOUPLED BASELINE",
-            "coupling_enabled": False,
-            "source_manifest_sha256": sha256_file(upstream),
-            "source_git_sha": "upstream-sha",
-            "source_stage": "phase3_uncalibrated_validation_gate",
-            "source_status": "completed",
-            "depth_raster_path": str(first_frame.relative_to(repo)),
-            "depth_raster_sha256": sha256_file(first_frame),
-            "forcing_kind": "historical_replay",
-            "temporal_aggregation": "event_maximum",
-            "event_window_start_utc": "2022-09-04T00:00:00Z",
-            "event_window_end_utc": "2022-09-05T23:30:00Z",
-        },
-    )
-    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
-    try:
-        from build_frame_series_admission import build_frame_series_admission
-    finally:
-        sys.path.remove(str(Path(__file__).resolve().parents[1] / "scripts"))
-    payload = build_frame_series_admission(
-        series_dir,
-        upstream,
-        expected_count=n_frames,
-        expected_cadence_seconds=1800,
-        repo_root=repo,
-    )
-    frame_admission = repo / "data/curation/frame_series_admission.json"
-    _write_json(frame_admission, payload)
-    return {
-        "repo": repo,
-        "contract_path": contract_path,
-        "lookup": lookup,
-        "road_path": road_path,
-        "buffered_path": buffered_path,
-        "upstream": upstream,
-        "baseline_admission": baseline,
-        "frame_admission": frame_admission,
-        "series_dir": series_dir,
-        "n_frames": n_frames,
-    }
-
-
 def test_frame_series_admission_binds_realized_frame_bytes(tmp_path: Path) -> None:
-    """V5 red: an admission that skips per-frame hashes admits substituted frames."""
+    "V5 red: an admission that skips per-frame hashes admits substituted frames."
 
     fx = _frame_series_repo(tmp_path)
     from jaladhar.validation.depth_product_contract import (
@@ -1396,7 +1092,6 @@ def test_frame_series_admission_binds_realized_frame_bytes(tmp_path: Path) -> No
     assert view["frame_count"] == fx["n_frames"]
     assert view["product_label"] == "UNCOUPLED BASELINE"
 
-    # Tamper: rewrite one frame's bytes after admission.
     first = sorted(fx["series_dir"].glob("depth_t*s.tif"))[1]
     original_bytes = first.read_bytes()
     with rasterio.open(first, "r+") as target:
@@ -1406,7 +1101,6 @@ def test_frame_series_admission_binds_realized_frame_bytes(tmp_path: Path) -> No
     with pytest.raises(DepthProductContractError, match="sha256 differs"):
         validate_frame_series_admission(fx["frame_admission"], fx["upstream"], repo_root=fx["repo"])
 
-    # Restore: the binding is against realized bytes, so restoration re-admits.
     first.write_bytes(original_bytes)
     validate_frame_series_admission(fx["frame_admission"], fx["upstream"], repo_root=fx["repo"])
 
@@ -1425,12 +1119,7 @@ def test_frame_series_admission_binds_realized_frame_bytes(tmp_path: Path) -> No
 def test_multiframe_product_emits_per_frame_contract_twins(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """V5 red: collapsing frames to one timestamp/depth would hide the timeline.
-
-    Observable if broken: every frame carries the first frame's valid time and the
-    union-max depth, so bands stop varying across frames. Scope: 3-frame fixture
-    series on a 2x2 grid; the event-max product is untouched.
-    """
+    "V5 red: collapsing frames to one timestamp/depth would hide the timeline. Observable if broken: every frame carries the first frame's valid time and the union-max depth, so bands stop varying across frames. Scope: 3-frame fixture series on a 2x2 grid; the event-max product is untouched."  # noqa: E501
 
     from jaladhar.validation import segment_status_frames
 
@@ -1477,7 +1166,6 @@ def test_multiframe_product_emits_per_frame_contract_twins(
 
     parsed = [datetime.fromisoformat(value.replace("Z", "+00:00")) for value in times]
     assert all(b - a == timedelta(seconds=1800) for a, b in zip(parsed, parsed[1:], strict=False))
-    # Frame 1 floods (0.20 m), frame 2 does not (0.05 m): the timeline is real.
     assert band_sequences[0] == (0, 0)
     assert band_sequences[1][1] >= 15
     assert band_sequences[2][1] < 15
@@ -1485,20 +1173,9 @@ def test_multiframe_product_emits_per_frame_contract_twins(
 
 
 def test_g1_metric_framing_discloses_point_vs_segment_anchor() -> None:
-    """V5 red: a buried anchor mismatch would let one metric silently pass for another.
+    "V5 red: a buried anchor mismatch would let one metric silently pass for another. Observable if broken: the framing block would omit the point-mediated anchor or misstate the hit difference (239 point-mediated at 0.10 m vs 182 segment-mediated = 57 hits of pure metric difference on the same 399-point denominator). Scope: pure derivation from a fixture sweep; no rasters."  # noqa: E501
 
-    Observable if broken: the framing block would omit the point-mediated anchor or
-    misstate the hit difference (239 point-mediated at 0.10 m vs 182 segment-mediated
-    = 57 hits of pure metric difference on the same 399-point denominator).
-    Scope: pure derivation from a fixture sweep; no rasters.
-    """
-
-    script = Path(__file__).resolve().parents[1] / "scripts/score_g1.py"
-    spec = importlib.util.spec_from_file_location("wf3_score_g1_framing", script)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
+    module = _score_module("wf3_score_g1_framing")
     source_payload = {
         "results": {
             "bbmp_scoring": {
@@ -1543,7 +1220,7 @@ def test_g1_metric_framing_discloses_point_vs_segment_anchor() -> None:
 def test_segment_product_failure_updates_started_manifest(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """V5 red mutation: a post-start raster failure must leave status=failed, never running."""
+    "V5 red mutation: a post-start raster failure must leave status=failed, never running."
     output_dir = tmp_path / "repo/runs/failure"
     repo = tmp_path / "repo"
     source_manifest = repo / "runs/upstream/manifest.json"
@@ -1614,7 +1291,6 @@ def test_segment_product_failure_updates_started_manifest(
 
 # ------------------------------------------------------------ M1 frames_v2 chain
 
-
 FRAMES_V1_MANIFEST = Path(__file__).resolve().parents[1] / (
     "runs/wf3_replay2_uncoupled_baseline_frames_v1/manifest.json"
 )
@@ -1626,18 +1302,11 @@ FRAMES_V2_MANIFEST = Path(__file__).resolve().parents[1] / (
 def test_multiframe_exclusion_lifecycle_manifest_rule6(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Rule 6: the RUNNING frames manifest carries exclusion, adjudication, input SHAs.
-
-    Observable if broken: the running manifest would lack the storage_water_exclusion
-    block, the adopted adjudication_ref, or basin_class_raster's sha256 -- meaning a
-    mid-run crash would leave provenance that only exists when nothing goes wrong.
-    Scope: 3-frame fixture series on a 2x2 grid with segment 1 touch-excluded.
-    """
+    "Rule 6: the RUNNING frames manifest carries exclusion, adjudication, input SHAs. Observable if broken: the running manifest would lack the storage_water_exclusion block, the adopted adjudication_ref, or basin_class_raster's sha256 -- meaning a mid-run crash would leave provenance that only exists when nothing goes wrong. Scope: 3-frame fixture series on a 2x2 grid with segment 1 touch-excluded."  # noqa: E501
 
     from jaladhar.validation import segment_status_frames
 
     fx = _frame_series_repo(tmp_path)
-    # Segment 1's single cell carries excluded class 1 -> whole segment dropped.
     basin_path = fx["repo"] / "data/processed/basin_class.tif"
     profile = {
         "driver": "GTiff",
@@ -1649,7 +1318,6 @@ def test_multiframe_exclusion_lifecycle_manifest_rule6(
     }
     with rasterio.open(basin_path, "w", dtype="uint8", **profile) as target:
         target.write(np.array([[[1, 4], [4, 4]]], dtype=np.uint8))
-    # Fixture stand-in for the ADOPTED v6 manifest (post Step-1 bytes).
     adjudication = fx["repo"] / "runs/wf3_replay2_uncoupled_baseline_v6/manifest.json"
     _write_json(
         adjudication,
@@ -1695,7 +1363,6 @@ def test_multiframe_exclusion_lifecycle_manifest_rule6(
     manifest = result["manifest"]
     assert manifest["status"] == "completed"
 
-    # Rule 6 observed on the realized START state, not only the terminal one.
     running = [payload for payload in captured if payload.get("status") == "running"]
     assert running, "producer never wrote a status=running manifest"
     start = running[0]
@@ -1707,10 +1374,8 @@ def test_multiframe_exclusion_lifecycle_manifest_rule6(
     assert start["input_paths"]["basin_class_raster"].endswith("basin_class.tif")
     assert start["input_sha256"]["basin_class_raster"] == sha256_file(basin_path)
 
-    # Terminal reconciliation mirrors the single-product rule: frozen + fully excluded.
     assert manifest["realized_state"]["n_no_data_per_frame"] == 2
     assert manifest["realized_state"]["n_fully_excluded_segments"] == 1
-    # Sanity ceiling from the adopted v6 residual (369 cm): fixture is far below it.
     assert manifest["realized_state"]["max_band_high_cm_over_series"] <= 369
     for entry in manifest["frames"]:
         assert entry["max_band_high_cm"] <= 400
@@ -1728,13 +1393,7 @@ def test_multiframe_exclusion_lifecycle_manifest_rule6(
     ),
 )
 class TestFramesV2FullScaleAnchor:
-    """Full-scale anchor reading BOTH realized manifests (V1 contaminated, V2 excluded).
-
-    Independent observable: v1 frame 0 flooded exactly 1921 segments on the
-    contaminated field; the excluded v2 series must flood strictly fewer in
-    frame 0 and never exceed the adopted v6 residual ceiling (369 cm + margin)
-    in any frame.  Scope: all 97 frames of the realized run manifests.
-    """
+    "Full-scale anchor reading BOTH realized manifests (V1 contaminated, V2 excluded). Independent observable: v1 frame 0 flooded exactly 1921 segments on the contaminated field; the excluded v2 series must flood strictly fewer in frame 0 and never exceed the adopted v6 residual ceiling (369 cm + margin) in any frame. Scope: all 97 frames of the realized run manifests."  # noqa: E501
 
     def test_v2_frame0_below_contaminated_and_bands_within_residual_ceiling(self) -> None:
         v1 = json.loads(FRAMES_V1_MANIFEST.read_text(encoding="utf-8"))
@@ -1744,7 +1403,6 @@ class TestFramesV2FullScaleAnchor:
         assert v1["frames"][0]["n_flooded"] == 1921
         v2_frame0 = v2["frames"][0]["n_flooded"]
         # Measured 2026-08-26: ALL 1921 of v1's frame-0 flooded segments touch an
-        # excluded class, so the excluded series may legitimately open at 0 flooded.
         assert 0 <= v2_frame0 < 1921 and v2_frame0 != 1921
         assert all(entry["max_band_high_cm"] <= 400 for entry in v2["frames"])
         assert v2["realized_state"]["max_band_high_cm_over_series"] <= 400

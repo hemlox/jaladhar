@@ -1,28 +1,7 @@
-"""WF-1 drain-graph stitcher: pinned snap / D8-walk / junction-stub graph construction.
-
-Implements THE LITERAL-PIN BUILD POLICY (runs/drain_graph_build/design_phase/spec.md)
-against the frozen contract configs/contracts/drain_graph.json.
-
-Pipeline (spec build steps 1-14):
-  elevation SHA gate (ZERO writes on mismatch) -> retained-basin mask from register
-  CSV -> hybrid filled DEM (in-repo deterministic priority-flood fill,
-  flat_increment=0.001, masked to retained basins; ORIGINAL pinned bytes outside) ->
-  in-repo steepest-descent D8 pointer (scan order E,NE,N,NW,W,SW,S,SE -> ESRI codes
-  1,2,4,8,16,32,64,128; 0 = unresolved pit; 255 = nodata preserved) -> reach
-  footprint rasterization (buffer(5.0, quad_segs=8), center-in-polygon,
-  last-writer-wins ascending reach_id) -> endpoint snapping (<= snap_tolerance_m,
-  union-find) -> BOTH-endpoint D8 walks (2066 full-domain) consulting CURRENT
-  component labels -> observed edges + synthesised connectors/stubs ->
-  observed-over-synthesised dedup -> degenerate drops -> literal DAG enforcement ->
-  deterministic ids + graph fingerprint.
-
-Two-surface rule: elev_m and slope_m_per_m are sampled from the PINNED elevation
-bytes only; the hybrid surface exists solely to make the pointer routable through
-flats inside retained basins.
-
-CPU-only; no torch/CUDA imports. Rule-6 manifest written at run start and updated
-in place. Rule-7 config resolution aggregates ALL problems into ONE ValueError.
-"""
+"""against the frozen contract configs/contracts/drain_graph.json.
+component labels -> observed edges + synthesised connectors/stubs ->
+observed-over-synthesised dedup -> degenerate drops -> literal DAG enforcement ->
+CPU-only; no torch/CUDA imports. Rule-6 manifest written at run start and updated"""
 
 from __future__ import annotations
 
@@ -46,11 +25,12 @@ import yaml
 from rasterio.features import rasterize
 from shapely.geometry import LineString
 
+from jaladhar.provenance import sha256_file
+
 app = typer.Typer(add_completion=False)
 REPO = Path(__file__).resolve().parents[3]
 
 TIE_BREAK_ORDER_PINNED = ["E", "NE", "N", "NW", "W", "SW", "S", "SE"]
-# Pinned neighbor scan order -> ESRI D8 code, (d_row, d_col) on a north-up grid, step length.
 OFFSETS: tuple[tuple[str, int, int, int, float], ...] = (
     ("E", 1, 0, 1, 10.0),
     ("NE", 2, -1, 1, math.sqrt(200.0)),
@@ -148,9 +128,9 @@ class _Node:
     x: float
     y: float
     z: float
-    kind: str  # snapped | junction | outfall
+    kind: str
     outfall_reason: str | None = None
-    comp_seed: int = -1  # snapped nodes: endpoint-cluster root at creation time
+    comp_seed: int = -1
 
     def key(self) -> tuple:
         return (
@@ -165,7 +145,7 @@ class _Node:
 
 @dataclass
 class _EdgeCand:
-    src: tuple[int, int]  # (from_pos, to_pos) into the working node list
+    src: tuple[int, int]
     order: str
     edge_source: str
     direction_confidence: str
@@ -174,8 +154,8 @@ class _EdgeCand:
     length_m: float = 0.0
     slope_m_per_m: float = 0.0
     kind: str = "connector"  # observed | connector | stub
-    prov_id: int = 0  # provisional id assigned after dedup/degenerate, before DAG break
-    cells: frozenset[tuple[int, int]] | None = None  # walked grid cells (connectors only)
+    prov_id: int = 0
+    cells: frozenset[tuple[int, int]] | None = None
 
     def wkb_hex(self) -> str:
         return self.geometry.wkb_hex
@@ -213,9 +193,7 @@ def _assert_grid_profile(
     path: Path, width: int, height: int, transform: list[float], crs: str
 ) -> None:
     """Consumer-assertion-10 substance (contract: Grid.assert_aligned(exports,
-    pntr_d8.tif)) applied producer-side to every derived raster: exact lattice
-    identity, no resampling. Inline rather than importing terrain.Grid because
-    that constructor is config-coupled; deviation D18 records the substitution."""
+    pntr_d8.tif)) applied producer-side to every derived raster: exact lattice"""
     from affine import Affine
 
     with rasterio.open(path) as src:
@@ -232,14 +210,6 @@ def _assert_grid_profile(
             f"derived raster {path.name} is not aligned to the buffered grid "
             f"(want {width}x{height} @ {transform} {crs})"
         )
-
-
-def _sha256_file(path: Path) -> str:
-    h = hashlib.sha256()
-    with open(path, "rb") as f:
-        for chunk in iter(lambda: f.read(1 << 20), b""):
-            h.update(chunk)
-    return h.hexdigest()
 
 
 def _utc_now() -> str:
@@ -299,8 +269,6 @@ _REQUIRED_KEYS: list[str] = [
 
 
 def resolve_config(config_path: str) -> dict:
-    """Rule-7 pre-flight: touch every key this run will ever need; aggregate ALL
-    problems into ONE ValueError listing every missing/invalid key."""
     problems: list[str] = []
     warnings: list[str] = []
     with open(config_path) as f:
@@ -399,7 +367,7 @@ def _repo(p: Any) -> Path:
 
 
 def _print_budget(n_cells: int, n_reaches: int) -> dict:
-    arrays_mb = n_cells * 4 * 8 / 1e6  # ~8 concurrent full-grid arrays
+    arrays_mb = n_cells * 4 * 8 / 1e6
     walks = 2 * n_reaches
     walk_s = walks * 10000 / _WALK_STEPS_PER_SEC_ASSUMED
     fill_s = 120.0
@@ -426,7 +394,7 @@ def _print_budget(n_cells: int, n_reaches: int) -> dict:
 
 
 def _elevation_sha_gate(elev_path: Path, expected_sha: str) -> None:
-    got = _sha256_file(elev_path)
+    got = sha256_file(elev_path)
     if got != expected_sha:
         raise StitchError(
             "elevation SHA gate FAILED: refusing to start, ZERO writes.\n"
@@ -461,14 +429,7 @@ def _load_grid_arrays(
 def _build_retained_mask(
     z: np.ndarray, valid: np.ndarray, csv_path: Path
 ) -> tuple[np.ndarray, dict]:
-    """Retained-basin boolean mask over the buffered grid, built from the register CSV.
-
-    The CSV carries one outlet_cell '(row,col)' and spill_elevation_m per basin and
-    NO pixel lists, so each basin interior is reconstructed deterministically: the
-    8-connected set of cells strictly below spill_elevation_m containing outlet_cell,
-    flooded on the PINNED surface. Strict '<' excludes rim cells at the spill level,
-    so floods cannot leak across saddles. Union over all basins; csv sha256 and the
-    realized mask cell count are recorded beside the register's own cell totals."""
+    """realized mask cell count are recorded beside the register's own cell totals."""
     mask = np.zeros(z.shape, dtype=bool)
     csv_rows = 0
     bad_rows: list[str] = []
@@ -520,7 +481,7 @@ def _build_retained_mask(
 
     diag = {
         "retained_basins_csv": str(csv_path),
-        "csv_sha256": _sha256_file(csv_path),
+        "csv_sha256": sha256_file(csv_path),
         "csv_rows": csv_rows,
         "register_n_cells_sum": register_n_cells_sum,
         "mask_cell_count": int(mask.sum()),
@@ -534,16 +495,9 @@ def _build_retained_mask(
 
 
 def _deterministic_priority_flood_fill(z: np.ndarray, valid: np.ndarray, eps: float) -> np.ndarray:
-    """In-repo deterministic priority-flood depression fill with wang-liu-style
-    flat increments (Barnes et al. 2014), pinned neighbour scan order.
-
-    Replaces whitebox fill_depressions(fix_flats=True): the binary's output is
-    VALUE-nondeterministic run-to-run (measured 2026-08-25: hybrid surface drifts
+    """VALUE-nondeterministic run-to-run (measured 2026-08-25: hybrid surface drifts
     at 11,227 cells / max 0.166 m across identical-input draws; derived pointer
-    flips 7,799 cells; three runs -> three graph_fingerprints), which refuted the
-    contract determinism.rerun_stability guarantee. This implementation is
-    byte-deterministic: heap ordering is (elevation, insertion counter) and the
-    neighbour relaxation follows OFFSETS order exactly. Deviation D17."""
+    contract determinism.rerun_stability guarantee. This implementation is"""
     import heapq
 
     h, w = z.shape
@@ -591,10 +545,6 @@ def _derive_hybrid_and_pointer(
     height: int,
     flat_increment: float,
 ) -> tuple[np.ndarray, np.ndarray, Path, dict]:
-    """Deterministic in-repo priority-flood fill (see
-    _deterministic_priority_flood_fill - deviation D17) over the PINNED surface;
-    hybrid = filled WITHIN retained-basin mask union ORIGINAL bytes outside;
-    in-repo steepest-descent D8 pointer over the hybrid surface."""
     from affine import Affine
 
     aff = Affine(*transform)
@@ -611,8 +561,6 @@ def _derive_hybrid_and_pointer(
     }
     filled = _deterministic_priority_flood_fill(z, valid, flat_increment)
 
-    # float64 PRESERVED through pointer derivation: float32 ulp at z~900 m is
-    # ~0.0625 m, which would collapse the 0.001 m wang-liu increments back into
     # ties (measured: small basins returned to all-zero pointers). The hybrid
     # artefact is written float64 so provenance matches what routed.
     hybrid = np.where(mask, filled, z.astype(np.float64))
@@ -636,9 +584,7 @@ def _derive_hybrid_and_pointer(
         code[better] = esri
         best[better] = drop[better]
     # Domain-rim outward drainage: a boundary cell with no in-grid descent leaves the
-    # domain (standard D8 edge convention - whitebox pointers do the same). Without
     # this the pinned domain_exit stop condition could never fire. Outward direction
-    # chosen in pinned scan-order precedence E > N > W > S at corners.
     bottom = np.zeros((h_, w_), dtype=bool)
     bottom[h_ - 1, :] = True
     left = np.zeros((h_, w_), dtype=bool)
@@ -662,8 +608,8 @@ def _derive_hybrid_and_pointer(
         _assert_grid_profile(p, width, height, transform, crs)
 
     shas = {
-        "derived_pointer": _sha256_file(pointer_path),
-        "hybrid_filled_dem": _sha256_file(hybrid_path),
+        "derived_pointer": sha256_file(pointer_path),
+        "hybrid_filled_dem": sha256_file(hybrid_path),
     }
     return hybrid, code, pointer_path, shas
 
@@ -678,8 +624,6 @@ def _rasterize_footprints(
     quad_segs: int,
     run_dir: Path,
 ) -> tuple[np.ndarray, dict]:
-    """Burn cells whose CENTER lies within buffer(burn_buffer_m, quad_segs) of each
-    reach; shapes fed ascending reach index so higher indices overwrite."""
     from affine import Affine
 
     shapes = []
@@ -705,7 +649,7 @@ def _rasterize_footprints(
     _assert_grid_profile(path, width, height, transform, crs)
     diag = {
         "footprints_path": str(path),
-        "footprints_sha256": _sha256_file(path),
+        "footprints_sha256": sha256_file(path),
         "burned_cell_count": int((fp > 0).sum()),
         "rasterization_rule": (
             f"burn cells whose CENTER is within {burn_buffer_m} m of geometry "
@@ -716,7 +660,6 @@ def _rasterize_footprints(
 
 
 def _cell_of(x: float, y: float, transform: list[float]) -> tuple[int, int]:
-    """Grid (row, col) of the cell containing world point (x, y)."""
     a, _, c, _, e, f = transform
     return int(math.floor((f - y) / -e)), int(math.floor((x - c) / a))
 
@@ -729,8 +672,7 @@ def _center_of(row: int, col: int, transform: list[float]) -> tuple[float, float
 def _snap_slots(
     reaches: list[Reach], transform: list[float], tol: float
 ) -> tuple[list[tuple[float, float]], _DSU, list[tuple[int, int]]]:
-    """Endpoint slots: slot 2*i / 2*i+1 are reach i's first/last vertex. Returns
-    slot coordinates, DSU over slots (pairs within tol united), slot grid cells."""
+    """slot coordinates, DSU over slots (pairs within tol united), slot grid cells."""
     pts: list[tuple[float, float]] = []
     for r in reaches:
         coords = list(r.geom.coords)
@@ -782,12 +724,8 @@ def _do_walk(
     max_steps: int,
 ) -> _WalkOutcome:
     """One D8 walk under the pinned per-step stop-condition order, with the
-    owner adjudication of 2026-08-25 (menu M2, deviation D20): own-reach
-    footprint re-entry is walk CONTINUATION, not abort - the 1-2-cell burn
     footprint made reach-granularity aborts a burn-width artifact (measured
-    1031/2066 walks killed). Re-entries are counted for provenance; the walk
-    still terminates by reached_other / domain exit / pit / junction entry /
-    max_connector_steps."""
+    1031/2066 walks killed). Re-entries are counted for provenance; the walk"""
     h, w = pointer.shape
     r, c = start_cell
     lab = int(footprints[r, c])
@@ -874,9 +812,7 @@ def _basis(rule: str, flat_cells: int, reached_other: bool) -> dict:
 
 
 def _enforce_dag(edges: list[_EdgeCand], break_enabled: bool) -> tuple[list[_EdgeCand], list[dict]]:
-    """Literal DAG enforcement: cycles via toposort remainder; per round drop the
-    lowest-slope SYNTHETIC edge in the found cycle (tie: highest provisional id);
-    repeat until acyclic. Weakly-connected-component counts recorded per round."""
+    """lowest-slope SYNTHETIC edge in the found cycle (tie: highest provisional id);"""
     rounds: list[dict] = []
 
     def wcc_count(es: list[_EdgeCand]) -> int:
@@ -934,7 +870,6 @@ def _enforce_dag(edges: list[_EdgeCand], break_enabled: bool) -> tuple[list[_Edg
             if u in rem and v in rem:
                 rem_adj[u].add(v)
                 emap.setdefault((u, v), []).append(e)
-        # Iterative deterministic DFS to find one directed cycle inside the remainder.
         cycle_edges: list[tuple[int, int]] = []
         color: dict[int, int] = {}
 
@@ -995,10 +930,7 @@ def _apply_dedup_and_degenerate(
     edges: list[_EdgeCand],
 ) -> tuple[list[_EdgeCand], list[dict], int, int]:
     """Step 8 parallel dedup on (from,to,order): keep OBSERVED over SYNTHESISED,
-    among equals keep LONGER; then step 9 degenerate drops: self-loops counted in
-    self_loop_dropped_count; OBSERVED edges with length < 0.05 m or null slope
-    counted in zero_length_dropped_count. Survivors are sorted by the pinned edge
-    key and carry stable provisional ids (cited by DAG-break rounds)."""
+    self_loop_dropped_count; OBSERVED edges with length < 0.05 m or null slope"""
     dropped_records: list[dict] = []
     by_key: dict[tuple[int, int, str], list[int]] = {}
     for ei, e in enumerate(edges):
@@ -1066,8 +998,7 @@ def _apply_dedup_and_degenerate(
 
 
 def stitch_components(reaches: list[Reach], cfg: dict) -> StitchResult:
-    """Frozen contract entrypoint: build the stitched drain graph under the
-    literal-pin policy and return nodes, edges and the full metrics block."""
+    """Frozen contract entrypoint: build the stitched drain graph under the"""
     t0 = time.perf_counter()
     grid = cfg["grid"]
     st = cfg["stitch"]
@@ -1085,7 +1016,6 @@ def stitch_components(reaches: list[Reach], cfg: dict) -> StitchResult:
             )
     budget = _print_budget(width * height, len(reaches))
 
-    # Step 1: elevation SHA gate - before ANY other work, ZERO writes on mismatch.
     elev_path = _repo(inputs["elevation_surface"])
     _elevation_sha_gate(elev_path, inputs["elevation_sha256"])
 
@@ -1114,7 +1044,6 @@ def stitch_components(reaches: list[Reach], cfg: dict) -> StitchResult:
 
     write_manifest({})  # rule 6: manifest exists at run start, updated in place
 
-    # Steps 1-4: surfaces, mask, hybrid, pointer.
     z, valid = _load_grid_arrays(elev_path, width, height, transform, crs)
     mask, mask_diag = _build_retained_mask(z, valid, _repo(inputs["retained_basins_csv"]))
     hybrid, pointer, pointer_path, raster_shas = _derive_hybrid_and_pointer(
@@ -1142,10 +1071,7 @@ def stitch_components(reaches: list[Reach], cfg: dict) -> StitchResult:
     )
     del hybrid
 
-    # Step 2: snap + components. Two union-finds with distinct roles:
     #   snap_dsu over endpoint SLOTS -> node identity (pairs within tolerance unite);
-    #   comp_dsu over NODE positions -> drain components (each reach bridges its two
-    #   endpoint nodes; junction merges evolve it during walks).
     slot_pts, snap_dsu, slot_cells = _snap_slots(reaches, transform, float(st["snap_tolerance_m"]))
     n_reach = len(reaches)
     root_members: dict[int, list[tuple[float, float]]] = {}
@@ -1170,7 +1096,7 @@ def stitch_components(reaches: list[Reach], cfg: dict) -> StitchResult:
 
     comp_dsu = _DSU(len(nodes))
     for pos in range(len(nodes)):
-        nodes[pos].comp_seed = pos  # comp identity seeded per node position
+        nodes[pos].comp_seed = pos
     for i in range(n_reach):
         comp_dsu.union(slot_node[2 * i], slot_node[2 * i + 1])
     comp_of_reach = [comp_dsu.find(slot_node[2 * i]) for i in range(n_reach)]
@@ -1179,7 +1105,6 @@ def stitch_components(reaches: list[Reach], cfg: dict) -> StitchResult:
     for i, root in enumerate(comp_of_reach):
         seeds[i + 1] = root
 
-    # Steps 5-7: BOTH-endpoint walks with junction stubs and connectors.
     histogram = {
         "reached_other": 0,
         "junction_entry": 0,
@@ -1193,7 +1118,7 @@ def stitch_components(reaches: list[Reach], cfg: dict) -> StitchResult:
     edges: list[_EdgeCand] = []
     synth_cells: set[tuple[int, int]] = set()
     counters = {
-        "self_hit_count": 0,  # retired by D20 (re-entry = continuation); kept for schema stability
+        "self_hit_count": 0,
         "self_reentry_count": 0,
         "junction_split_count": 0,
         "split_unresolved_count": 0,
@@ -1205,7 +1130,7 @@ def stitch_components(reaches: list[Reach], cfg: dict) -> StitchResult:
         "stub_overlength_count": 0,
     }
     max_steps = int(st["max_connector_steps"])
-    dyn_nodes: dict[tuple[str, int, int], int] = {}  # (kind, row, col) -> node pos
+    dyn_nodes: dict[tuple[str, int, int], int] = {}
 
     def node_at(kind: str, reason: str | None, cell: tuple[int, int]) -> int | None:
         key = (kind, cell[0], cell[1])
@@ -1226,36 +1151,20 @@ def stitch_components(reaches: list[Reach], cfg: dict) -> StitchResult:
         )
         return dyn_nodes[key]
 
-    def nearest_snapped_of(root: int, pt: tuple[float, float]) -> tuple[int, float] | None:
-        best: tuple[float, int] | None = None
-        for pos, node in enumerate(nodes):
-            if node.kind != "snapped" or comp_dsu.find(node.comp_seed) != root:
-                continue
-            d2 = (node.x - pt[0]) ** 2 + (node.y - pt[1]) ** 2
-            cand = (round(d2, 9), pos)
-            if best is None or cand < best:
-                best = cand
-        if best is None:
-            return None
-        return best[1], math.sqrt(best[0])
-
-    # Owner adjudication 2026-08-25 (menus M2/M3): junction join is SPLIT-
-    # AT-PROJECTION. The walked entry cell is projected onto the entered
     # component's nearest OBSERVED reach geometry; that reach is split into two
     # segments sharing the new junction node (true confluence; observed total
-    # length preserved exactly). The retired synthesised-stub mechanism left
     # 791 refused joins >25 m and drove the 269-component residual.
     from shapely.geometry import Point
     from shapely.ops import substring as _substring
 
-    splits: dict[int, list[tuple[float, int]]] = {}  # reach idx -> [(dist_along, pos)]
+    splits: dict[int, list[tuple[float, int]]] = {}
     xy_nodes: dict[tuple[float, float], int] = {}
     split_max_distance_m = float(st.get("split_max_distance_m", 15.0))
 
     def split_node_for(entered_root: int, cell: tuple[int, int]) -> int | None:
         cx, cy = _center_of(cell[0], cell[1], transform)
         pt = Point(cx, cy)
-        best: tuple[float, int, float] | None = None  # (dist, reach_id, dist_along)
+        best: tuple[float, int, float] | None = None
         for j in range(n_reach):
             if comp_dsu.find(comp_of_reach[j]) != entered_root:
                 continue
@@ -1269,7 +1178,6 @@ def stitch_components(reaches: list[Reach], cfg: dict) -> StitchResult:
         if best is None or best[0] > split_max_distance_m:
             return None
         _dist, _rid, d_along = best
-        # identify which reach won (tie broken exactly as above)
         win = None
         for j in range(n_reach):
             if comp_dsu.find(comp_of_reach[j]) != entered_root:
@@ -1317,8 +1225,6 @@ def stitch_components(reaches: list[Reach], cfg: dict) -> StitchResult:
         def _emit_connector(to_pos: int) -> None:
             length, geom = _polyline(oc.visited, transform)
             if length <= 0.0:
-                # at-start entry whose split node coincides with the origin:
-                # components are already unioned; a zero-length edge is forbidden.
                 counters["zero_length_connector_skipped"] += 1
                 return
             synth_cells.update(oc.visited)
@@ -1350,7 +1256,6 @@ def stitch_components(reaches: list[Reach], cfg: dict) -> StitchResult:
             lost_walks.append([reach_id, end_tag, f"{oc.outcome}_split_unresolved"])
             return
 
-        # pit / domain_exit: terminal outfall connector.
         if oc.outcome == "pit":
             to_pos = node_at("outfall", "pit", term)
         else:
@@ -1393,7 +1298,6 @@ def stitch_components(reaches: list[Reach], cfg: dict) -> StitchResult:
         handle_walk(i, "B", walk_b, comp_of_reach[i])
 
         # Step 6: direction rule for the observed reach (emission deferred until
-        # all junction splits are known - split-at-projection, menus M2/M3).
         pa, pb = slot_pts[2 * i], slot_pts[2 * i + 1]
         if walk_a.outcome == "reached_other" or walk_b.outcome == "reached_other":
             if walk_a.outcome == "reached_other" and walk_b.outcome == "reached_other":
@@ -1416,7 +1320,6 @@ def stitch_components(reaches: list[Reach], cfg: dict) -> StitchResult:
         reach_dir[i] = (from_end, rule, flats, reached, conf)
 
     # Emit observed reaches AFTER the walk loop: a reach with junction splits is
-    # chopped at its projected points into segments sharing the junction nodes
     # (true confluences; segment lengths sum to the original measured length).
     for i in range(n_reach):
         reach = reaches[i]
@@ -1436,9 +1339,6 @@ def stitch_components(reaches: list[Reach], cfg: dict) -> StitchResult:
             ),
             key=lambda t: t[0],
         )
-        # Collapse duplicate/near-coincident cuts: several walkers may project
-        # onto the same reach within centimetres; identical node keys would
-        # otherwise produce zero-length self-loop segments.
         cuts: list[tuple[float, int]] = []
         for d_along, pos in cuts_raw:
             if pos in (src_pos, dst_pos):
@@ -1467,9 +1367,6 @@ def stitch_components(reaches: list[Reach], cfg: dict) -> StitchResult:
                 )
             )
 
-    # Step 8b (owner adjudication 2026-08-25): corridor merge - synthesised
-    # connectors whose walked cell sets overlap substantially represent ONE
-    # physical flow path; keep the longest edge per cluster.
     min_jaccard = float(st.get("corridor_merge_min_jaccard", 0.35))
 
     def _merge_corridors(cands: list[_EdgeCand]) -> tuple[list[_EdgeCand], list[dict]]:
@@ -1556,12 +1453,9 @@ def stitch_components(reaches: list[Reach], cfg: dict) -> StitchResult:
     )
     dropped_records = list(dropped_records) + list(corridor_records)
 
-    # Step 11: literal DAG enforcement.
     dag_enabled = bool(st.get("dag_break_enabled", True))
     survivors, cycle_rounds = _enforce_dag(survivors, dag_enabled)
 
-    # Remove non-snapped nodes orphaned by eliminations (snapped nodes always kept:
-    # disconnected components must stay visible to the consumer).
     used: set[int] = set()
     for e in survivors:
         used.update(e.src)
@@ -1577,7 +1471,6 @@ def stitch_components(reaches: list[Reach], cfg: dict) -> StitchResult:
     for e in survivors:
         e.src = (remap[e.src[0]], remap[e.src[1]])
 
-    # Step 12: deterministic ids + fingerprint.
     order_by_key = sorted(range(len(new_nodes)), key=lambda p: new_nodes[p].key())
     final_id_of_pos: dict[int, int] = {}
     node_recs: list[NodeRec] = []
@@ -1634,7 +1527,6 @@ def stitch_components(reaches: list[Reach], cfg: dict) -> StitchResult:
     )
     graph_fingerprint = hashlib.sha256(fingerprint_payload.encode("utf-8")).hexdigest()
 
-    # Post-stitch connectivity: pre-stitch components grouped by final-graph linkage.
     final_dsu = _DSU(len(node_recs) + 1)
     for er in edge_recs:
         final_dsu.union(er.from_node, er.to_node)
@@ -1855,10 +1747,6 @@ def stitch_components(reaches: list[Reach], cfg: dict) -> StitchResult:
         f"synth_fraction={metrics['synthesised_fraction_of_total_length']} "
         f"fingerprint={graph_fingerprint[:12]}... status={status}"
     )
-    # Named-outfall set (owner adjudication 2026-08-25): every outfall carries
-    # its nearest named receiving water and a valley assignment where the name
-    # is unambiguous (three-valley city: Vrishabhavathi / Koramangala-
-    # Challaghatta / Hebbal). Justification = pinned terminating rule + evidence.
     from shapely.geometry import Point as _Point
 
     named_outfalls: list[dict[str, Any]] = []
@@ -1899,7 +1787,6 @@ def stitch_components(reaches: list[Reach], cfg: dict) -> StitchResult:
                 d = pt.distance(wrow.geometry)
                 if d < best_d:
                     best_name, best_d = nm.strip(), d
-        # valley + justification
         valley = _VALLEY_OF.get(best_name.lower(), "unmapped_valley") if best_name else "unmapped"
         named_outfalls.append(
             {
@@ -1924,9 +1811,6 @@ def stitch_components(reaches: list[Reach], cfg: dict) -> StitchResult:
 
 
 def _load_reaches_for_census(cfg: dict) -> tuple[list[Reach], str]:
-    """Reaches for the CLI: jaladhar.drainage.loader.load_reaches when that module
-    exists (imported, never reimplemented); otherwise a report-only fallback reading
-    waterways_bbmp.gpkg filtered to primary+secondary."""
     try:
         from jaladhar.drainage.loader import load_reaches
 
@@ -1968,7 +1852,6 @@ def _load_reaches_for_census(cfg: dict) -> tuple[list[Reach], str]:
 def census(
     config: Path = typer.Option(Path("configs/drainage.yaml"), help="Path to drainage YAML"),
 ) -> None:
-    """Third-independent recount: snap components + node count at snap_tolerance_m."""
     cfg = resolve_config(str(config))
     reaches, source = _load_reaches_for_census(cfg)
     transform = [float(x) for x in cfg["grid"]["transform"]]
@@ -2011,7 +1894,6 @@ def stitch(
         False, "--reaches-from-loader", help="Require jaladhar.drainage.loader (no gpkg fallback)"
     ),
 ) -> None:
-    """Run the full pinned stitching pipeline against configured inputs."""
     cfg = resolve_config(str(config))
     if reaches_from_loader:
         try:

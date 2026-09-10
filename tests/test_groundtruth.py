@@ -1,16 +1,9 @@
-"""Tests for Ground-truth Flood Points Dataset (September 2022 Bengaluru Event).
-
-Enforces CLAUDE.md Rule 1 and validation requirements:
-- V1: Realized CSV on disk verified directly.
+"""- V1: Realized CSV on disk verified directly.
 - V2: Independent observables named before writing checks.
 - V5: Red-under-mutation demonstrated for invariant checks.
 - Invariants:
-  1. Every row has a non-empty source_url, source_publication_date, and source_quote (Rule 1 guard).
-  2. Every observed_date falls in the event window 2022-08-30 .. 2022-09-06.
-  3. Every (lat, lon) coordinate falls inside the BBMP bounding box.
-  4. depth_band_low_m < depth_band_high_m wherever depth is present.
-  5. No duplicate (lat, lon) pairs within 50 m.
-"""
+1. Every row has a non-empty source_url, source_publication_date, and source_quote (Rule 1 guard).
+2. Every observed_date falls in the event window 2022-08-30 .. 2022-09-06."""
 
 from __future__ import annotations
 
@@ -46,20 +39,13 @@ def load_rows() -> list[dict[str, str]]:
         return list(reader)
 
 
-# ---------------------------------------------------------------------------
 # Invariant 1: Rule 1 Provenance Guard (No Fabricated / Unsourced Data)
-# ---------------------------------------------------------------------------
 
 
 def test_rule1_provenance_every_row_has_source() -> None:
     """Invariant: Every row must carry a non-empty source provenance.
-
     Requires source_url, source_publication_date, and source_quote.
-
-    Observable:
-      If any point lacks a resolvable URL, publication date, or verbatim quote,
-      the assertion fails immediately naming the violating row ID.
-    """
+    the assertion fails immediately naming the violating row ID."""
     rows = load_rows()
     assert len(rows) > 0, "Dataset must not be empty"
 
@@ -70,27 +56,21 @@ def test_rule1_provenance_every_row_has_source() -> None:
         quote = r.get("source_quote", "").strip()
 
         assert url, f"Rule 1 violation: Point {row_id} has empty source_url"
-        assert url.startswith("http://") or url.startswith("https://"), (
-            f"Rule 1 violation: Point {row_id} has invalid URL: {url}"
-        )
+        assert url.startswith("http://") or url.startswith(
+            "https://"
+        ), f"Rule 1 violation: Point {row_id} has invalid URL: {url}"
         assert pub_date, f"Rule 1 violation: Point {row_id} has empty source_publication_date"
         assert quote, f"Rule 1 violation: Point {row_id} has empty source_quote"
-        assert len(quote) >= 15, (
-            f"Rule 1 violation: Point {row_id} has suspiciously short quote: '{quote}'"
-        )
+        assert (
+            len(quote) >= 15
+        ), f"Rule 1 violation: Point {row_id} has suspiciously short quote: '{quote}'"
 
 
-# ---------------------------------------------------------------------------
 # Invariant 2: Event Temporal Window (2022-08-30 .. 2022-09-06)
-# ---------------------------------------------------------------------------
 
 
 def test_observed_dates_within_event_window() -> None:
-    """Invariant: Every observed_date falls inside 2022-08-30 .. 2022-09-06.
-
-    Observable:
-      Any historical or post-event report outside the window is rejected.
-    """
+    """Invariant: Every observed_date falls inside 2022-08-30 .. 2022-09-06."""
     rows = load_rows()
     for idx, r in enumerate(rows, start=1):
         row_id = r.get("id", f"row_{idx}")
@@ -102,17 +82,12 @@ def test_observed_dates_within_event_window() -> None:
         )
 
 
-# ---------------------------------------------------------------------------
 # Invariant 3: Spatial Extent Inside BBMP Bounding Box
-# ---------------------------------------------------------------------------
 
 
 def test_coordinates_inside_bbmp_bounding_box() -> None:
     """Invariant: Every (lat, lon) coordinate falls strictly inside the BBMP domain.
-
-    Observable:
-      Any coordinate placed outside BBMP bounds raises AssertionError.
-    """
+    Any coordinate placed outside BBMP bounds raises AssertionError."""
     rows = load_rows()
     for idx, r in enumerate(rows, start=1):
         row_id = r.get("id", f"row_{idx}")
@@ -129,17 +104,12 @@ def test_coordinates_inside_bbmp_bounding_box() -> None:
         )
 
 
-# ---------------------------------------------------------------------------
 # Invariant 4: Depth Band Order Consistency (depth_low < depth_high)
-# ---------------------------------------------------------------------------
 
 
 def test_depth_bands_strictly_ordered() -> None:
     """Invariant: depth_band_low_m < depth_band_high_m wherever depth is present.
-
-    Observable:
-      Inverted or zero-width depth bands raise AssertionError.
-    """
+    Inverted or zero-width depth bands raise AssertionError."""
     rows = load_rows()
     for idx, r in enumerate(rows, start=1):
         row_id = r.get("id", f"row_{idx}")
@@ -148,30 +118,23 @@ def test_depth_bands_strictly_ordered() -> None:
         cue = r.get("depth_cue", "").strip()
 
         if cue == "NONE" or (not low_str and not high_str):
-            # Extent-only point: both must be empty
-            assert not low_str and not high_str, (
-                f"Extent-only point {row_id} must have empty depth fields"
-            )
+            assert (
+                not low_str and not high_str
+            ), f"Extent-only point {row_id} must have empty depth fields"
         else:
-            assert low_str and high_str, (
-                f"Point {row_id} has partial depth band: low='{low_str}', high='{high_str}'"
-            )
+            assert (
+                low_str and high_str
+            ), f"Point {row_id} has partial depth band: low='{low_str}', high='{high_str}'"
             low = float(low_str)
             high = float(high_str)
             assert low < high, f"Point {row_id} depth band inverted: low {low} >= high {high}"
 
 
-# ---------------------------------------------------------------------------
 # Invariant 5: Spatial Deduplication (> 50 m apart)
-# ---------------------------------------------------------------------------
 
 
 def test_no_duplicate_points_within_50m() -> None:
-    """Invariant: No two points in the dataset are within 50 meters of each other.
-
-    Observable:
-      Pairs closer than 50 m indicate accidental duplicate entries and fail.
-    """
+    """Invariant: No two points in the dataset are within 50 meters of each other."""
     rows = load_rows()
     coords = [(r["id"], float(r["lat"]), float(r["lon"]), r["location_name"]) for r in rows]
 
@@ -180,6 +143,6 @@ def test_no_duplicate_points_within_50m() -> None:
             id1, lat1, lon1, name1 = coords[i]
             id2, lat2, lon2, name2 = coords[j]
             dist = haversine_m(lat1, lon1, lat2, lon2)
-            assert dist > 50.0, (
-                f"Duplicate points within {dist:.1f} m: '{id1}: {name1}' and '{id2}: {name2}'"
-            )
+            assert (
+                dist > 50.0
+            ), f"Duplicate points within {dist:.1f} m: '{id1}: {name1}' and '{id2}: {name2}'"

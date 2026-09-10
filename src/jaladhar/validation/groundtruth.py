@@ -1,14 +1,5 @@
-"""Ground-truth Flood Points Loader and Validation Harness for Sept 2022 Bengaluru Flood.
-
-PROMPT.md §8 item 4: 2022 September flood ground truth validation points.
-Enforces CLAUDE.md Rule 1: Every point carries a verified source URL,
-publication date, verbatim quote, and depth cue band.
-
-Features:
-- Validates all records against schema, bounds, and temporal window (2022-08-30 to 2022-09-06).
-- Computes spatial cross-check overlap against BBMP flood-prone KMLs.
-- Generates execution manifest in runs/groundtruth/manifest.json.
-"""
+"""Enforces CLAUDE.md Rule 1: Every point carries a verified source URL,
+- Generates execution manifest in runs/groundtruth/manifest.json."""
 
 from __future__ import annotations
 
@@ -29,7 +20,6 @@ import yaml
 app = typer.Typer(add_completion=False)
 REPO = Path(__file__).resolve().parents[3]
 
-# BBMP WGS84 bounding box
 BBMP_BBOX = {
     "min_lon": 77.46005,
     "min_lat": 12.83362,
@@ -48,7 +38,6 @@ def git_sha() -> str:
 
 
 def haversine_distance_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    """Compute great-circle distance in meters between two lat/lon points."""
     R = 6371000.0
     phi1, phi2 = math.radians(lat1), math.radians(lat2)
     dphi = math.radians(lat2 - lat1)
@@ -110,7 +99,6 @@ def select_event_groundtruth(
 def resolve_groundtruth_scoring_config(
     groundtruth_config: dict[str, Any],
 ) -> tuple[str, str, float]:
-    """Resolve every ground-truth scoring key before a replay or rescore starts."""
     required = ["scoring_event_window_start", "scoring_event_window_end", "max_snap_distance_m"]
     missing = [key for key in required if key not in groundtruth_config]
     if missing:
@@ -135,7 +123,6 @@ def load_and_validate_groundtruth(
     if not csv_path.exists():
         raise FileNotFoundError(f"Ground truth CSV not found at {csv_path}")
 
-    # Load BBMP KML points
     bbmp_points: list[tuple[float, float]] = []
     if bbmp_kml_dir.exists():
         for kml_name in ["flood_prone_locations", "low_lying_areas", "vulnerable_to_flooding"]:
@@ -161,7 +148,6 @@ def load_and_validate_groundtruth(
                     "and source_quote."
                 )
 
-            # Temporal window check: 2022-08-30 to 2022-09-06
             obs_date = r["observed_date"].strip()
             if not ("2022-08-30" <= obs_date <= "2022-09-06"):
                 raise ValueError(
@@ -181,7 +167,6 @@ def load_and_validate_groundtruth(
                     "outside BBMP bounding box."
                 )
 
-            # Depth band check
             depth_low_str = r.get("depth_band_low_m", "").strip()
             depth_high_str = r.get("depth_band_high_m", "").strip()
             depth_low = float(depth_low_str) if depth_low_str else None
@@ -195,7 +180,6 @@ def load_and_validate_groundtruth(
                         f"depth_band_high_m ({depth_high})."
                     )
 
-            # Spatial overlap check against BBMP KMLs
             in_bbmp = False
             for b_lat, b_lon in bbmp_points:
                 if haversine_distance_m(lat, lon, b_lat, b_lon) <= overlap_threshold_m:
@@ -224,12 +208,9 @@ def load_and_validate_groundtruth(
                 )
             )
 
-    # Check for duplicate coordinates within 50 m
     for i in range(len(points)):
         for j in range(i + 1, len(points)):
-            dist = haversine_distance_m(
-                points[i].lat, points[i].lon, points[j].lat, points[j].lon
-            )
+            dist = haversine_distance_m(points[i].lat, points[i].lon, points[j].lat, points[j].lon)
             if dist <= 50.0:
                 raise ValueError(
                     f"Duplicate points within {dist:.1f} m: "
@@ -237,7 +218,6 @@ def load_and_validate_groundtruth(
                     f"{points[j].id} ({points[j].location_name})"
                 )
 
-    # Compute breakdown summary
     confidence_counts: dict[str, int] = {}
     method_counts: dict[str, int] = {}
     extent_only_count = 0

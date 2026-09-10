@@ -68,14 +68,14 @@ All values below are read from run manifests (the products live in the data arch
 | Quantity | Measured value | Evidence |
 |---|---|---|
 | Terrain grid | 12,728,415 valid cells at 10 m | `runs/terrain_*/manifest.json` |
-| Mass conservation (48 h storm replay) | water-balance residual 1.79e-05 of inflow | `runs/solver/` |
+| Mass conservation (48 h storm replay) | water-balance residual 1.79e-05 of inflow | archived replay #2 manifest (see `docs/HANDOVER.md` §12.1) |
 | Drain graph | 1,721 nodes / 1,587 edges: 1,301 observed, 286 synthesised connectors, every edge tagged | `runs/drain_graph_build/manifest.json` |
 | Hydraulic capacity | 1,208 edges rated (CPHEEO 2019 design basis), max 276.55 m³/s; 70 exceed capacity under the design storm | same, `capacity_metrics` |
 | Coupling water closure (tile smoke) | residual 2.7e-07 of total water | `runs/wf2_coupled_smoke/` |
 | 3 h forecast product | 25.94 mm window rainfall → 17,520 flooded segments, warm-started at issue time | `runs/wf3_uncoupled_3h_forecast_warm_product/manifest.json` |
 | 8-frame series (what the dashboard plays) | peak 17,953 flooded segments at t + 90 min | `runs/wf8_3h_forecast_frames/manifest.json` |
 | Latency, 1/16-domain tile (795,664 cells) | 23.07 s, full 3 h horizon | `runs/wf2_tile_throughput/manifest.json` |
-| Latency, full domain | 58.0 min (operational design: tile to the storm cell, never the whole city) | same |
+| Latency, full domain | 58.0 min (operational design: tile to the storm cell, never the whole city) | `runs/wf3_uncoupled_3h_forecast_warm/manifest.json` |
 
 ## Repository map
 
@@ -85,24 +85,24 @@ jaladhar/
 ├── configs/
 │   ├── domain_bengaluru.yaml     # every city-specific value: CRS, DEM tiles, boundary, roads, conditioning
 │   ├── solver.yaml               # numerics: time step, roughness, boundary, CFL bounds
-│   ├── forcing.yaml              # rainfall input: historical IMERG / forecast / live nowcast (mutually exclusive)
+│   ├── forcing.yaml              # rainfall input: historical IMERG or live IMD WFS nowcast
 │   ├── drainage.yaml             # capacity rule + the citations behind it
 │   ├── coupling.yaml             # capture / routing / surcharge-return parameters
 │   ├── routing.yaml              # road graph, vehicle classes, snap policy
 │   ├── compute.yaml              # device pool + budget ceiling (expensive stages refuse to exceed it)
 │   └── contracts/                # 4 frozen JSON interfaces: drain graph, coupling, depth product, nowcast input
 ├── src/jaladhar/
-│   ├── terrain/                  # DEM/boundary fetch, OSM layers, hydro-conditioning → the 10 m grid
-│   ├── solver/                   # 2D local-inertial shallow water: ACC stencil, CFL control, mass ledger, checkpoints
-│   ├── forcing/                  # IMERG (anchored), Open-Meteo, KSNDMC gauges, IMD WFS nowcast adapters
+│   ├── terrain/                  # 12 Python files: DEM/boundary fetch, OSM layers, conditioning → 10 m grid
+│   ├── solver/                   # 9 Python files incl. analytical: ACC stencil, CFL control, mass ledger
+│   ├── forcing/                  # 5 Python files: IMERG historical input and IMD WFS nowcast adapter
 │   ├── drainage/                 # KML/shapefile ingest → endpoint snap → D8 stitch → graph + cited capacities
 │   ├── coupling/                 # inlet capture, capacity-limited routing, surcharge return, water-closure ledger
-│   ├── validation/               # event replay driver, segment-status frames, G1/G3 scorers
+│   ├── validation/               # 8 Python files: event replay, segment-status frames, G1/G3 scorers
 │   ├── web/                      # dashboard: stdlib HTTP server + dependency-free Canvas UI (no tile service)
 │   ├── routing/                  # road graph from OSM, vehicle wading policy, fail-closed routing API
 │   └── provenance.py             # run manifests written at start and updated in place; dirty-tree refusal
 ├── scripts/                      # typer CLIs for every stage; demo launcher + rehearsal under scripts/demo/
-├── tests/                        # 69 files: unit tests + realized-state checks that verify bytes on disk
+├── tests/                        # 62 Python files, including shared helpers and realized-state checks
 ├── bench/                        # solver micro-benchmarks and the analytical correctness ladder
 ├── data/seed/                    # 5.7 MB curated seed data with SHA256SUMS (the only data shipped in git)
 └── docs/                         # provenance witness for the promoted elevation surface

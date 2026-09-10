@@ -1,21 +1,8 @@
 """Vehicle-specific flood impassability policies with mandatory citations.
-
-A policy file is input, not a code constant.  Every class must carry an
 integer-centimetre threshold and a citation whose source evidence is hash-bound
-on disk.  Without that file, routing remains unavailable rather than silently
-using the frozen 15 cm *model flood-status* rule as a vehicle limit.
-
-The owner-curated file ``data/curation/vehicle_wading_policy.json`` (with its
-sha256-bound evidence page ``data/curation/vehicle_wading_evidence.md``) is the
 realized instance of this contract; this module still hardcodes no threshold.
-
 Optional per-class annotations (``sensitivity_band_cm``, ``provenance_grade``,
-``interpretation``) are surfaced in summaries but never consulted by
-:meth:`VehiclePolicyCatalog.get` — routing decisions use only the cited
-threshold.  A top-level ``blocked_classes`` object passes through summaries
-verbatim after a shape check; it names classes deliberately left unconfigured
-(e.g. ``bus_truck``) and why.
-"""
+threshold.  A top-level ``blocked_classes`` object passes through summaries"""
 
 from __future__ import annotations
 
@@ -42,7 +29,6 @@ class VehiclePolicy:
     max_impassable_depth_cm: int
     citation_title: str
     citation_locator: str
-    # Optional curated annotations; None when the policy file omits them.
     sensitivity_band_cm: list[int] | None = None
     provenance_grade: str | None = None
     interpretation: str | None = None
@@ -66,7 +52,6 @@ class VehiclePolicy:
 
 
 class VehiclePolicyCatalog:
-    """A validated policy set, or an explicit external-unknown state."""
 
     def __init__(
         self,
@@ -85,8 +70,6 @@ class VehiclePolicyCatalog:
         self.source_sha256 = source_sha256
         self.evidence_path = evidence_path
         self.evidence_sha256 = evidence_sha256
-        # Verbatim payload object (shape-checked only); never consulted for
-        # availability or get() — it documents deliberately unconfigured classes.
         self.blocked_classes = blocked_classes
 
     @property
@@ -172,7 +155,6 @@ def _repo_relative_file(repo_root: Path, value: Any, field: str) -> Path:
 
 
 def _optional_sensitivity_band(value: Any, vehicle_class: str) -> list[int] | None:
-    """Validate the optional [low_cm, high_cm] band; absent means None."""
 
     if value is None:
         return None
@@ -210,7 +192,6 @@ def _optional_text_field(value: Any, field: str, vehicle_class: str) -> str | No
 
 
 def load_vehicle_policies(path: Path | None, *, repo_root: Path = REPO) -> VehiclePolicyCatalog:
-    """Load owner-supplied cited thresholds; no built-in threshold exists."""
 
     if path is None:
         return VehiclePolicyCatalog(
@@ -272,8 +253,6 @@ def load_vehicle_policies(path: Path | None, *, repo_root: Path = REPO) -> Vehic
         if source_evidence.get("sha256") != evidence_hash:
             raise VehiclePolicyError("source_evidence.sha256 does not match realized bytes")
         # Shape-check only: blocked_classes documents deliberately unconfigured
-        # classes and passes through summaries verbatim, so no field of it is
-        # interpreted here and its absence is legal.
         blocked_classes_raw = payload.get("blocked_classes")
         if blocked_classes_raw is not None and not isinstance(blocked_classes_raw, dict):
             raise VehiclePolicyError("blocked_classes must be an object when present")
@@ -327,7 +306,6 @@ def _main() -> None:
 
 @app.command("validate")
 def validate_policy(policy_file: Path = typer.Argument(...)) -> None:
-    """Validate an owner-supplied, cited vehicle policy file."""
 
     catalog = load_vehicle_policies(policy_file)
     if not catalog.available:

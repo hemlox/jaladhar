@@ -1,15 +1,6 @@
-"""Pure checks for OPEN-ITEMS AF residual-bound derivation.
-
-Independent observable: if either stated criterion is ignored, changing which
-component is smaller changes the expected bound while the implementation's
-result does not.
-
-V5 red-mutation record: replacing ``min`` with ``max`` in
-``residual_bound_components`` makes both binding-component tests fail (the
+"""V5 red-mutation record: replacing ``min`` with ``max`` in
 observed chosen bounds become 100 and 75 instead of 75 and 50, respectively).
-Scope: arithmetic derivation only; realized raster counts remain blocked on the
-full terrain build and are not claimed by these tests.
-"""
+Scope: arithmetic derivation only; realized raster counts remain blocked on the"""
 
 import pytest
 

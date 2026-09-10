@@ -1,10 +1,7 @@
 """Shared provenance contract tests.
-
 Scope: temporary one-commit repositories and one manifest lifecycle each. These
 checks establish the infrastructure contract; they do not claim every runner is
-already migrated. Red mutation recorded: changing ``--porcelain`` to
-``--porcelain --untracked-files=no`` makes the dirty-tree test fail.
-"""
+already migrated. Red mutation recorded: changing ``--porcelain`` to"""
 
 from __future__ import annotations
 
@@ -51,11 +48,7 @@ def test_dirty_tree_refuses_before_manifest_write(clean_repo: Path) -> None:
 
 def test_dirty_tree_message_preserves_first_tracked_path_character(clean_repo: Path) -> None:
     """V5 red: stripping porcelain output first reported ``racked.txt``.
-
-    If broken: the first character of the first modified tracked path is absent
-    from the refusal diagnostic. Scope: one modified tracked file whose
-    porcelain status begins with a leading space.
-    """
+    from the refusal diagnostic. Scope: one modified tracked file whose"""
     (clean_repo / "tracked.txt").write_text("modified\n")
 
     with pytest.raises(DirtyTreeError, match=r"dirty tree: tracked\.txt$"):
@@ -65,7 +58,7 @@ def test_dirty_tree_message_preserves_first_tracked_path_character(clean_repo: P
 def test_realized_manifest_lifecycle_and_snapshot(clean_repo: Path) -> None:
     """If broken: on-disk state lacks immutable start provenance or terminal state."""
     path = clean_repo / "manifest.json"
-    _git(clean_repo, "status", "--porcelain")  # independently confirm clean fixture
+    _git(clean_repo, "status", "--porcelain")
     cfg = {"solver": {"steps": 8}}
     budget = {"cells": 16, "timesteps": 8, "scenarios": 1}
     run = RunManifest(
@@ -111,7 +104,6 @@ def test_failure_updates_started_manifest(clean_repo: Path) -> None:
 
 
 def test_terminal_manifest_is_immutable(clean_repo: Path) -> None:
-    """If broken: a completed run can be relabelled as a later terminal state."""
     path = clean_repo / "manifest.json"
     run = RunManifest(path, stage="test", repo_root=clean_repo, resolved_config={})
     run.start()
@@ -125,7 +117,6 @@ def test_terminal_manifest_is_immutable(clean_repo: Path) -> None:
 
 
 def test_running_update_preserves_start_provenance(clean_repo: Path) -> None:
-    """If broken: adding the compute budget replaces start identity or status."""
     path = clean_repo / "manifest.json"
     run = RunManifest(path, stage="test", repo_root=clean_repo, resolved_config={})
     started = run.start()
@@ -142,11 +133,8 @@ def test_running_update_preserves_start_provenance(clean_repo: Path) -> None:
 
 def test_manifest_owner_detects_another_writer(clean_repo: Path) -> None:
     """If broken: a second writer can replace realized running provenance.
-
     V5 red state is the deliberate external replacement below. Completion
-    must observe it rather than accepting the in-memory mirror as realized
-    state. Scope: one temporary manifest lifecycle.
-    """
+    must observe it rather than accepting the in-memory mirror as realized"""
     path = clean_repo / "manifest.json"
     run = RunManifest(path, stage="test", repo_root=clean_repo, resolved_config={})
     run.start()
@@ -157,11 +145,7 @@ def test_manifest_owner_detects_another_writer(clean_repo: Path) -> None:
 
 
 def test_failure_preserves_foreign_manifest_and_writes_sidecar(clean_repo: Path) -> None:
-    """If broken: failure handling destroys the unauthorized writer's evidence.
-
-    Scope: one deliberately replaced manifest. The independent observable is
-    the exact foreign bytes, which must remain unchanged after ``fail``.
-    """
+    """Scope: one deliberately replaced manifest. The independent observable is"""
     path = clean_repo / "manifest.json"
     run = RunManifest(path, stage="test", repo_root=clean_repo, resolved_config={})
     run.start()

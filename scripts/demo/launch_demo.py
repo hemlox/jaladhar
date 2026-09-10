@@ -1,10 +1,4 @@
 #!/usr/bin/env python3
-"""Bring up the already-built dashboard and routing API for one realized run.
-
-The launcher never generates a product and never invokes the solver.  It performs
-the frozen depth-product checks, starts both child services with an explicit CPU
-environment, probes their readiness endpoints, and keeps them alive until Ctrl-C.
-"""
 
 from __future__ import annotations
 
@@ -39,7 +33,6 @@ DEFAULT_ROUTING_CONFIG = Path("configs/routing.yaml")
 
 
 def append_snap_cap(argv: list[str], cap_m: float | None) -> list[str]:
-    """Append the owner-supplied server snap cap to a routing-API argv (None = absent)."""
 
     if cap_m is None:
         return list(argv)
@@ -47,7 +40,6 @@ def append_snap_cap(argv: list[str], cap_m: float | None) -> list[str]:
 
 
 def append_vehicle_policy(argv: list[str], policy_file: Path | None) -> list[str]:
-    """Append the cited vehicle-policy file to a routing-API argv (None = absent)."""
 
     if policy_file is None:
         return list(argv)
@@ -55,7 +47,6 @@ def append_vehicle_policy(argv: list[str], policy_file: Path | None) -> list[str
 
 
 def append_cors_origin(argv: list[str], cors_origin: str | None) -> list[str]:
-    """Append the demo browser origin to a routing-API argv (None = header absent)."""
 
     if cors_origin is None:
         return list(argv)
@@ -63,7 +54,6 @@ def append_cors_origin(argv: list[str], cors_origin: str | None) -> list[str]:
 
 
 def append_gate_report_file(argv: list[str], gate_report_file: Path | None) -> list[str]:
-    """Append the config-bound scientific-gate report to a routing-API argv (None = absent)."""
 
     if gate_report_file is None:
         return list(argv)
@@ -82,15 +72,7 @@ def resolve_routing_settings(
     env: Mapping[str, str] | None = None,
     repo_root: Path = REPO_ROOT,
 ) -> dict[str, object]:
-    """Resolve vehicle policy + snap cap from flag > env ``JALADHAR_ROUTING_*`` > YAML.
-
-    Precedence per key is explicit-flag first, then the environment, then the
-    routing config file.  The config file itself resolves as: explicit
-    ``--routing-config`` (must exist) > ``$JALADHAR_ROUTING_CONFIG`` (must
-    exist) > the repo default ``configs/routing.yaml`` when present.  A missing
-    default file means the feature is simply not configured — never invented.
-    All resolution problems are aggregated into one error (repo rule 7).
-    """
+    "Resolve vehicle policy + snap cap from flag > env ``JALADHAR_ROUTING_*`` > YAML. Precedence per key is explicit-flag first, then the environment, then the routing config file. The config file itself resolves as: explicit ``--routing-config`` (must exist) > ``$JALADHAR_ROUTING_CONFIG`` (must exist) > the repo default ``configs/routing.yaml`` when present. A missing default file means the feature is simply not configured — never invented. All resolution problems are aggregated into one error (repo rule 7)."  # noqa: E501
 
     environment = os.environ if env is None else env
     problems: list[str] = []
@@ -147,9 +129,7 @@ def resolve_routing_settings(
                 yaml_depth_override = value.strip()
         snap_basis = payload.get("server_max_snap_distance_basis")
         if snap_basis is not None and not isinstance(snap_basis, str):
-            problems.append(
-                "routing config server_max_snap_distance_basis must be a string"
-            )
+            problems.append("routing config server_max_snap_distance_basis must be a string")
 
     policy_file: Path | None = flag_policy_file
     policy_source = "flag" if policy_file is not None else "unset"
@@ -224,12 +204,6 @@ def resolve_routing_settings(
 
 
 def _routing_state_lines(payload: object) -> list[str]:
-    """Derive honest ROUTING_STATE lines from the API's realized /health payload.
-
-    The wading-threshold policy is owner-adjudicated; this launcher never
-    invents a value and never fakes readiness.  Every line here is read from
-    what the API itself reports.
-    """
 
     if not isinstance(payload, dict):
         return ["ROUTING_STATE=unknown reason=health payload was not an object"]
@@ -255,9 +229,6 @@ def _routing_state_lines(payload: object) -> list[str]:
     if payload.get("status") == "ready":
         state = "ROUTING_STATE=ready"
     else:
-        # The headline derives from the payload's OVERALL status only; the
-        # per-gate detail stays on ROUTING_BLOCKERS. A not_ready payload is
-        # never headlined with one gate's status string.
         state = "ROUTING_STATE=not_ready"
     lines = [state, "ROUTING_BLOCKERS=" + (",".join(blockers) or "none")]
     if blockers:
@@ -275,7 +246,6 @@ def _url(host: str, port: int, path: str) -> str:
 
 
 def _require_ready_api_health(payload: object) -> None:
-    """Reject HTTP-success responses whose realized API state is not ready."""
 
     health_status = payload.get("status") if isinstance(payload, dict) else None
     if health_status != "ready":
@@ -285,7 +255,6 @@ def _require_ready_api_health(payload: object) -> None:
 
 
 def _require_ready_dashboard_state(payload: object) -> None:
-    """Reject HTTP-success responses whose realized dashboard state is not ready."""
 
     state = payload.get("status") if isinstance(payload, dict) else None
     if state != "ready":
@@ -356,7 +325,6 @@ def main(
         ),
     ),
 ) -> None:
-    """Start dashboard + routing API against a realized, manifest-backed run."""
     services: list[RunningService] = []
     try:
         if fallback and run_dir is not None:
@@ -383,8 +351,6 @@ def main(
 
         evidence = discover_fallback() if fallback else None
         if evidence is None and run_dir is None:
-            # Unified cold discovery (same truth as the dashboard): newest
-            # valid frame series first, then the designated flat fallback.
             evidence = discover_fallback()
             typer.echo("DISCOVERY=auto frame-series-preferred-then-flat-fallback")
         if evidence is None:
@@ -427,16 +393,12 @@ def main(
             port=api_port,
             repo_root=REPO_ROOT,
             depth_product_file=(
-                routing.get("depth_override_file")
-                or depth_product_file_for(evidence)
+                routing.get("depth_override_file") or depth_product_file_for(evidence)
             ),
         )
         api_argv = append_snap_cap(api_argv, resolved_snap)
         api_argv = append_vehicle_policy(api_argv, resolved_policy)
         api_argv = append_cors_origin(api_argv, cors_origin)
-        # Config-bound gate report is appended now and DEDUPED below: a
-        # product-bound report discovered from the run wins (it binds the exact
-        # served bytes), so never pass --gate-report-file twice.
         if evidence is not None and evidence.gate_report is None:
             api_argv = append_gate_report_file(api_argv, resolved_gate_report)
         if routing["config_source"] != "unset":
@@ -467,8 +429,6 @@ def main(
                 "(source=product-bound)"
             )
         elif resolved_gate_report is not None:
-            # Already appended to the API argv above; the dashboard keeps its own
-            # product-bound binding and is deliberately not handed this path.
             typer.echo(
                 f"GATE_REPORT={resolved_gate_report.relative_to(REPO_ROOT)} "
                 f"(source={routing['gate_report_source']}; API only)"
@@ -488,10 +448,6 @@ def main(
             f"DASHBOARD_READY status={dashboard_result.status} "
             f"url={_url(host, dashboard_port, dashboard_path)}"
         )
-        # Degraded-routing start: the routing API's wading threshold is an
-        # owner-adjudicated policy and its fail-closed gate is honest state,
-        # not a launcher failure.  The API process keeps serving /health with
-        # that gate status; only a DASHBOARD failure blocks the demo.
         api_health: object | None = None
         api_result = None
         try:

@@ -1,36 +1,10 @@
 """Terminal-seed resolution for the WF-2 drain graph — definition v2-lake-boundary.
-
-WF-2 M1 (owner directive, round 3): the 97.28% dead-end surcharge split may be
-an OUTFALL-DEFINITION ARTIFACT. A rajakaluve discharging into Bellandur/Varthur
 Lake HAS reached a terminal sink; a reach crossing the domain boundary HAS left
-the domain. This module extends the terminal seed set BEYOND the declared gpkg
-``node_type == 'outfall'`` rows by two CONFIG-DECLARED rules (see
-``configs/terminal_definition.yaml`` for the visible, justified definition):
-
-- ``lake_polygon`` — a SINK node (no outgoing directed edges) within
-  ``snap_tolerance_m`` of a selected lake polygon seeds;
 - ``domain_boundary`` — a SINK node within ``boundary_tolerance_m`` of any edge
-  of the producer-declared buffered grid seeds.
-
 Priority is ``declared_gpkg_outfall > lake_polygon > domain_boundary`` so every
-node carries EXACTLY ONE ``rule_fired`` label and ``counts_by_rule`` partitions
-the seed union with no double-counting.
-
 CONSUMER-SIDE ONLY: configs/contracts/drain_graph.json forbids PRODUCERS
 emitting node_type=inlet / outfall_reason=lake_boundary until a boundary-
-exchange agreement lands; nothing here writes producer artefacts, it only
-derives extra seeds when LOADING or POST-HOC SCORING.
-
-Two reachability traversals exist BY DESIGN in this repo (router's torch BFS
-feeds DrainGraph.component_class; scripts/wf2_return_ratio_split.py keeps its
-stdlib deque BFS as an independent traversal). This module owns the CANONICAL
-DEFINITION as :func:`classify_reachability` — path-length-0 seeding, reversed
-directed BFS, identical semantics to both existing traversals — and callers
-CROSS-ASSERT their traversal against it at the seam (V8).
-
-Dependencies: stdlib + PyYAML + geopandas/shapely only. NO torch — the router
-imports this module, not the other way around.
-"""
+CROSS-ASSERT their traversal against it at the seam (V8)."""
 
 from __future__ import annotations
 
@@ -68,16 +42,10 @@ RULE_BOUNDARY = "domain_boundary"
 _RULE_PRIORITY: tuple[str, ...] = (RULE_DECLARED, RULE_LAKE, RULE_BOUNDARY)
 
 # The ONLY legal bbox source: the producer grid block already parsed and refused
-# on by the coupling router — no second bbox definition exists.
 EXPECTED_BBOX_SOURCE = "graph_manifest.config_snapshot.grid"
 
 
 class TerminalDefinitionError(ValueError):
-    """Aggregated rule-7-style failure of ``configs/terminal_definition.yaml``.
-
-    Carries EVERY problem found in ``.problems`` and in the message text — never
-    the first problem alone.
-    """
 
     def __init__(self, problems: list[str], config_path: Path | None = None) -> None:
         self.problems = list(problems)
@@ -89,11 +57,6 @@ class TerminalDefinitionError(ValueError):
         )
         body = "\n".join(f"  {i}. {p}" for i, p in enumerate(problems, start=1))
         super().__init__(f"{header}\n{body}")
-
-
-# ---------------------------------------------------------------------------
-# Definition object
-# ---------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
@@ -123,14 +86,7 @@ def _is_num(v: Any) -> bool:
 
 
 def load_terminal_definition(path: Path) -> TerminalDefinition:
-    """Load + validate the terminal definition YAML; ALL problems in ONE error.
-
-    Touched keys: ``definition_version``, every key under ``rules.*`` (including
-    the justification strings the owner demanded be visible), the sensitivity
-    tolerance band, and the provenance pointer (existence-checked). A missing
-    file, unreadable YAML or non-mapping document raises immediately with that
-    single problem — there is nothing else to collect against.
-    """
+    """tolerance band, and the provenance pointer (existence-checked). A missing"""
     path = Path(path)
     problems: list[str] = []
     if not path.exists():
@@ -160,7 +116,6 @@ def load_terminal_definition(path: Path) -> TerminalDefinition:
         problems.append(f"'rules' must be a mapping, got {type(rules).__name__!s}")
         rules = {}
 
-    # --- lake rule -----------------------------------------------------------
     lake = rules.get(RULE_LAKE) if isinstance(rules, Mapping) else None
     lake_enabled = False
     lake_require_sink = True
@@ -326,18 +281,9 @@ def load_terminal_definition(path: Path) -> TerminalDefinition:
     )
 
 
-# ---------------------------------------------------------------------------
-# Lake geometry + producer grid block
-# ---------------------------------------------------------------------------
-
-
 def load_lake_union(tdef: TerminalDefinition):
-    """Read the selected lake polygons and return their UNION geometry.
-
-    Asserts, against the REALIZED bytes: the layer exists, its CRS matches the
-    declared CRS, the name field is present, and EVERY selected exact-name is
-    found (a silently-shrinking selection would move seeds without a trace).
-    """
+    """Asserts, against the REALIZED bytes: the layer exists, its CRS matches the
+    found (a silently-shrinking selection would move seeds without a trace)."""
     import geopandas as gpd
 
     gdf = gpd.read_file(tdef.lake_source_path, layer=tdef.lake_layer)
@@ -389,8 +335,7 @@ class GridBlock:
 
 
 def parse_grid_block(grid_block: Mapping[str, Any]) -> GridBlock:
-    """Parse the SAME ``config_snapshot.grid`` block the coupling router parses
-    and refuses on — one bbox definition, no second implementation of its semantics."""
+    """and refuses on — one bbox definition, no second implementation of its semantics."""
     problems: list[str] = []
     for key in ("height", "width", "transform"):
         if key not in grid_block:
@@ -413,11 +358,6 @@ def parse_grid_block(grid_block: Mapping[str, Any]) -> GridBlock:
     )
 
 
-# ---------------------------------------------------------------------------
-# Seed resolution
-# ---------------------------------------------------------------------------
-
-
 @dataclass(frozen=True)
 class NodeTerminalRecord:
     """Per-node terminal record (V1: realized distances, not declarations)."""
@@ -432,12 +372,7 @@ class NodeTerminalRecord:
 
 @dataclass(frozen=True)
 class TerminalResolution:
-    """Result of :func:`resolve_terminal_nodes`.
-
-    ``counts_by_rule`` PARTITIONS ``seed_union`` exactly (priority ordering);
-    the internal invariant is asserted at construction time inside
-    :func:`resolve_terminal_nodes`.
-    """
+    """the internal invariant is asserted at construction time inside"""
 
     definition_version: str
     seeds_by_rule: dict[str, list[int]]
@@ -473,12 +408,11 @@ class TerminalResolution:
 
 def _within_tolerance(dist_m: float, tol_m: float) -> bool:
     """Inclusive boundary predicate (d <= tol) — same convention as the
-    attribution-radius seam (matched AT the radius counts). Mutation probe
-    M-T1 flips this comparison to strict '<'; see tests/drainage/test_terminal.py."""
+    attribution-radius seam (matched AT the radius counts). Mutation probe"""
     return dist_m <= tol_m
 
 
-def _point(x: float, y: float):  # narrow shapely import to call sites
+def _point(x: float, y: float):
     from shapely import Point
 
     return Point(x, y)
@@ -494,22 +428,8 @@ def resolve_terminal_nodes(
     lake_union: Any | None = None,
 ) -> TerminalResolution:
     """Derive the extended terminal seed set under the v2 definition.
-
-    Args:
-        node_xy: ``(N, 2)`` projected positions; index i corresponds to
-            node_id i+1 (the repo-wide convention).
-        edge_pairs: directed ``(from_id, to_id)`` pairs over the FULL graph.
-        declared_outfall_ids: ids with ``node_type == 'outfall'`` in the
-            producer gpkg (rule 0; unchanged from v1).
-        tdef: validated :class:`TerminalDefinition`.
-        grid_block: the producer manifest's ``config_snapshot.grid`` mapping.
-        lake_union: optional pre-loaded union geometry (pass it when resolving
-            repeatedly across the sensitivity sweep so the gpkg is read once).
-
-    Returns:
-        :class:`TerminalResolution` whose ``counts_by_rule`` partitions
-        ``seed_union`` exactly under priority declared > lake > boundary.
-    """
+    producer gpkg (rule 0; unchanged from v1).
+    grid_block: the producer manifest's ``config_snapshot.grid`` mapping."""
     declared_set = {int(i) for i in declared_outfall_ids}
     outgoing = {int(u) for u, _ in edge_pairs}
     gb = parse_grid_block(grid_block)
@@ -584,17 +504,11 @@ def resolve_terminal_nodes(
 
 
 def classify_reachability(edge_pairs: Sequence[tuple[int, int]], seeds: Sequence[int]) -> set[int]:
-    """CANONICAL directed-reachability definition: nodes that can reach ANY
-    seed following directed edges downstream; seeds qualify at path length 0.
-
-    Reference implementation both existing traversals cross-assert against
-    (V8): router._compute_component_classes (torch BFS) and
-    scripts/wf2_return_ratio_split.py:_reachable_to_outfall (deque BFS) share
-    these semantics by construction; a divergence anywhere is a defect.
-    """
+    """Reference implementation both existing traversals cross-assert against
+    (V8): router._compute_component_classes (torch BFS) and"""
     succ: dict[int, list[int]] = {}
     for u, v in edge_pairs:
-        succ.setdefault(int(v), []).append(int(u))  # reversed: who can reach v
+        succ.setdefault(int(v), []).append(int(u))
     reached = {int(s) for s in seeds}
     queue = deque(reached)
     while queue:
@@ -607,8 +521,6 @@ def classify_reachability(edge_pairs: Sequence[tuple[int, int]], seeds: Sequence
 
 
 def with_tolerances(tdef: TerminalDefinition, tolerance_m: float) -> TerminalDefinition:
-    """A copy of the definition with BOTH tolerances set to ``tolerance_m`` —
-    the sensitivity-sweep point constructor (published whatever it shows)."""
     return replace(
         tdef,
         lake_snap_tolerance_m=float(tolerance_m),

@@ -1,31 +1,10 @@
-"""WF-1 drain-graph loader: robust BBMP KML ingestion -> EPSG:32643 reach table.
-
-First pipeline stage. Parses primary/secondary drain KMLs into Reach records
-(imported from jaladhar.drainage.stitch - single source of truth), transforming
-WGS84 lon,lat -> EPSG:32643 via pyproj (always_xy). reach_id is assigned
-deterministically ascending per class after sorting placemarks by OBJECTID when
-present, else document order; the sort basis is recorded in diagnostics.
-
-ROBUST RECOVERY LADDER per file: (1) fiona/GDAL KML driver; (2) ogr2ogr
-subprocess if available; (3) stdlib raw-XML parse (namespace-stripped; handles
-<coordinates> and gx:coord tuples; malformed placemarks are SKIPPED AND COUNTED,
+"""(imported from jaladhar.drainage.stitch - single source of truth), transforming
 never fatal - partial recovery of valid features is required behavior).
-
-Tertiary KML is REPORT-ONLY (exclusion ruling stands): parsed through the same
-ladder for census/junction-candidate diagnostics, NEVER emitted as reaches.
-
 Diagnostics are REPORTED-NOT-ASSERTED except one hard gate: the overall P+S
-invalid-geometry fraction exceeding cfg diagnostics.max_invalid_fraction raises
-LoaderError BEFORE anything downstream can start.
-
-Rule 6 manifest written at run start (status running) and updated in place.
-Rule 7 config resolution aggregates ALL problems into ONE ValueError.
-CPU-only; no torch/CUDA import anywhere in this module.
-"""
+Rule 6 manifest written at run start (status running) and updated in place."""
 
 from __future__ import annotations
 
-import hashlib
 import json
 import math
 import re
@@ -50,6 +29,7 @@ from shapely import is_valid_reason
 from shapely.geometry import LineString
 
 from jaladhar.drainage.stitch import Reach
+from jaladhar.provenance import sha256_file
 
 app = typer.Typer(add_completion=False)
 REPO = Path(__file__).resolve().parents[3]
@@ -63,10 +43,6 @@ _LENGTH_M_FIELDS = ("SHAPE_Leng", "Shape_Leng", "Shape.STLength()")
 class LoaderError(RuntimeError):
     """A loader gate or ingestion failure."""
 
-
-# ---------------------------------------------------------------------------
-# rule-7 config resolution + binding
-# ---------------------------------------------------------------------------
 
 _REQUIRED_KEYS: list[str] = [
     "crs",
@@ -86,12 +62,7 @@ _BOUND_CFG: dict | None = None
 
 
 def bind_config(cfg: dict) -> None:
-    """Bind a resolved drainage config for subsequent load_reaches() calls.
-
-    load_reaches keeps its contracted positional interface but needs the gate
-    threshold and elevation-surface identity from config; the CLI binds the
-    resolve_config() result here. Unbound calls fall back to resolving
-    REPO/configs/drainage.yaml."""
+    """load_reaches keeps its contracted positional interface but needs the gate"""
     global _BOUND_CFG
     _BOUND_CFG = cfg
 
@@ -108,8 +79,6 @@ def _repo(p: Any) -> Path:
 
 
 def resolve_config(config_path: str) -> dict:
-    """Rule-7 pre-flight: touch every key this module will ever need and raise ONE
-    aggregated ValueError listing ALL missing/invalid keys, not just the first."""
     problems: list[str] = []
     with open(config_path) as f:
         raw = yaml.safe_load(f)
@@ -189,11 +158,6 @@ def resolve_config(config_path: str) -> dict:
     return d
 
 
-# ---------------------------------------------------------------------------
-# small shared helpers
-# ---------------------------------------------------------------------------
-
-
 def _utc_now() -> str:
     return datetime.now(UTC).isoformat(timespec="seconds")
 
@@ -217,16 +181,7 @@ def _git_dirty() -> bool:
         return False
 
 
-def _sha256_file(path: Path) -> str:
-    h = hashlib.sha256()
-    with open(path, "rb") as f:
-        for chunk in iter(lambda: f.read(1 << 20), b""):
-            h.update(chunk)
-    return h.hexdigest()
-
-
 def _jsonable(obj: Any) -> Any:
-    """Recursively convert numpy scalars so json.dumps never chokes on diagnostics."""
     if isinstance(obj, dict):
         return {str(k): _jsonable(v) for k, v in obj.items()}
     if isinstance(obj, (list, tuple)):
@@ -260,21 +215,15 @@ class _UnionFind:
             self.parent[rb] = ra
 
 
-# ---------------------------------------------------------------------------
-# placemark model + recovery ladder
-# ---------------------------------------------------------------------------
-
-
 @dataclass
 class _Place:
-    """One KML placemark as extracted by any rung of the recovery ladder."""
 
-    oid: int | None = None  # OBJECTID if present and parsable
-    length_attr: float | None = None  # KML 'Length' attribute exactly as recorded
-    shape_leng: float | None = None  # first of SHAPE_Leng / Shape_Leng / Shape.STLength()
-    parts: list[list[tuple[float, float]]] = field(default_factory=list)  # lon/lat lines
-    nonline_geometry: bool = False  # Point/Polygon/other non-line geometry present
-    malformed: bool = False  # unparsable/truncated -> skipped at parse time
+    oid: int | None = None
+    length_attr: float | None = None
+    shape_leng: float | None = None
+    parts: list[list[tuple[float, float]]] = field(default_factory=list)
+    nonline_geometry: bool = False
+    malformed: bool = False
 
 
 class _BadCoords(Exception):
@@ -355,7 +304,7 @@ def _placemarks_rawxml(path: Path) -> list[_Place]:
                 else:
                     place.malformed = True
         if not place.parts and not place.nonline_geometry:
-            place.malformed = True  # broken LineString element or no usable geometry at all
+            place.malformed = True
         out.append(place)
     return out
 
@@ -417,7 +366,6 @@ def _geojson_part(coords: Any) -> list[tuple[float, float]] | None:
 
 
 def _placemarks_fiona(path: Path) -> list[_Place] | None:
-    """Rung 1. Returns None when this rung is unavailable or dies wholesale."""
     try:
         import fiona
     except ImportError:
@@ -439,7 +387,6 @@ def _placemarks_fiona(path: Path) -> list[_Place] | None:
 
 
 def _placemarks_ogr2ogr(path: Path) -> list[_Place] | None:
-    """Rung 2. Returns None when ogr2ogr is absent or the conversion fails."""
     exe = shutil.which("ogr2ogr")
     if exe is None:
         return None
@@ -473,13 +420,11 @@ _PARSE_RUNGS: tuple[tuple[str, Any], ...] = (
 
 
 def _parse_kml(path: Path) -> tuple[list[_Place], str]:
-    """Recovery ladder: first rung that yields placemarks wins; a rung that yields
-    zero or dies falls through to the next. Never abort on one bad placemark."""
     failures: dict[str, str] = {}
     for name, fn in _PARSE_RUNGS:
         try:
             places = fn(path)
-        except Exception as e:  # a rung must never abort the ladder
+        except Exception as e:
             failures[name] = f"{type(e).__name__}: {e}"
             continue
         if places:
@@ -488,17 +433,12 @@ def _parse_kml(path: Path) -> tuple[list[_Place], str]:
     raise LoaderError(f"{path.name}: all parse rungs failed: {failures}")
 
 
-# ---------------------------------------------------------------------------
-# attempts: parse output -> candidate geometries
-# ---------------------------------------------------------------------------
-
-
 @dataclass
 class _Attempt:
     place: _Place
     doc_index: int
-    geom: LineString | None = None  # merged LineString in target CRS
-    status: str = "ok"  # ok | invalid | skipped
+    geom: LineString | None = None
+    status: str = "ok"
     reason: str | None = None
 
 
@@ -513,7 +453,7 @@ def _build_attempts(places: list[_Place], tf: Transformer) -> list[_Attempt]:
         elif not p.parts:
             att.status, att.reason = "invalid", "null_or_empty_geometry"
         else:
-            coords = [xy for part in p.parts for xy in part]  # merge parts document order
+            coords = [xy for part in p.parts for xy in part]
             try:
                 xs, ys = zip(*coords, strict=True)
                 tx, ty = tf.transform(xs, ys)
@@ -528,8 +468,6 @@ def _build_attempts(places: list[_Place], tf: Transformer) -> list[_Attempt]:
 
 
 def _flip_invalid_geoms(attempts: list[_Attempt]) -> None:
-    """shapely validity on the transformed geoms: not-valid entries leave the table
-    and join the invalid numerator (gate); non-simple lines stay (reported only)."""
     for att in attempts:
         if att.status == "ok" and att.geom is not None:
             reason = is_valid_reason(att.geom)
@@ -553,11 +491,6 @@ def _sort_attempts(attempts: list[_Attempt]) -> tuple[list[_Attempt], str]:
         return (oid is None, oid if oid is not None else a.doc_index, a.doc_index)
 
     return sorted(usable, key=key), basis
-
-
-# ---------------------------------------------------------------------------
-# diagnostics helpers
-# ---------------------------------------------------------------------------
 
 
 def _spacing_stats(geoms: list[LineString]) -> dict:
@@ -604,8 +537,7 @@ def _endpoint_multiplicity(geoms: list[LineString]) -> dict:
 def _length_crosscheck(places: list[_Place], reach_pairs: list[tuple[_Attempt, Reach]]) -> dict:
     """Cross-check block: KML Length / SHAPE_Leng attribute sums vs measured
     post-transform lengths. The Length attribute's unit is NOT asserted - the
-    realized median measured/attr ratio decides the km->m conversion, and the
-    basis string names that assumption explicitly (V10: derivation inspectable)."""
+    realized median measured/attr ratio decides the km->m conversion, and the"""
     attr_sum = math.fsum(p.length_attr for p in places if p.length_attr is not None)
     leng_sum = math.fsum(p.shape_leng for p in places if p.shape_leng is not None)
     measured_sum = math.fsum(r.length_m for _, r in reach_pairs)
@@ -647,10 +579,6 @@ def _length_crosscheck(places: list[_Place], reach_pairs: list[tuple[_Attempt, R
     }
 
 
-# ---------------------------------------------------------------------------
-# elevation sampling diagnostic
-# ---------------------------------------------------------------------------
-
 _ELEV_CACHE: dict[tuple[str, str], tuple[np.ndarray, float | None]] = {}
 
 
@@ -680,7 +608,7 @@ def _downhill_diagnostic(reaches: list[Reach], cfg: dict) -> dict:
     elev_path = _repo(elev_s)
     if not elev_path.exists():
         return fail(f"elevation surface not readable: {elev_path}")
-    got = _sha256_file(elev_path)
+    got = sha256_file(elev_path)
     res["elevation_sha256_realized"] = got
     if expected_sha is None:
         return fail("inputs.elevation_sha256 not configured")
@@ -726,11 +654,6 @@ def _downhill_diagnostic(reaches: list[Reach], cfg: dict) -> dict:
     return res
 
 
-# ---------------------------------------------------------------------------
-# snapped-endpoint helpers (shared by P+S census cross-check and tertiary report)
-# ---------------------------------------------------------------------------
-
-
 def _endpoint_arrays(geoms: list[LineString]) -> list[tuple[float, float]]:
     pts: list[tuple[float, float]] = []
     for g in geoms:
@@ -741,8 +664,6 @@ def _endpoint_arrays(geoms: list[LineString]) -> list[tuple[float, float]]:
 
 
 def _snapped_representatives(geoms: list[LineString], tol_m: float) -> list[tuple[float, float]]:
-    """Distinct endpoint-cluster representatives (min coord member per cluster,
-    matching the pinned node representative convention) at tol_m."""
     pts = _endpoint_arrays(geoms)
     reps: list[tuple[float, float]] = []
     if not pts:
@@ -758,11 +679,6 @@ def _snapped_representatives(geoms: list[LineString], tol_m: float) -> list[tupl
     for root in sorted(members):
         reps.append(min(members[root], key=lambda p: (round(p[0], 3), round(p[1], 3))))
     return reps
-
-
-# ---------------------------------------------------------------------------
-# tertiary report-only analysis
-# ---------------------------------------------------------------------------
 
 
 def _tertiary_report(
@@ -793,14 +709,14 @@ def _tertiary_report(
     places, rung = _parse_kml(path)
     rep["tertiary_placemark_count"] = len(places)
     rep["parse_rung"] = rung
-    lines_wgs: list[list[tuple[float, float]]] = []  # each PART is one geom (expect ~5815)
+    lines_wgs: list[list[tuple[float, float]]] = []
     failed = 0
     nonline = 0
     for p in places:
         if p.malformed:
             failed += 1
             continue
-        lines_wgs.extend(p.parts)  # each PART is one geom (expect ~5815, 9 multipart placemarks)
+        lines_wgs.extend(p.parts)
         if p.nonline_geometry:
             nonline += 1
     rep["tertiary_failed_count"] = failed
@@ -822,7 +738,7 @@ def _tertiary_report(
         rep["tertiary_endpoint_clusters_10m_no_bridge"] = len(
             {uf.find(i) for i in range(len(end_pts))}
         )
-        for gi in range(len(lines_wgs)):  # each geom bridges its two endpoints
+        for gi in range(len(lines_wgs)):
             uf.union(2 * gi, 2 * gi + 1)
         rep["tertiary_component_count_10m"] = len({uf.find(i) for i in range(len(end_pts))})
 
@@ -839,11 +755,6 @@ def _tertiary_report(
             rep["tertiary_junction_candidates_endpoints_10m"] = cand_eps
             rep["tertiary_junction_candidate_geoms"] = len(cand_geoms)
     return rep
-
-
-# ---------------------------------------------------------------------------
-# public entrypoints
-# ---------------------------------------------------------------------------
 
 
 def _class_diagnostics(
@@ -889,11 +800,6 @@ def load_reaches(
     kml_secondary: str,
     kml_tertiary_report_only: str | None = None,
 ) -> tuple[list[Reach], dict]:
-    """Parse BBMP primary/secondary KMLs into Reach records (EPSG:32643) plus a
-    diagnostics dict. Tertiary path is REPORT-ONLY and never emits reaches.
-
-    Gate: overall P+S invalid-geometry fraction > cfg
-    diagnostics.max_invalid_fraction raises LoaderError before returning."""
     t0 = time.perf_counter()
     cfg = _active_cfg()
     max_frac = float(
@@ -927,7 +833,6 @@ def load_reaches(
         )
 
     # GATE: refuse before downstream starts. Scope = primary+secondary (the classes
-    # feeding the stitcher); malformed-parse skips are excluded from the denominator
     # (partial-recovery semantics) - invalid means parsed-but-unusable.
     attempted = sum(
         1
@@ -979,9 +884,7 @@ def load_reaches(
     return reaches, diagnostics
 
 
-# ---------------------------------------------------------------------------
 # CLI (rule-6 manifest at run start, updated in place)
-# ---------------------------------------------------------------------------
 
 
 @app.callback()
@@ -1006,7 +909,7 @@ def run(
         k: str(_repo(cfg["inputs"][k])) if cfg["inputs"].get(k) else None
         for k in ("kml_primary", "kml_secondary", "kml_tertiary_report_only")
     }
-    input_shas = {k: _sha256_file(Path(v)) for k, v in inputs.items() if v and Path(v).exists()}
+    input_shas = {k: sha256_file(Path(v)) for k, v in inputs.items() if v and Path(v).exists()}
     manifest: dict[str, Any] = {
         "stage": "wf1_load",
         "status": "running",

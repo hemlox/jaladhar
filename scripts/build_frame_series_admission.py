@@ -1,14 +1,5 @@
 #!/usr/bin/env python3
-"""Build the retrospective admission sidecar for Replay #2's per-frame depth series.
-
-The historical solver manifest (`runs/goal_d_replay2_final_config/manifest.json`)
-predates the frame-series product and binds only its aggregate rasters. This script
-never rewrites that manifest: it emits a `data/curation/` sidecar binding the
-realized `depth_rasters/` bytes -- one SHA-256 per frame, the frame count, the
-cadence, and the valid-time derivation rule -- so downstream consumers can assert
-the series they read is the series the solver wrote (V1: hashes are realized
-state; directory listings are not).
-"""
+"Build the retrospective admission sidecar for Replay #2's per-frame depth series. The historical solver manifest (`runs/goal_d_replay2_final_config/manifest.json`) predates the frame-series product and binds only its aggregate rasters. This script never rewrites that manifest: it emits a `data/curation/` sidecar binding the realized `depth_rasters/` bytes -- one SHA-256 per frame, the frame count, the cadence, and the valid-time derivation rule -- so downstream consumers can assert the series they read is the series the solver wrote (V1: hashes are realized state; directory listings are not)."  # noqa: E501
 
 from __future__ import annotations
 
@@ -31,7 +22,7 @@ EXPECTED_CADENCE_SECONDS = 1800
 
 
 class FrameAdmissionError(RuntimeError):
-    """Raised when the realized frame series cannot be admitted verbatim."""
+    pass
 
 
 def sha256_file(path: Path, chunk_size: int = 1024 * 1024) -> str:
@@ -50,7 +41,6 @@ def build_frame_series_admission(
     expected_cadence_seconds: int = EXPECTED_CADENCE_SECONDS,
     repo_root: Path = REPO,
 ) -> dict[str, object]:
-    """Scan the realized series and return the admission payload (no I/O side effects)."""
 
     if not source_dir.is_dir():
         raise FrameAdmissionError(f"frame series directory is absent: {source_dir}")
@@ -155,7 +145,6 @@ def main(
     source_dir: Path = typer.Option(DEFAULT_SOURCE_DIR),
     source_manifest: Path = typer.Option(DEFAULT_SOURCE_MANIFEST),
 ) -> None:
-    """Scan the realized frame series and write its admission sidecar."""
 
     try:
         payload = build_frame_series_admission(source_dir, source_manifest)

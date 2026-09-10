@@ -111,75 +111,54 @@ __all__ = [
 
 app = typer.Typer(add_completion=False)
 
-# ---------------------------------------------------------------------------
 # Contract-pinned constants (see module docstring for citations/labels).
-# ---------------------------------------------------------------------------
 
-WEIR_COEFF_CW: float = 1.7  # FHWA HEC-22 / EPA SWMM Ref Manual Vol II (weir forms)
-ORIFICE_COEFF_CD: float = 0.65  # FHWA HEC-22 / EPA SWMM Ref Manual Vol II (orifice forms)
-REGIME_SWITCH_M: float = 0.1  # h_eff < this -> weir; INCLUSIVE lower bound weir
-HF_FLOOR_M: float = 0.001  # solver physics.hf_floor_m parity; clamp BEFORE pow/sqrt
-GRAVITY_M_S2: float = 9.81  # solver physics.gravity_m_s2 parity
-CAPTURE_CAP_FRACTION: float = 0.9  # per-step per-cell stability cap multiplier
-RETURN_CAP_FRACTION: float = 0.9  # per-step per-node stability cap multiplier
-A_OPEN_WIDTH_FRACTION: float = 0.1  # ‡ declared assumption v1: A_open = width_mean * this
+WEIR_COEFF_CW: float = 1.7
+ORIFICE_COEFF_CD: float = 0.65
+REGIME_SWITCH_M: float = 0.1
+HF_FLOOR_M: float = 0.001
+GRAVITY_M_S2: float = 9.81
+CAPTURE_CAP_FRACTION: float = 0.9
+RETURN_CAP_FRACTION: float = 0.9
+A_OPEN_WIDTH_FRACTION: float = 0.1
 ASSUMED_FREEBOARD_M: float = 1.5  # ‡ declared assumption v1: surcharge activation head
-CELL_AREA_M2: float = 100.0  # contract units block; loader asserts the producer grid
-
-
-# ---------------------------------------------------------------------------
-# Contract dataclasses (CoupleResult_fields.node_state_new / diagnostics)
-# ---------------------------------------------------------------------------
+CELL_AREA_M2: float = 100.0
 
 
 @dataclass(frozen=True)
 class NodeState:
-    """Carried node state (contract ``CoupleResult_fields.node_state_new``)."""
 
-    h_node_m: torch.Tensor  # (N,) f32 head above invert proxy
-    vol_in_m3_cum: torch.Tensor  # (N,) f64 cumulative inflows (capture + edge in)
-    vol_out_m3_cum: torch.Tensor  # (N,) f64 cumulative outflows (edge out + return)
+    h_node_m: torch.Tensor
+    vol_in_m3_cum: torch.Tensor
+    vol_out_m3_cum: torch.Tensor
 
 
 @dataclass(frozen=True)
 class CoupleResult:
-    """Exactly the frozen contract ``CoupleResult_fields`` — no extras."""
 
-    h_new: torch.Tensor  # (H,W) f32 out-of-place updated surface depth
+    h_new: torch.Tensor
     node_state_new: NodeState
-    captured_depth_m: torch.Tensor  # (H,W) f32 detached >= 0
-    returned_depth_m: torch.Tensor  # (H,W) f32 detached >= 0
-    capture_m3: float  # f64 = sum(captured_depth_m)*cell_area EXACTLY (computed ONCE here)
-    return_m3: float  # f64 = sum(returned_depth_m)*cell_area EXACTLY (computed ONCE here)
-    surcharging_nodes: int  # nodes with returned contribution > 0 this step
+    captured_depth_m: torch.Tensor
+    returned_depth_m: torch.Tensor
+    capture_m3: float
+    return_m3: float
+    surcharging_nodes: int
     max_node_head_m: float
-    cap_binding_this_step: int  # 0|1 either stability cap bound
-    edge_flow_m3s: torch.Tensor  # (E,) f32 detached, positive downstream
+    cap_binding_this_step: int
+    edge_flow_m3s: torch.Tensor
 
 
-# ---------------------------------------------------------------------------
 # Guards and hot-path helpers (module-level so the V5 red demos can mutate
-# exactly one mechanism and watch its observable move — router precedent).
-# ---------------------------------------------------------------------------
 
 
 def zero_drain_cap_out_of_place(static: StaticFields) -> StaticFields:
-    """Guard (a): coupled-mode transformation, OUT OF PLACE only.
-
-    ``StaticFields`` is a frozen dataclass; a NEW instance is constructed with
-    ``drain_cap_m_s`` replaced by ``torch.zeros_like(...)``. The input instance
-    is never mutated (Phase-2 in-place incident class). Call-site contract:
-    the coupled driver builds the zeroed static ONCE per run; every
-    :func:`couple_step` re-asserts the zeroing at entry regardless.
-    """
     return replace(static, drain_cap_m_s=torch.zeros_like(static.drain_cap_m_s))
 
 
 def build_node_state(graph: DrainGraph, device: str = "cpu") -> NodeState:
-    """Initial NodeState: dry network at rest — heads and books exactly zero."""
     dev = torch.device(device)
     if dev.type != "cpu":
-        # V12: this workflow allocates no CUDA context, ever.
+
         raise ValueError(f"[exchange] CPU-only (V12); got device {device!r}")
     n = graph.num_nodes
     return NodeState(
@@ -190,7 +169,6 @@ def build_node_state(graph: DrainGraph, device: str = "cpu") -> NodeState:
 
 
 def _validated_dt(dt: Any) -> float:
-    """Mirror router.route()'s dt contract: finite plain number > 0."""
     if (
         not isinstance(dt, (int, float))
         or isinstance(dt, bool)
@@ -224,17 +202,6 @@ def _regime_q(
     length_m: torch.Tensor,
     opening_area_m2: torch.Tensor,
 ) -> torch.Tensor:
-    """The two cited regime forms — clamp-first, divide/select third.
-
-    Q_weir    = Cw * L_weir * max(weir_head, hf_floor)^1.5        (unsubmerged)
-    Q_orifice = Cd * A_open * sqrt(2 g max(orifice_head, hf_floor))  (submerged)
-
-    Both heads are FLOORED BEFORE pow/sqrt (contract
-    ``stability_constraints.clamp_before_nonlinearity``), so both branches are
-    finite everywhere and the ``torch.where`` selection passes only finite
-    gradients. Callers deactivate cells by multiplication with a gate, never
-    by feeding a poisoned branch to the select.
-    """
     weir_safe = torch.clamp(weir_head, min=HF_FLOOR_M)
     orifice_safe = torch.clamp(orifice_head, min=HF_FLOOR_M)
     q_weir = WEIR_COEFF_CW * length_m * weir_safe.pow(1.5)
@@ -252,16 +219,8 @@ def _apply_capture_cap(hydraulic_rate_depth: torch.Tensor, cap_depth: torch.Tens
 
 
 def _apply_return_cap(q_ret_dt: torch.Tensor, cap_vol: torch.Tensor) -> torch.Tensor:
-    """``R_node = min(Q_ret*dt, return_cap_fraction*node_available_vol)`` — the
-    pinned ``per_step_return_cap``: return can NEVER drain a node below its
-    activation head."""
 
     return torch.minimum(q_ret_dt, cap_vol)
-
-
-# ---------------------------------------------------------------------------
-# couple_step
-# ---------------------------------------------------------------------------
 
 
 def couple_step(
@@ -273,30 +232,8 @@ def couple_step(
     graph: DrainGraph,
     dt: float,
 ) -> CoupleResult:
-    """Own the FULL surface<->drain exchange for one host dt.
-
-    Frozen contract signature, pinned order: (1) capture, (2) route,
-    (3) return. ``h`` is the surface depth field AS PRODUCED BY THE HOST MASS
-    UPDATE (``h_before_coupling``); ``qx``/``qy`` are UNREAD in v1
-    (depth-driven exchange) and are proven untouched at exit by bitwise
-    comparison against entry clones. Entry asserts
-    ``(static.drain_cap_m_s == 0).all()`` — guard (a), contract
-    ``legacy_sink_replacement_binding``: a live legacy sink here would
-    double-count drainage alongside capture.
-
-    Returns a :class:`CoupleResult` whose scalar volumes are computed ONCE
-    inside this call from the realized f32 depth fields (the host never
-    re-multiplies depth by cell area).
-
-    Raises:
-        ValueError: on guard/device/shape/dtype/dt violations at entry.
-        RuntimeError: on node-continuity or surface-nonnegativity violations
-            at exit — both are algebraic guarantees of the pinned forms; a
-            trip is a defect, reported loud rather than clamped silent.
-    """
     dt_f = _validated_dt(dt)
 
-    # --- entry validation ----------------------------------------------------
     if not isinstance(h, torch.Tensor) or h.dtype is not torch.float32 or h.dim() != 2:
         raise ValueError(
             "[exchange] h must be a 2-D float32 tensor, got "
@@ -304,10 +241,7 @@ def couple_step(
         )
     _require_cpu(h, "h")
     if bool((h < 0).any()):
-        # Out-of-contract input: the host mass update hands couple_step a
-        # non-negative depth field BY CONSTRUCTION (acc.py donor-cell limiter
-        # + its own pre-sink guard). A negative cell here means upstream is
-        # already broken — refuse instead of exchanging on garbage.
+
         raise ValueError(
             "[exchange] h contains negative depths — out of contract: the host mass "
             "update guarantees h >= 0 before coupling; fix upstream, do not couple"
@@ -337,9 +271,7 @@ def couple_step(
     for _book_name in ("h_node_m", "vol_in_m3_cum", "vol_out_m3_cum"):
         _book = getattr(node_state, _book_name)
         if not bool(torch.isfinite(_book).all()):
-            # Same refusal class as the negative-h check above: NaN books pass every
-            # downstream gate (rel=NaN compares False against each tolerance) and end the
-            # run as a manifest with literal NaN — invalid JSON. Refuse at the seam.
+
             _n_bad = int((~torch.isfinite(_book)).sum())
             raise ValueError(
                 f"[exchange] node_state.{_book_name} contains {_n_bad} non-finite value(s) "
@@ -347,7 +279,6 @@ def couple_step(
                 "couple (silent-NaN-manifest incident class)"
             )
 
-    # GUARD (a) — the anti-double-count entry assert (contract binding).
     if not bool((static.drain_cap_m_s == 0).all()):
         n_bad = int((static.drain_cap_m_s != 0).sum())
         raise ValueError(
@@ -356,42 +287,36 @@ def couple_step(
             "stepping — a live legacy sink here double-counts drainage against capture"
         )
 
-    # Phase-2 incident-class guard: qx/qy unread; proven untouched at exit.
     qx_enter, qy_enter = qx.clone(), qy.clone()
 
     dev = h.device
     n = graph.num_nodes
     pa_safe = torch.clamp(graph.node_plan_area_m2, min=torch.finfo(torch.float64).tiny)
 
-    # =========================================================================
-    # (1) CAPTURE — surface -> nodes. One fused elementwise pass over the
-    # allocated cells (O(M)); no pairwise cell x node terms, no Python loop.
-    # =========================================================================
-    mapped = nmap >= 0  # cells beyond capture_radius stay -1 (loader pin)
-    owner = (nmap[mapped] - 1).to(torch.int64)  # (M,) node INDEX (id - 1)
+    mapped = nmap >= 0
+    owner = (nmap[mapped] - 1).to(torch.int64)
     counts64 = graph.node_cell_count.to(torch.float64)[owner]
     if bool((counts64 < 1.0).any()):
-        # Loader starve-fix guarantees >= 1 for every ACTIVE node; the uniform
-        # return distribution would otherwise divide by zero downstream.
+
         raise RuntimeError("[exchange] an allocated cell's node reports zero owned cells")
 
-    h_cells64 = h[mapped].to(torch.float64)  # autograd flows through the indexing
-    h_eff = torch.clamp(h_cells64, min=0.0)  # h_eff := max(0, h_before_coupling)
-    width_cell = graph.width_mean_m[owner]  # L_weir per owning node (CB-edge mean)
+    h_cells64 = h[mapped].to(torch.float64)
+    h_eff = torch.clamp(h_cells64, min=0.0)
+    width_cell = graph.width_mean_m[owner]
     h_node_cell = node_state.h_node_m.to(torch.float64)[owner]
-    head_diff = h_eff - h_node_cell  # NO-REVERSE-CAPTURE fires at <= 0
+    head_diff = h_eff - h_node_cell
 
-    is_weir = h_eff < REGIME_SWITCH_M  # inclusive lower bound weir (exactly 0.1 -> orifice)
+    is_weir = h_eff < REGIME_SWITCH_M
     q_regime = _regime_q(
         is_weir=is_weir,
-        weir_head=h_eff,  # unsubmerged form driven by ponded depth
-        orifice_head=head_diff,  # submerged form driven by head difference
+        weir_head=h_eff,
+        orifice_head=head_diff,
         length_m=width_cell,
-        opening_area_m2=width_cell * A_OPEN_WIDTH_FRACTION,  # A_open ‡
+        opening_area_m2=width_cell * A_OPEN_WIDTH_FRACTION,
     )
     q_applied = q_regime * _no_reverse_gate(head_diff)
 
-    hydraulic_rate_depth = q_applied * dt_f / CELL_AREA_M2  # metres this step
+    hydraulic_rate_depth = q_applied * dt_f / CELL_AREA_M2
     cap_depth = CAPTURE_CAP_FRACTION * torch.clamp(h_cells64 - HF_FLOOR_M, min=0.0)
     captured64 = _apply_capture_cap(hydraulic_rate_depth, cap_depth)
     capture_cap_bound = bool((hydraulic_rate_depth > cap_depth).any())
@@ -403,15 +328,9 @@ def couple_step(
         captured64 * CELL_AREA_M2,
     )
 
-    # Node volumes reconstructed from the carried f32 heads (contract
-    # definition h_node_m = vol/plan_area run backwards — see module docstring).
     vol_prev = node_state.h_node_m.to(torch.float64) * pa_safe
     vol_after_capture = vol_prev + capture_at_node
 
-    # =========================================================================
-    # (2) ROUTE — node -> node, level-synchronous capacity-limited (D-C pin).
-    # Gradients flow into routing through vol_after_capture.
-    # =========================================================================
     vol_routed, q_edge, _route_diag = route(vol_after_capture, graph, dt_f)
     transfer = q_edge * dt_f
     edge_in_vol = torch.index_add(
@@ -421,14 +340,10 @@ def couple_step(
         torch.zeros(n, dtype=torch.float64, device=dev), 0, graph.edge_from, transfer
     )
 
-    # =========================================================================
-    # (3) RETURN — nodes -> surface, excess head through the INVERTED forms,
-    # same 0.1 m switch, same clamp-first floors, same L_weir / A_open.
-    # =========================================================================
-    h_node_pre = vol_routed / pa_safe  # peak head this step (pre-return)
+    h_node_pre = vol_routed / pa_safe
     h_excess = h_node_pre - ASSUMED_FREEBOARD_M
-    ret_active = (h_excess > 0).to(torch.float64)  # activation iff h_node > freeboard
-    is_weir_ret = h_excess < REGIME_SWITCH_M  # SAME switch on excess head
+    ret_active = (h_excess > 0).to(torch.float64)
+    is_weir_ret = h_excess < REGIME_SWITCH_M
     q_ret = (
         _regime_q(
             is_weir=is_weir_ret,
@@ -449,9 +364,6 @@ def couple_step(
 
     vol_final = vol_routed - r_node
 
-    # Node continuity guard (contract sign_conventions): the reconstruction
-    # from THIS step's components must reproduce route()'s sequential state up
-    # to fp reorder. A dropped term is O(volume); only reorder noise passes.
     recon = vol_after_capture + edge_in_vol - edge_out_vol - r_node
     tol = 1e-9 * torch.clamp(vol_routed.abs(), min=1.0)
     worst = float(((recon - vol_final).abs() / tol).max().item()) if n > 0 else 0.0
@@ -468,7 +380,6 @@ def couple_step(
         vol_out_m3_cum=node_state.vol_out_m3_cum + edge_out_vol + r_node,
     )
 
-    # --- surface update: THE single contract expression, out-of-place -------
     captured_full = torch.zeros_like(h).masked_scatter(mapped, captured64.to(torch.float32))
     returned_inc = (r_node[owner] / (counts64 * CELL_AREA_M2)).to(torch.float32)
     returned_full = torch.zeros_like(h).masked_scatter(mapped, returned_inc)
@@ -476,10 +387,7 @@ def couple_step(
 
     with torch.no_grad():
         if bool((h_new < 0).any()):
-            # nonzero(as_tuple=True) on a 2-D tensor yields (rows, cols); take
-            # row/col DIRECTLY (reading order => first negative cell). The old
-            # code took rows[0] and re-divided it by W as if it were a FLAT
-            # index — wrong cell and unrelated quoted depth on multi-row grids.
+
             neg_rows, neg_cols = (h_new < 0).nonzero(as_tuple=True)
             r, c = int(neg_rows[0]), int(neg_cols[0])
             raise RuntimeError(
@@ -488,15 +396,12 @@ def couple_step(
                 "broken; refusing to hand negative depths to the solver"
             )
 
-    # Phase-2 incident-class proof: the momentum fields left this function
-    # bitwise exactly as they entered.
     if not torch.equal(qx, qx_enter) or not torch.equal(qy, qy_enter):
         raise RuntimeError(
             "[exchange] qx/qy were modified inside couple_step — in-place write on an "
             "input (Phase-2 _boundary_outflux incident class); refusing"
         )
 
-    # --- diagnostics: detached views + scalars computed ONCE -----------------
     capture_m3 = float(captured_full.to(torch.float64).sum().item()) * CELL_AREA_M2
     return_m3 = float(returned_full.to(torch.float64).sum().item()) * CELL_AREA_M2
     return CoupleResult(
@@ -513,23 +418,13 @@ def couple_step(
     )
 
 
-# ---------------------------------------------------------------------------
-# CLI (AGENTS.md style rule: every stage runnable standalone). The REAL-graph
-# execution evidence lives in tests/coupling/test_exchange.py (slow tier);
-# while the WF-1 reader/artefact seam is blocked upstream, this CLI exercises
-# the exchange on a DECLARED-SYNTHETIC toy fixture through the production
-# assembly path — labelled as such, never presented as Bengaluru data.
-# ---------------------------------------------------------------------------
-
-
 @app.command()
 def selfcheck(
     steps: int = typer.Option(12, help="Coupled exchange steps to run"),
     dt: float = typer.Option(0.48, help="Host timestep [s]"),
 ) -> None:
-    """Run couple_step on a small declared-synthetic DAG and print the ledgers."""
     torch.manual_seed(11)
-    edges = [(1, 2, 8.0), (2, 3, None)]  # null edge: D-C pin says Q=0 ALWAYS
+    edges = [(1, 2, 8.0), (2, 3, None)]
     num_nodes = 3
     edge_from = torch.tensor([e[0] - 1 for e in edges], dtype=torch.int64)
     edge_to = torch.tensor([e[1] - 1 for e in edges], dtype=torch.int64)
@@ -559,7 +454,7 @@ def selfcheck(
     state = build_node_state(g)
     h = torch.full((2, 2), 0.5, dtype=torch.float32)
     h = h.clone()
-    h[0, 0] = 1.25  # deeper pond over inlet 1
+    h[0, 0] = 1.25
     cum_cap = cum_ret = 0.0
     for s in range(steps):
         cr = couple_step(h, torch.zeros(2, 1), torch.zeros(1, 2), static, state, g, dt)
@@ -576,9 +471,11 @@ def selfcheck(
 
 
 def _cli_static(shape: tuple[int, int]) -> StaticFields:
-    """A dry, zero-drain StaticFields-shaped shell for the CLI demo."""
     hh, ww = shape
-    z32 = lambda *s: torch.zeros(*s, dtype=torch.float32)  # noqa: E731
+
+    def z32(*s):
+        return torch.zeros(*s, dtype=torch.float32)
+
     return StaticFields(
         dz_x=z32(hh, ww - 1),
         dz_y=z32(hh - 1, ww),
@@ -600,7 +497,7 @@ def _cli_static(shape: tuple[int, int]) -> StaticFields:
     )
 
 
-def main() -> None:  # pragma: no cover
+def main() -> None:
     app()
 
 

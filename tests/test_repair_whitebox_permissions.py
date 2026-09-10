@@ -1,5 +1,3 @@
-"""Tests for the path-with-spaces Whitebox installation repair utility."""
-
 from __future__ import annotations
 
 import importlib.util

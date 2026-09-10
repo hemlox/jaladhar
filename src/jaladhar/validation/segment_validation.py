@@ -1,19 +1,4 @@
-"""Per-Road-Segment Flood Status Validation and Rescoring Harness.
-
-Implements topological per-road-segment validation for JALADHAR:
-- Evaluates flood status per road segment on the 10 m canonical grid lattice.
-- Pre-defined, rule-based topological flood definition:
-    At least F% of segment cells, OR at least N contiguous cells, exceed depth D.
-    Primary rule (held fixed): D = 0.15 m, F = 20%, N = 3 cells (30 m bottleneck).
-- Evaluates against three independent label sets:
-    1. BBMP flood-prone locations (399 raw / 398 in-domain points snapped to road segments)
-    2. Ground-truth geolocated flood locations (24 points snapped to road segments)
-    3. Sentinel-1 SAR change-detection flood extent (5 Sept 2022 flood vs 12 Aug 2022 pre-flood,
-       calibrated sigma0 <= -16 dB change, permanent water bodies excluded).
-- Mandatory Monte Carlo Null Model (>= 5,000 draws) with 95% CI and lift ratio calculation.
-- Stratification by Urban Density (OPEN, MODERATE, DENSE), Road Class (OSM highway), and Arterials.
-- Strict enforcement of CLAUDE.md Rules 1-7 and Verification Rules V1-V8.
-"""
+"""Per-road-segment validation using retained BBMP and ground-truth labels."""
 
 from __future__ import annotations
 
@@ -37,9 +22,6 @@ from scipy.sparse.csgraph import connected_components
 from scipy.spatial import cKDTree
 
 from jaladhar.provenance import RunManifest, require_clean_git, write_json_atomic
-from jaladhar.terrain.grid import build_grid, load_config
-from jaladhar.validation.density import run_density_pipeline
-from jaladhar.validation.event_replay import compute_s1_sigma0_db
 from jaladhar.validation.groundtruth import (
     load_and_validate_groundtruth,
     resolve_groundtruth_scoring_config,
@@ -48,20 +30,17 @@ from jaladhar.validation.groundtruth import (
 
 REPO = Path(__file__).resolve().parents[3]
 
-# Fixed primary rule parameters (Part A)
 PRIMARY_DEPTH_THRESHOLD_M = 0.15
 PRIMARY_FRACTION_THRESHOLD = 0.20
 PRIMARY_CONTIGUOUS_CELLS = 3
 
 
 def git_sha() -> str:
-    """Return a strict, clean-tree Git SHA for the standalone report."""
     return require_clean_git(REPO)
 
 
 @dataclass(frozen=True)
 class SegmentFloodRule:
-    """Definition of what constitutes a flooded road segment."""
 
     depth_threshold_m: float
     fraction_threshold: float
@@ -92,7 +71,6 @@ PRIMARY_RULE = SegmentFloodRule(
 
 @dataclass(frozen=True)
 class SegmentScoreResult:
-    """Contingency scores and null model comparison for a stratum/label set."""
 
     total_segments: int
     predicted_flooded_segments: int
@@ -253,7 +231,6 @@ def build_road_network_index(
     rasterio.Affine,
     tuple[int, int],
 ]:
-    """Load road raster and build spatial index and intra-segment adjacency graph."""
     with rasterio.open(road_raster_path) as src:
         road_raster = src.read(1)
         grid_transform = src.transform
@@ -264,12 +241,10 @@ def build_road_network_index(
     r_segs = road_raster[r_rows, r_cols]
     n_road_cells = len(r_segs)
 
-    # Road cell coordinates (UTM 43N)
     road_xs, road_ys = rasterio.transform.xy(grid_transform, r_rows, r_cols)
     road_coords = np.column_stack([road_xs, road_ys])
     tree = cKDTree(road_coords)
 
-    # Intra-segment 8-neighbor adjacency graph
     h, w = grid_shape
     road_idx_grid = np.full((h, w), -1, dtype=np.int32)
     road_idx_grid[road_mask] = np.arange(n_road_cells, dtype=np.int32)
@@ -310,11 +285,9 @@ def evaluate_segments_from_mask(
     fraction_threshold: float = PRIMARY_FRACTION_THRESHOLD,
     contiguous_cells: int = PRIMARY_CONTIGUOUS_CELLS,
 ) -> pd.DataFrame:
-    """Evaluate whether each segment meets the flood criteria under the given cell mask."""
     n_road_cells = len(r_segs)
     r_flooded = cell_mask[road_mask]
 
-    # Filter adjacency edges to pairs where both cells are flooded
     edge_mask = r_flooded[adj_src] & r_flooded[adj_dst]
     graph = coo_matrix(
         (np.ones(np.sum(edge_mask), dtype=bool), (adj_src[edge_mask], adj_dst[edge_mask])),
@@ -337,57 +310,6 @@ def evaluate_segments_from_mask(
     return grouped
 
 
-def compute_s1_change_detection_mask(
-    repo: Path = REPO,
-    val_cfg: dict[str, Any] | None = None,
-) -> tuple[np.ndarray, np.ndarray, dict[str, Any]]:
-    """Compute calibrated Sentinel-1 change detection flood mask on canonical grid.
-
-    Returns:
-        (s1_change_mask_unmasked, s1_change_mask_masked, metadata)
-    """
-    if val_cfg is None:
-        with (repo / "configs/validation.yaml").open() as handle:
-            val_cfg = yaml.safe_load(handle)
-    sar_cfg = val_cfg["sar_water_classifier"]
-    domain_cfg = load_config(repo / val_cfg["domain_config"])
-    grid, _ = build_grid(domain_cfg, repo)
-    dst_shape = (grid.height, grid.width)
-
-    s1_flood_tif = repo / sar_cfg["flood_scene_tif"]
-    s1_flood_xml = repo / sar_cfg["flood_calibration_xml"]
-    s1_pre_tif = repo / sar_cfg["pre_scene_tif"]
-    s1_pre_xml = repo / sar_cfg["pre_calibration_xml"]
-
-    sigma0_flood, valid_flood = compute_s1_sigma0_db(
-        s1_flood_tif, s1_flood_xml, grid.bounds, dst_shape, grid.transform
-    )
-    sigma0_pre, valid_pre = compute_s1_sigma0_db(
-        s1_pre_tif, s1_pre_xml, grid.bounds, dst_shape, grid.transform
-    )
-
-    with rasterio.open(repo / sar_cfg["basin_class_path"]) as src:
-        basin_class = src.read(1)
-    perm_water = (basin_class == 1) | (basin_class == 2) | (basin_class == 3)
-
-    water_threshold_db = float(sar_cfg["water_threshold_db"])
-    flood_wet = (sigma0_flood <= water_threshold_db) & valid_flood
-    pre_wet = (sigma0_pre <= water_threshold_db) & valid_pre
-    change_wet_unmasked = flood_wet & (~pre_wet)
-    change_wet_masked = change_wet_unmasked & (~perm_water)
-
-    meta = {
-        "water_threshold_db": water_threshold_db,
-        "flood_scene_wet_cells": int(np.sum(flood_wet)),
-        "pre_scene_wet_cells": int(np.sum(pre_wet)),
-        "persistent_wet_cells": int(np.sum(flood_wet & pre_wet)),
-        "change_detection_cells_unmasked": int(np.sum(change_wet_unmasked)),
-        "change_detection_cells_masked": int(np.sum(change_wet_masked)),
-        "permanent_water_excluded_cells": int(np.sum(perm_water)),
-    }
-    return change_wet_unmasked, change_wet_masked, meta
-
-
 def snap_points_to_segments(
     points_wgs84: list[tuple[float, float]],
     tree: cKDTree,
@@ -395,17 +317,6 @@ def snap_points_to_segments(
     max_distance_m: float | None = None,
     point_ids: list[str] | None = None,
 ) -> tuple[np.ndarray, np.ndarray, list[dict[str, Any]]]:
-    """Snap WGS84 lat/lon points to nearest road segments in UTM 43N coordinates.
-
-    Args:
-        points_wgs84: List of (lon, lat) tuples in EPSG:4326.
-        tree: Spatial index of road network cell coordinates in EPSG:32643.
-        r_segs: Segment IDs corresponding to each indexed tree coordinate.
-        max_distance_m: Optional threshold beyond which points are flagged as excluded.
-
-    Returns:
-        (snapped_segment_ids, distances_m, point_details)
-    """
     trans_wgs_to_utm = pyproj.Transformer.from_crs("EPSG:4326", "EPSG:32643", always_xy=True)
     snapped_segs: list[int] = []
     dists: list[float] = []
@@ -451,7 +362,6 @@ def compute_contingency_and_null(
     is_positive_unlabeled: bool = False,
     pu_caveat: str | None = None,
 ) -> SegmentScoreResult:
-    """Compute contingency metrics, exact tests, and a Monte Carlo null comparison."""
     p = np.asarray(pred_mask, dtype=bool)
     o = np.asarray(obs_mask, dtype=bool)
     n_tot = len(p)
@@ -469,7 +379,6 @@ def compute_contingency_and_null(
 
     p_null = n_pred / n_tot if n_tot > 0 else 0.0
 
-    # Exact Clopper-Pearson 95% Confidence Interval on POD
     if n_obs > 0:
         ci_low = float(stats.beta.ppf(0.025, tp, n_obs - tp + 1)) if tp > 0 else 0.0
         ci_high = float(stats.beta.ppf(0.975, tp + 1, n_obs - tp)) if tp < n_obs else 1.0
@@ -479,7 +388,6 @@ def compute_contingency_and_null(
         pod_ci_95 = [float("nan"), float("nan")]
         p_val_binom = float("nan")
 
-    # Exact Fisher test (one-tailed greater)
     if n_tot > 0:
         table = [[tp, fp], [fn, tn]]
         _, p_val_fisher = stats.fisher_exact(table, alternative="greater")
@@ -543,7 +451,6 @@ def compute_contingency_and_null(
 def _resolve_segment_groundtruth_config(
     val_cfg: dict[str, Any], repo_root: Path = REPO
 ) -> tuple[str, str, float, Path]:
-    """Resolve every ground-truth input needed later by segment scoring."""
     gt_cfg = val_cfg.get("groundtruth", {})
     scoring_start, scoring_end, max_snap_distance_m = resolve_groundtruth_scoring_config(gt_cfg)
     try:
@@ -562,49 +469,20 @@ def resolve_segment_validation_config(
             "road_segment_id_path"
         ),
         "groundtruth.bbmp_kml_dir": val_cfg.get("groundtruth", {}).get("bbmp_kml_dir"),
-        "density_stratification.output_density_classes_path": val_cfg.get(
-            "density_stratification", {}
-        ).get("output_density_classes_path"),
         "segment_validation.roads_segment_lookup_path": val_cfg.get("segment_validation", {}).get(
             "roads_segment_lookup_path"
         ),
         "segment_validation.underpass_register_csv": val_cfg.get("segment_validation", {}).get(
             "underpass_register_csv"
         ),
-        "sar_water_classifier.flood_scene_tif": val_cfg.get("sar_water_classifier", {}).get(
-            "flood_scene_tif"
-        ),
-        "sar_water_classifier.flood_calibration_xml": val_cfg.get("sar_water_classifier", {}).get(
-            "flood_calibration_xml"
-        ),
-        "sar_water_classifier.pre_scene_tif": val_cfg.get("sar_water_classifier", {}).get(
-            "pre_scene_tif"
-        ),
-        "sar_water_classifier.pre_calibration_xml": val_cfg.get("sar_water_classifier", {}).get(
-            "pre_calibration_xml"
-        ),
-        "sar_water_classifier.basin_class_path": val_cfg.get("sar_water_classifier", {}).get(
-            "basin_class_path"
-        ),
     }
     missing = [key for key, value in required.items() if not value]
-    threshold = val_cfg.get("sar_water_classifier", {}).get("water_threshold_db")
-    if threshold is None:
-        missing.append("sar_water_classifier.water_threshold_db")
-    else:
-        try:
-            threshold_value = float(threshold)
-        except (TypeError, ValueError) as exc:
-            raise ValueError("sar_water_classifier.water_threshold_db must be numeric") from exc
-        if not np.isfinite(threshold_value):
-            raise ValueError("sar_water_classifier.water_threshold_db must be finite")
     if missing:
         raise KeyError(f"Segment validation config missing keys: {missing}")
     return {key: repo_root / str(value) for key, value in required.items()}
 
 
 def _check_segment_output_collision(phase3_run_dir: Path, output_dir: Path) -> None:
-    """Fail fast if read-only solver input and writable output collide (Rule 7)."""
     p = Path(phase3_run_dir).resolve()
     o = Path(output_dir).resolve()
     if p == o:
@@ -705,8 +583,6 @@ def _run_segment_validation_impl(
     max_snap_distance_m: float,
     gt_points_csv: Path,
 ) -> dict[str, Any]:
-    """Private implementation: all heavy work, no lifecycle (called by wrapper)."""
-    # 1. Road index & graph
     (
         road_raster,
         r_rows,
@@ -722,26 +598,11 @@ def _run_segment_validation_impl(
     unique_segs = np.unique(r_segs)
     n_total_segs = len(unique_segs)
 
-    # 2. Metadata: Density and Road Class Lookup
-    density_raster_path = resolved_paths["density_stratification.output_density_classes_path"]
-    if not density_raster_path.exists():
-        run_density_pipeline(val_config_path)
-    with rasterio.open(density_raster_path) as src:
-        density_raster = src.read(1)
-    r_densities = density_raster[r_rows, r_cols]
-
-    seg_df = pd.DataFrame({"seg_id": r_segs, "density": r_densities})
-    seg_density = seg_df.groupby("seg_id")["density"].agg(
-        lambda x: x.mode().iloc[0] if len(x) > 0 else 0
-    )
-    density_map = {0: "OPEN", 1: "MODERATE", 2: "DENSE"}
-
     roads_lookup = pd.read_csv(
         resolved_paths["segment_validation.roads_segment_lookup_path"]
     ).set_index("segment_id")
 
     seg_meta = pd.DataFrame(index=unique_segs)
-    seg_meta["density"] = seg_density.map(density_map)
     seg_meta["highway"] = roads_lookup.loc[seg_meta.index, "highway"].fillna("unclassified")
     seg_meta["name"] = roads_lookup.loc[seg_meta.index, "name"].fillna("")
     arterial_types = {
@@ -756,21 +617,16 @@ def _run_segment_validation_impl(
     }
     seg_meta["is_arterial"] = seg_meta["highway"].isin(arterial_types)
 
-    # 3. Load Modeled Depth Rasters
     depth_event_max_path = phase3_run_dir / "depth_event_maximum.tif"
-    depth_sar_instant_path = phase3_run_dir / "depth_sar_instant_20220905_004028Z.tif"
-    if not depth_event_max_path.exists() or not depth_sar_instant_path.exists():
+    if not depth_event_max_path.exists():
         raise FileNotFoundError(
             f"Modeled depth rasters missing in {phase3_run_dir}. Required: "
-            "depth_event_maximum.tif and depth_sar_instant_20220905_004028Z.tif"
+            "depth_event_maximum.tif"
         )
 
     with rasterio.open(depth_event_max_path) as src:
         depth_event_max = src.read(1)
-    with rasterio.open(depth_sar_instant_path) as src:
-        depth_sar_instant = src.read(1)
 
-    # Evaluate Modeled Depth under Primary Rule (D=0.15 m, F=20%, N=3)
     model_event_eval = evaluate_segments_from_mask(
         depth_event_max >= PRIMARY_RULE.depth_threshold_m,
         road_mask,
@@ -780,20 +636,8 @@ def _run_segment_validation_impl(
         PRIMARY_RULE.fraction_threshold,
         PRIMARY_RULE.contiguous_cells,
     )
-    model_sar_eval = evaluate_segments_from_mask(
-        depth_sar_instant >= PRIMARY_RULE.depth_threshold_m,
-        road_mask,
-        r_segs,
-        adj_src,
-        adj_dst,
-        PRIMARY_RULE.fraction_threshold,
-        PRIMARY_RULE.contiguous_cells,
-    )
-
     seg_meta["pred_event_max"] = model_event_eval["is_flooded"]
-    seg_meta["pred_sar_instant"] = model_sar_eval["is_flooded"]
 
-    # 4. Label Set 1: BBMP Points Snapping
     bbmp_dir = resolved_paths["groundtruth.bbmp_kml_dir"]
     bbmp_bbox = val_cfg["groundtruth"].get("bbmp_bbox_wgs84")
     if not isinstance(bbmp_bbox, list) or len(bbmp_bbox) != 4:
@@ -811,7 +655,6 @@ def _run_segment_validation_impl(
             geom = row.geometry
             if geom.geom_type == "Point":
                 bbmp_points_raw_count += 1
-                # Check within domain bbox bounds
                 if min_lon <= geom.x <= max_lon and min_lat <= geom.y <= max_lat:
                     bbmp_points_wgs.append((geom.x, geom.y))
                     bbmp_records.append(
@@ -829,7 +672,6 @@ def _run_segment_validation_impl(
     bbmp_pos_unique_segs = set(bbmp_snapped_segs)
     seg_meta["obs_bbmp"] = seg_meta.index.isin(bbmp_pos_unique_segs)
 
-    # 5. Label Set 2: Ground Truth Points Snapping (24 points)
     gt_points_all, _ = load_and_validate_groundtruth(gt_points_csv, bbmp_dir)
     gt_points_date_eligible, gt_date_rejections = select_event_groundtruth(
         gt_points_all,
@@ -854,20 +696,6 @@ def _run_segment_validation_impl(
     }
     seg_meta["obs_gt"] = seg_meta.index.isin(gt_pos_unique_segs)
 
-    # 6. Label Set 3: Sentinel-1 SAR Change Detection Reference
-    s1_change_unmasked, s1_change_masked, s1_meta = compute_s1_change_detection_mask(REPO, val_cfg)
-    sar_obs_eval = evaluate_segments_from_mask(
-        s1_change_masked,
-        road_mask,
-        r_segs,
-        adj_src,
-        adj_dst,
-        PRIMARY_RULE.fraction_threshold,
-        PRIMARY_RULE.contiguous_cells,
-    )
-    seg_meta["obs_sar_change"] = sar_obs_eval["is_flooded"]
-
-    # 7. Compute Citywide Headline Results against Mandatory Null Model (PU Labeling aware)
     bbmp_headline = compute_contingency_and_null(
         seg_meta["pred_event_max"],
         seg_meta["obs_bbmp"],
@@ -880,37 +708,7 @@ def _run_segment_validation_impl(
             "POD and Lift over random null (TP / E[TP]) survive."
         ),
     )
-    sar_headline = compute_contingency_and_null(
-        seg_meta["pred_sar_instant"],
-        seg_meta["obs_sar_change"],
-        n_draws=n_mc_draws,
-        seed=seed,
-        is_positive_unlabeled=False,
-    )
-
-    # 8. PART C: Stratification by Urban Density
-    density_strata_bbmp: dict[str, dict[str, Any]] = {}
-    density_strata_sar: dict[str, dict[str, Any]] = {}
-    for d_name in ["OPEN", "MODERATE", "DENSE"]:
-        sub = seg_meta[seg_meta["density"] == d_name]
-        density_strata_bbmp[d_name] = compute_contingency_and_null(
-            sub["pred_event_max"],
-            sub["obs_bbmp"],
-            n_draws=n_mc_draws,
-            seed=seed,
-            is_positive_unlabeled=True,
-        ).to_dict()
-        density_strata_sar[d_name] = compute_contingency_and_null(
-            sub["pred_sar_instant"],
-            sub["obs_sar_change"],
-            n_draws=n_mc_draws,
-            seed=seed,
-            is_positive_unlabeled=False,
-        ).to_dict()
-
-    # 9. PART C: Stratification by Road Class
     road_class_strata_bbmp: dict[str, dict[str, Any]] = {}
-    road_class_strata_sar: dict[str, dict[str, Any]] = {}
     key_road_classes = [
         "motorway",
         "trunk",
@@ -933,15 +731,7 @@ def _run_segment_validation_impl(
                 seed=seed,
                 is_positive_unlabeled=True,
             ).to_dict()
-            road_class_strata_sar[hw_class] = compute_contingency_and_null(
-                sub["pred_sar_instant"],
-                sub["obs_sar_change"],
-                n_draws=n_mc_draws,
-                seed=seed,
-                is_positive_unlabeled=False,
-            ).to_dict()
 
-    # 10. PART C: Arterial / Trunk Segments Alone
     arterial_sub = seg_meta[seg_meta["is_arterial"]]
     arterial_bbmp = compute_contingency_and_null(
         arterial_sub["pred_event_max"],
@@ -950,27 +740,6 @@ def _run_segment_validation_impl(
         seed=seed,
         is_positive_unlabeled=True,
     )
-    arterial_sar = compute_contingency_and_null(
-        arterial_sub["pred_sar_instant"],
-        arterial_sub["obs_sar_change"],
-        n_draws=n_mc_draws,
-        seed=seed,
-        is_positive_unlabeled=False,
-    )
-
-    # Detailed Arterial density subsets
-    arterial_density_bbmp: dict[str, dict[str, Any]] = {}
-    for d_name in ["OPEN", "MODERATE", "DENSE"]:
-        sub_art = seg_meta[seg_meta["is_arterial"] & (seg_meta["density"] == d_name)]
-        arterial_density_bbmp[d_name] = compute_contingency_and_null(
-            sub_art["pred_event_max"],
-            sub_art["obs_bbmp"],
-            n_draws=n_mc_draws,
-            seed=seed,
-            is_positive_unlabeled=True,
-        ).to_dict()
-
-    # 11. Sensitivity Sweeps Across Depth Thresholds D and Fractions F
     depth_sweep_results: list[dict[str, Any]] = []
     for d_th in [0.05, 0.10, 0.15, 0.20, 0.30]:
         ev = evaluate_segments_from_mask(
@@ -1015,7 +784,6 @@ def _run_segment_validation_impl(
         f_res["fraction_threshold"] = f_th
         fraction_sweep_results.append(f_res)
 
-    # 12. Ground Truth Points Detailed Breakdown (All 24 and Snap Distance Filtered)
     gt_details: list[dict[str, Any]] = []
     gt_filtered_pos_segs: set[int] = set()
 
@@ -1074,7 +842,6 @@ def _run_segment_validation_impl(
         ),
     )
 
-    # 13. Deep-Dive: Trunk Road Signal & Tension Audit
     trunk_sub = seg_meta[seg_meta["highway"] == "trunk"]
     trunk_score = compute_contingency_and_null(
         trunk_sub["pred_event_max"],
@@ -1098,7 +865,6 @@ def _run_segment_validation_impl(
         "trunk_alone": trunk_score.to_dict(),
         "trunk_plus_motorway_and_links": trunk_motorway_score.to_dict(),
         "arterials_as_class": arterial_bbmp.to_dict(),
-        "arterials_by_density": arterial_density_bbmp,
         "interpretation": {
             "status": "UNRESOLVED",
             "reason": (
@@ -1109,7 +875,6 @@ def _run_segment_validation_impl(
         },
     }
 
-    # 14. Deep-Dive: Underpass Co-Location Baseline & Classification Partition Audit
     underpass_csv = resolved_paths["segment_validation.underpass_register_csv"]
     if underpass_csv.exists():
         up_csv_df = pd.read_csv(underpass_csv)
@@ -1166,12 +931,11 @@ def _run_segment_validation_impl(
             f"Underpass register required for segment validation: {underpass_csv}"
         )
 
-    # 15. Closing Water Budget from the realized Phase 3 producer contract.
+    # 12. Closing Water Budget from the realized Phase 3 producer contract.
     closing_water_budget = load_phase3_closing_water_budget(phase3_run_dir / "manifest.json")
 
     wall_clock = time.perf_counter() - t0
 
-    # Build Master Report
     report: dict[str, Any] = {
         "stage": "phase3_segment_validation_gate",
         "timestamp_iso": datetime.now(UTC).isoformat(),
@@ -1190,27 +954,18 @@ def _run_segment_validation_impl(
             "ground_truth_scoring_eligible_count": sum(
                 1 for detail in gt_details if detail["eligible_for_scoring"]
             ),
-            "s1_sar_change_detection_metadata": s1_meta,
-            "s1_sar_change_positive_segments": int(seg_meta["obs_sar_change"].sum()),
         },
         "headline_results": {
             "bbmp_validation": bbmp_headline.to_dict(),
             "groundtruth_validation_date_and_snap_eligible": gt_headline_eligible.to_dict(),
-            "sentinel1_change_validation": sar_headline.to_dict(),
         },
         "stratification": {
-            "density_stratification": {
-                "bbmp_event_max": density_strata_bbmp,
-                "sar_change_instant": density_strata_sar,
-            },
             "arterial_trunk_alone": {
                 "total_arterial_segments": int(seg_meta["is_arterial"].sum()),
                 "bbmp_event_max": arterial_bbmp.to_dict(),
-                "sar_change_instant": arterial_sar.to_dict(),
             },
             "road_class_stratification": {
                 "bbmp_event_max": road_class_strata_bbmp,
-                "sar_change_instant": road_class_strata_sar,
             },
         },
         "trunk_signal_evaluation": trunk_eval_summary,
@@ -1246,7 +1001,6 @@ def _run_segment_validation_impl(
             "findings": [
                 "Ground-truth scoring uses only records eligible on both replay date and "
                 "configured snap distance; see headline_results for realized metrics.",
-                f"Sentinel-1 change metrics are realized in this report: {sar_headline.to_dict()}.",
                 f"Trunk-road metrics are realized in this report: {trunk_score.to_dict()}.",
                 "Underpass co-location is descriptive evidence only; it does not establish "
                 "a causal mechanism.",
@@ -1257,7 +1011,6 @@ def _run_segment_validation_impl(
         },
     }
 
-    # Write report files (stage-owned output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     report_path = output_dir / "segment_validation_report.json"
     write_json_atomic(report_path, report)
@@ -1272,15 +1025,8 @@ def run_segment_validation_gate(
     seed: int = 42,
     runs_dir: Path | None = None,
 ) -> dict[str, Any]:
-    """Execute complete per-road-segment validation rescore and produce JSON report.
-
-    Split ownership (Amendment 1):
-      * phase3_run_dir — read-only solver input (manifest, depth rasters)
-      * output_dir — writable stage-owned output (manifest.json, segment_validation_report.json)
-    The two must be distinct and non-nested; violation fails at startup (Rule 7).
-    Canonical: runs/segment_validation/baseline and .../variant.
-    Legacy shared files in runs/phase3_validation/ are preserved but superseded.
-    """
+    """* phase3_run_dir — read-only solver input (manifest, depth rasters)
+    * output_dir — writable stage-owned output (manifest.json, segment_validation_report.json)"""
     if runs_dir is not None:
         output_dir = Path(runs_dir)
     phase3_run_dir = Path(phase3_run_dir)

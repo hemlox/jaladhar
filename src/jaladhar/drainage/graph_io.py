@@ -1,24 +1,15 @@
 """WF-1 drain-graph artefact IO: candidate writer + load-time asserting reader.
-
 This module IS the V8 seam made mechanical: the producer's guaranteed properties are
 written into the artefact manifest (finalize_manifest), and the consumer asserts
 against those exact fields at load (read_artefact). Every refusal raises
 RefuseLoadError carrying the specific contract clause and the observed values.
-
 Implements consumer_assertions_at_load 1-9 of configs/contracts/drain_graph.json
 (assertion 10, Grid.assert_aligned over rasterized exports, belongs to the raster
 seam and is exercised elsewhere per dispatch; the elevation-SHA assertion 9 is
 enforced here through the manifest's elevation_surface_sha256_binding, whose
-production values are pinned by configs/drainage.yaml to
-data/processed/buffered/elevation.tif == 46dff442a739...fe7).
-
 CPU-only; no torch/CUDA imports. Rule-6 manifest section written at run start
 (init_manifest) and updated in place (finalize_manifest/write_candidate).
-
-Scope note (V7): the reader's assertions are schema-domain checks over whatever
-artefact is handed to them; full-domain WF-1 behaviour is exercised by
-tests/drainage/test_stitch.py end-to-end and the future capacity integration.
-"""
+Scope note (V7): the reader's assertions are schema-domain checks over whatever"""
 
 from __future__ import annotations
 
@@ -38,6 +29,8 @@ import geopandas as gpd
 import pandas as pd
 import typer
 from shapely.geometry import LineString, Point
+
+from jaladhar.provenance import sha256_file
 
 app = typer.Typer(add_completion=False)
 REPO = Path(__file__).resolve().parents[3]
@@ -77,7 +70,6 @@ SYNTHETIC_CAPACITY_BASIS = (
 )
 # Contract v1.2.0 NULL-CAPACITY EDGE CLASS (D-G owner amendment 2026-08-26): an
 # OBSERVED edge whose capacity_basis declares 'no capacity claim; routing only'
-# with ALL numeric capacity fields NULL. Routing conduit, no capacity claim,
 # NOT loadable as zero - see configs/contracts/drain_graph.json amendment_history.
 NULL_CAPACITY_BASIS_PREFIXES = ("zero measured slope", "contributing area")
 NULL_CAPACITY_BASIS_REQUIRED_SUBSTRING = "no capacity claim"
@@ -90,6 +82,8 @@ def _is_null_capacity_basis(basis: str) -> bool:
         and NULL_CAPACITY_BASIS_REQUIRED_SUBSTRING in b
         and b.startswith(NULL_CAPACITY_BASIS_PREFIXES)
     )
+
+
 DEPTH_BASIS_EXPECTED = "solved:rational+Manning"
 N_MANNING_PAIRS = {
     0.013: "CPHEEO 2019 Ch5 concrete as-new low",
@@ -166,9 +160,6 @@ class PlacementGuardError(RuntimeError):
     """Publication refused: nothing ships (or sits at consumer paths) disconnected."""
 
 
-# ---------------------------------------------------------------- small utilities
-
-
 def _utc_now() -> str:
     return datetime.now(UTC).isoformat(timespec="seconds")
 
@@ -190,28 +181,18 @@ def _git_state() -> tuple[str, bool, list[str]]:
     return sha, bool(paths), paths
 
 
-def _sha256_file(path: Path) -> str:
-    h = hashlib.sha256()
-    with open(path, "rb") as f:
-        for chunk in iter(lambda: f.read(1 << 20), b""):
-            h.update(chunk)
-    return h.hexdigest()
-
-
 def _repo_path(p: Any) -> Path:
     path = Path(str(p))
     return path if path.is_absolute() else REPO / path
 
 
 def _rec(obj: Any, key: str, default: Any = None) -> Any:
-    """Field access over either a dataclass record or a DataFrame record dict."""
     if isinstance(obj, dict):
         return obj.get(key, default)
     return getattr(obj, key, default)
 
 
 def _nn(v: Any) -> Any:
-    """Normalise SQL NULL: None or NaN -> None."""
     if v is None:
         return None
     if isinstance(v, float) and math.isnan(v):
@@ -229,11 +210,7 @@ def _require(cond: Any, msg: str, exc: type[RuntimeError]) -> None:
         raise exc(msg)
 
 
-# ------------------------------------------------------------- fingerprint + fractions
-
-
 def graph_fingerprint_payload(edges: list[Any]) -> tuple[str, str]:
-    """Pinned serialization: one entry per edge sorted by edge_id, compact JSON, sha256."""
     entries = []
     for e in sorted(edges, key=lambda x: int(_rec(x, "edge_id"))):
         entries.append(
@@ -250,10 +227,7 @@ def graph_fingerprint_payload(edges: list[Any]) -> tuple[str, str]:
 
 
 def synthesised_fraction(edges: list[Any]) -> float:
-    """RULE-1 HEADLINE: synthesised length over the pinned observed-network denominator.
-
-    Deliberately UNCLAMPED (deviation D13: the flat-resolved composite measures 101.3%).
-    Sums in edge_id order so producer and consumer float-sums agree bitwise."""
+    """RULE-1 HEADLINE: synthesised length over the pinned observed-network denominator."""
     total = 0.0
     for e in sorted(edges, key=lambda x: int(_rec(x, "edge_id"))):
         if str(_rec(e, "edge_source")) == "synthesised":
@@ -262,7 +236,6 @@ def synthesised_fraction(edges: list[Any]) -> float:
 
 
 def _topo_order(node_ids: list[int], edges: list[Any]) -> list[int]:
-    """Kahn over the DAG, deterministic smallest-id-first frontier."""
     adj_out: dict[int, list[int]] = {nid: [] for nid in node_ids}
     indeg: dict[int, int] = {nid: 0 for nid in node_ids}
     for e in edges:
@@ -328,13 +301,8 @@ def _build_adjacency(nodes: list[Any], edges: list[Any], counts: dict) -> dict:
     }
 
 
-# ------------------------------------------------------------------ rule-6 lifecycle
-
-
 def init_manifest(run_dir: str, cfg: dict) -> dict:
-    """Rule 6: manifest EXISTS at run start (status running, git envelope, config
-    snapshot, wall clock) and is updated in place afterwards. Input SHA256s for the
-    four WF-1 inputs are hashed NOW, not claimed later."""
+    """Rule 6: manifest EXISTS at run start (status running, git envelope, config"""
     rd = Path(run_dir)
     rd.mkdir(parents=True, exist_ok=True)
     sha, dirty, porcelain = _git_state()
@@ -350,7 +318,7 @@ def init_manifest(run_dir: str, cfg: dict) -> dict:
         raw = inputs.get(key)
         path = _repo_path(raw) if raw else None
         if path is not None and path.exists():
-            input_sha[label] = _sha256_file(path)
+            input_sha[label] = sha256_file(path)
         else:
             unresolved.append(label)
     manifest: dict[str, Any] = {
@@ -389,8 +357,7 @@ def finalize_manifest(
     extra_counts: dict | None = None,
 ) -> dict:
     """Merge EVERY manifest_guarantees_producer_writes field into the run-start
-    manifest (updated in place, returned). Computes the graph fingerprint and the
-    UNCLAMPED synthesised fraction FROM THE EDGES THEMSELVES, never from claims."""
+    manifest (updated in place, returned). Computes the graph fingerprint and the"""
     counters = dict(stitch_metrics.get("counters", {}) or {})
     if extra_counts:
         counters.update(extra_counts)
@@ -400,8 +367,6 @@ def finalize_manifest(
     pre = int(stitch_metrics.get("component_count_pre_stitch", post))
     capacity = capacity_metrics if capacity_metrics is not None else {"capacity_status": "not_run"}
 
-    # Component policy (owner adjudication 2026-08-25, replaces the ==1 pin):
-    # components terminating at a valid outfall must carry >= 95% of total
     # observed reach length; the outfall set is named and justified.
     parent: dict[int, int] = {}
 
@@ -416,8 +381,6 @@ def finalize_manifest(
     obs_len_by_comp: dict[int, float] = {}
     for e in edges:
         # union over ALL edges (connectors reach the outfalls; observed reaches
-        # join via split junction nodes) - skipping synthesised edges here is
-        # what produced the fraction==0 defect caught by independent recompute.
         a, b = _pfind(int(_rec(e, "from_node"))), _pfind(int(_rec(e, "to_node")))
         if a != b:
             parent[a] = b
@@ -603,9 +566,6 @@ def finalize_manifest(
     return manifest
 
 
-# ------------------------------------------------------------------------- writer
-
-
 def _validate_for_write(nodes: list, edges: list) -> None:
     seen_nodes: set[int] = set()
     for n in nodes:
@@ -733,11 +693,7 @@ def _records_to_frames(nodes: list, edges: list) -> tuple[gpd.GeoDataFrame, gpd.
 def write_candidate(
     nodes: list, edges: list, manifest: dict, out_dir: str, publish: bool = False
 ) -> dict:
-    """Write the candidate artefact (gpkg + adjacency + updated-in-place manifest).
-
-    publish=True copies to config_snapshot.outputs.publish_{gpkg,adjacency} BUT ONLY
-    when the component policy is MET; otherwise PlacementGuardError and NOTHING is
-    copied (nothing ships unadjudicated)."""
+    """Write the candidate artefact (gpkg + adjacency + updated-in-place manifest)."""
     _require(
         manifest.get("graph_is_dag") is True,
         "write_candidate refuses: manifest.graph_is_dag is not True - never write a "
@@ -805,9 +761,6 @@ def write_candidate(
     return result
 
 
-# ------------------------------------------------------------------------- reader
-
-
 def _load_json(path: str, what: str) -> dict:
     p = Path(path)
     if not p.exists():
@@ -828,8 +781,6 @@ def _source_ok(entry: Any) -> bool:
 
 
 def _assumed_scan(basis: dict) -> str | None:
-    """Case-insensitive 'assumed' hunt; exemption only for key startswith 'assumption'
-    whose value is the strict one-colon form 'assumption:<label>'."""
     one_colon = re.compile(r"assumption:[A-Za-z0-9_\-.]+")
     for key, val in basis.items():
         if isinstance(val, str):
@@ -970,15 +921,8 @@ def read_artefact(
     owner_adjudication_ref: str = "",
 ) -> dict:
     """Load a drain-graph artefact or refuse with a SPECIFIC reason.
-
     Enforces consumer_assertions_at_load 1-9 of configs/contracts/drain_graph.json
-    (10 is the raster seam, tested elsewhere), the tightened >1-component refusal,
-    and the placement guard against publish paths while disconnected.
-    Contract v1.2.0 (D-G owner amendment 2026-08-26): observed edges may be members
-    of the explicit NULL-CAPACITY EDGE CLASS (declared 'no capacity claim; routing
-    only' basis, ALL numeric capacity fields NULL, never loadable as zero), and
-    zero_length_dropped_count is a recorded property returned in the result dict,
-    not a refusal."""
+    (10 is the raster seam, tested elsewhere), the tightened >1-component refusal,"""
     # -- files + manifest envelope -------------------------------------------
     for p, what in ((gpkg, "gpkg"), (adjacency, "adjacency")):
         if not Path(p).exists():
@@ -1039,10 +983,7 @@ def read_artefact(
     counts = man.get("counts", {}) or {}
     self_loops = int(counts.get("self_loop_dropped_count", 0) or 0)
     zeros = int(counts.get("zero_length_dropped_count", 0) or 0)
-    # M5b adjudication 2026-08-25: the 12 input-geometry self-loops are a data
-    # fact, not a build defect; a sanctioned consumer may load when the dropped
     # ids are enumerated in the manifest (traceability) and the owner
-    # adjudication reference is present.
     enumerated_self_loops = [
         x
         for x in counts.get("dropped_edge_ids", [])
@@ -1059,7 +1000,7 @@ def read_artefact(
     # Contract v1.2.0 (D-G amendment 2026-08-26): zero_length_dropped_count is a
     # RECORDED PROPERTY, not a refusal - dropped zero-length edges are a build
     # fact (realized artefact: 42), echoed in the reader result below.
-    _ = zeros  # recorded; see return dict "dropped_zero_length_count"
+    _ = zeros
     unresolved = int(counts.get("unresolved_outfall_count", 0) or 0)
     _require(
         unresolved == 0, f"[v-outfall] unresolved_outfall_count={unresolved} != 0", RefuseLoadError
@@ -1076,7 +1017,6 @@ def read_artefact(
         RefuseLoadError,
     )
 
-    # -- layers ----------------------------------------------------------------
     try:
         nodes_gdf = gpd.read_file(gpkg, layer="drain_nodes")
         edges_gdf = gpd.read_file(gpkg, layer="drain_edges")
@@ -1259,12 +1199,8 @@ def read_artefact(
             )
         elif _is_null_capacity_basis(basis_txt):
             # Contract v1.2.0 NULL-CAPACITY EDGE CLASS (D-G amendment 2026-08-26):
-            # declared routing conduit, no capacity claim. Legal ONLY with every
-            # numeric capacity field NULL - never loadable as zero.
             numeric_filled = [
-                k
-                for k, v in cap_present.items()
-                if v is not None and k != "capacity_basis"
+                k for k, v in cap_present.items() if v is not None and k != "capacity_basis"
             ]
             _require(
                 not numeric_filled,
@@ -1287,10 +1223,7 @@ def read_artefact(
         # else: fully-NULL observed edge WITHOUT a declared basis - unchanged from
         # v1.1.0 (historical blocked_missing_design_intensity mode, legal). The
         # v1.2.0 amendment ADDS the declared null-capacity class; it does not
-        # retire this legacy legality.
 
-    # -- V-SYNTHVISIBLE: fraction recomputed FROM THE WRITTEN GPKG -------------
-    # Field-level schema first, then this cross-artefact integrity check: the
     # manifest's RULE-1 headline must reproduce from the realized gpkg bytes.
     recomputed_fraction = synthesised_fraction(edge_recs)
     declared_fraction = float(man.get("synthesised_fraction_of_total_length", float("nan")))
@@ -1301,7 +1234,6 @@ def read_artefact(
         RefuseLoadError,
     )
 
-    # -- adjacency --------------------------------------------------------------
     adj = _load_json(adjacency, "adjacency")
     expected_adj_keys = {"nodes", "edges", "topo_order", "cycles", "dropped"}
     _require(
@@ -1387,7 +1319,7 @@ def read_artefact(
         f"[consumer_assertion_9] bound elevation surface missing: {surf}",
         RefuseLoadError,
     )
-    got_sha = _sha256_file(surf)
+    got_sha = sha256_file(surf)
     _require(
         got_sha == expected_sha,
         f"[consumer_assertion_9] elevation surface bytes changed: expected "
@@ -1414,9 +1346,6 @@ def read_artefact(
     }
 
 
-# ------------------------------------------------------------------------------- CLI
-
-
 def _print_rule6_header() -> None:
     sha, dirty, porcelain = _git_state()
     typer.echo(
@@ -1439,7 +1368,6 @@ def inspect(
     adjudication_ref: str = typer.Option("", "--adjudication-ref"),
 ) -> None:
     """Load-time contract inspection: prints PASS or the RefuseLoadError reason.
-
     Exit codes: 0 pass, 2 refused."""
     _print_rule6_header()
     try:

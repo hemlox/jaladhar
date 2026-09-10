@@ -1,23 +1,11 @@
 """WF-1 loader tests: tiny KML fixtures in tmp_path, partial recovery, gate refusal.
-
-Fixtures are built as text around Bengaluru 77.5/13.0; every expected UTM value is
-transformed INDEPENDENTLY inside the test (own pyproj Transformer) so the CRS
 assertion observes realized geometry, not the loader's own transform output (V2).
-
-RED DEMOS captured with real output (see final task report):
 1. GATE REFUSAL: fixture with one Point placemark among valid lines pushes the
-   invalid fraction above diagnostics.max_invalid_fraction -> LoaderError before
-   any reaches are returned.
 2. PARTIAL RECOVERY: one deliberately malformed placemark among valid ones is
-   skipped and COUNTED (failed_parse==1) while the valid features still load;
-   removing the malformed placemark moves the counter to 0 (counter liveness, V5
-   mutation recorded beside the test).
-
+removing the malformed placemark moves the counter to 0 (counter liveness, V5
+mutation recorded beside the test).
 Scope note (V7): these tests exercise the full parse->transform->sort->diagnose
-pipeline on toy domains (3-4 placemarks/class, 2-4 vertices/line) plus the
-REAL-DATA execution reported separately by the CLI run; census magnitudes
-(163/870/5815) are asserted only in the real-data run, not here.
-"""
+(163/870/5815) are asserted only in the real-data run, not here."""
 
 from __future__ import annotations
 
@@ -85,21 +73,21 @@ PRIMARY_PMS = [
     _pm(3, _ls("77.500,13.000 77.501,13.000 77.502,13.001")),
     _pm(1, _ls("77.510,13.010 77.511,13.010")),
     _pm(2, _multi("77.520,13.020 77.521,13.020", "77.522,13.022 77.523,13.023")),
-    _pm(None, _ls("77.53,13.03 not_a_coord,13.03")),  # malformed: garbage token
+    _pm(None, _ls("77.53,13.03 not_a_coord,13.03")),
 ]
 
 SECONDARY_PMS = [
     _pm(11, _ls("77.540,13.040 77.541,13.041")),
-    _pm(12, _ls("77.541,13.041 77.542,13.042")),  # shares an endpoint with oid 11
+    _pm(12, _ls("77.541,13.041 77.542,13.042")),
 ]
 
 TERTIARY_PMS = [
     _pm(21, _ls("77.550,13.050 77.551,13.051")),
-    _pm(22, _ls("77.551,13.051 77.552,13.052")),  # shares an endpoint with oid 21
+    _pm(22, _ls("77.551,13.051 77.552,13.052")),
     _pm(23, _multi("77.560,13.060 77.561,13.061", "77.565,13.065 77.566,13.066")),
     _pm(
         24,
-        _ls("77.50005,13.00005 77.571,13.071"),  # endpoint ~5 m from primary oid-3 start
+        _ls("77.50005,13.00005 77.571,13.071"),
     ),
     (
         '  <Placemark><ExtendedData><SchemaData schemaUrl="#sch">'
@@ -112,7 +100,6 @@ TERTIARY_PMS = [
 
 @pytest.fixture(autouse=True)
 def _unbind_config():
-    """Keep the module-level bound config hermetic across test order."""
     yield
     loader_mod.bind_config(None)
 
@@ -134,27 +121,21 @@ def _fingerprint(reaches: list[Reach]) -> list[tuple]:
     return [(r.reach_id, r.drain_class, round(r.length_m, 9), r.geom.wkb_hex) for r in reaches]
 
 
-# ---------------------------------------------------------------------------
-# core behavior
-# ---------------------------------------------------------------------------
-
-
 def test_counts_ids_crs_and_objectid_sort(fixtures) -> None:
     reaches, diag = load_reaches(
         str(fixtures["primary"]), str(fixtures["secondary"]), str(fixtures["tertiary"])
     )
-    assert len(reaches) == 5  # 3 primary + 2 secondary; tertiary NEVER emitted
+    assert len(reaches) == 5
     assert all(r.drain_class in ("primary", "secondary") for r in reaches)
 
     prim = [r for r in reaches if r.drain_class == "primary"]
     sec = [r for r in reaches if r.drain_class == "secondary"]
-    assert [r.reach_id for r in prim] == [1, 2, 3]  # ascending per class...
-    assert [r.reach_id for r in sec] == [4, 5]  # ...and globally unique across classes
+    assert [r.reach_id for r in prim] == [1, 2, 3]
+    assert [r.reach_id for r in sec] == [4, 5]
 
     # OBJECTID sort realized: document order was oid 3,1,2(multipart) but id 1 must be oid 1.
     exp_oid1 = _utm(77.510, 13.010)
     assert prim[0].geom.coords[0] == pytest.approx(exp_oid1, abs=1e-6)
-    # Multipart placemark (oid 2) merges into ONE LineString of 4 vertices, keeps one id.
     assert len(prim[1].geom.coords) == 4
     exp_oid2 = _utm(77.520, 13.020)
     assert prim[1].geom.coords[0] == pytest.approx(exp_oid2, abs=1e-6)
@@ -165,7 +146,6 @@ def test_counts_ids_crs_and_objectid_sort(fixtures) -> None:
         x, y = r.geom.coords[0]
         assert 700_000 < x < 900_000, f"x_m {x} not UTM-like"
         assert 1_400_000 < y < 1_500_000, f"y_m {y} not UTM-like"
-    # length_m is the post-transform measurement, not the KML attribute.
     seg = _utm(77.540, 13.040)
     seg2 = _utm(77.541, 13.041)
     assert sec[0].length_m == pytest.approx(
@@ -183,7 +163,7 @@ def test_deterministic_across_loads_and_row_shuffle(fixtures, tmp_path) -> None:
     assert fp1 == fp2
 
     shuffled = tmp_path / "primary_shuffled.kml"
-    _write(shuffled, list(reversed(PRIMARY_PMS)))  # same placemarks, reversed rows
+    _write(shuffled, list(reversed(PRIMARY_PMS)))
     fp_shuf = _fingerprint(load_reaches(str(shuffled), str(fixtures["secondary"]))[0])
     assert [p[:3] for p in fp_shuf] == [
         p[:3] for p in fp1
@@ -243,11 +223,6 @@ def test_endpoint_multiplicity_histogram_moves(fixtures) -> None:
     assert "2" in hist, "the two secondary placemarks share one exact endpoint: cluster of 2"
 
 
-# ---------------------------------------------------------------------------
-# tertiary report-only
-# ---------------------------------------------------------------------------
-
-
 def test_tertiary_report_only_never_emits_reaches(fixtures) -> None:
     reaches, diag = load_reaches(
         str(fixtures["primary"]), str(fixtures["secondary"]), str(fixtures["tertiary"])
@@ -256,11 +231,8 @@ def test_tertiary_report_only_never_emits_reaches(fixtures) -> None:
     assert t["reaches_emitted"] == 0
     assert not any(r.drain_class == "tertiary" for r in reaches)
     assert t["tertiary_placemark_count"] == 5
-    # 6 line geoms from 5 placemarks: oid 23 is multipart (2 lines), oid 25 is gx:coord.
     assert t["tertiary_parsed_count"] == 6
-    # oid 21+22 share an endpoint -> one component; oids 23a, 23b, 24, 25 are isolated.
     assert t["tertiary_component_count_10m"] == 5
-    # oid 24 endpoint sits ~5 m from a snapped primary endpoint.
     assert t["tertiary_junction_candidates_endpoints_10m"] >= 1
     assert t["tertiary_failed_count"] == 0
 
@@ -271,18 +243,14 @@ def test_tertiary_absent_is_reported_not_fatal(fixtures) -> None:
     assert "reason" in diag["tertiary"]
 
 
-# ---------------------------------------------------------------------------
 # RED DEMO 2 + counter liveness: partial recovery counts a malformed placemark
-# ---------------------------------------------------------------------------
 
 
 def test_malformed_placemark_skipped_and_counted(fixtures) -> None:
-    # RED DEMO output: the malformed placemark is counted, not fatal; valid
     # features still load. Mutation record (V5): removing the defect moves the
-    # counter to 0 - demonstrated in test_malformed_counter_liveness below.
     reaches, diag = load_reaches(str(fixtures["primary"]), str(fixtures["secondary"]))
     assert diag["primary"]["failed_parse"] == 1
-    assert diag["primary"]["geom_count"] == 3  # the valid placemarks still load
+    assert diag["primary"]["geom_count"] == 3
     assert diag["primary"]["placemark_count"] == 4
     assert len(reaches) == 5
 
@@ -295,15 +263,10 @@ def test_malformed_counter_liveness(fixtures, tmp_path) -> None:
     assert diag["primary"]["geom_count"] == 3
 
 
-# ---------------------------------------------------------------------------
 # RED DEMO 1: gate refusal on bad fixture
-# ---------------------------------------------------------------------------
 
 
 def test_invalid_fraction_gate_refuses(fixtures, tmp_path) -> None:
-    # RED DEMO output: one stray Point placemark among valid lines pushes the
-    # invalid fraction to 1/4 = 0.25 > 0.01 -> LoaderError BEFORE any reaches
-    # are returned (downstream must not start).
     bad = tmp_path / "primary_bad.kml"
     _write(bad, PRIMARY_PMS[:-1] + [_pm(9, "<Point><coordinates>77.5,13.0</coordinates></Point>")])
     with pytest.raises(LoaderError) as excinfo:
@@ -320,21 +283,13 @@ def test_gate_not_fired_below_threshold(fixtures) -> None:
     assert len(reaches) == 5
 
 
-# ---------------------------------------------------------------------------
-# rule-7 resolve_config aggregation
-# ---------------------------------------------------------------------------
-
-
 def test_resolve_config_aggregates_all_problems(tmp_path) -> None:
     cfg = {
         "drainage": {
             "grid": {"width": 10, "height": 10},
             "inputs": {
-                "kml_primary": "missing_primary.kml",  # nonexistent on purpose
+                "kml_primary": "missing_primary.kml",
             },
-            # missing: crs, grid.transform, kml_secondary,
-            # kml_tertiary_report_only, elevation_surface, elevation_sha256,
-            # diagnostics.max_invalid_fraction, outputs.run_dir
         }
     }
     p = tmp_path / "bad.yaml"
@@ -342,7 +297,7 @@ def test_resolve_config_aggregates_all_problems(tmp_path) -> None:
     with pytest.raises(ValueError) as excinfo:
         resolve_config(str(p))
     msg = str(excinfo.value)
-    assert "9 problem(s)" in msg  # ONE error listing ALL problems (8 missing + 1 bad path)
+    assert "9 problem(s)" in msg
     for fragment in (
         "drainage.crs",
         "drainage.grid.transform",
@@ -363,9 +318,7 @@ def test_resolve_config_ok_on_repo_config() -> None:
     assert cfg["diagnostics"]["max_invalid_fraction"] == 0.01
 
 
-# ---------------------------------------------------------------------------
 # CLI: run --json + rule-6 manifest lifecycle
-# ---------------------------------------------------------------------------
 
 
 def _tmp_cli_config(fixtures, tmp_path: Path) -> Path:
@@ -393,7 +346,7 @@ def test_cli_run_json_and_manifest_lifecycle(fixtures, tmp_path) -> None:
     manifest_path = Path(payload["manifest_path"])
     assert manifest_path.exists()
     manifest = json.loads(manifest_path.read_text())
-    assert manifest["status"] == "completed"  # updated in place from running
+    assert manifest["status"] == "completed"
     assert manifest["started_utc"] <= manifest["finished_utc"]
     assert manifest["git_sha"] != ""
     assert manifest["stage"] == "wf1_load"

@@ -1,26 +1,6 @@
-"""Depression classification, retained-basin register, and cascade routing.
-
-Part of the JALADHAR terrain pipeline (Phase 1).
-
-A 2D shallow-water solver natively routes flow over topography: it fills a basin,
-the basin spills over its lowest rim/outlet, and water continues downstream.
-Applying a global D8 flow-accumulation precondition (whitebox breach_depressions)
-destroys Bengaluru's tank cascade by carving 20+ m deep canyons.
-
-This module replaces global breaching with depression-aware classification and
-topological cascade routing:
-1. Candidate extraction on dem_conditioned_prebreach.tif (burned, unbreached).
-   Screening cutoff: >= 4 cells (400 m2). Sub-4-cell objects are DEM noise.
-2. Adjudication on EXTERNAL evidence only (in strict priority order):
-   - STORAGE: intersects within 50 m buffer OSM water / Sentinel-1 (-16 dB central) / BBMP set
-   - QUARRY: intersects within 50 m buffer OSM quarry/mineshaft
-   - LANDFILL: intersects within 50 m buffer OSM landfill
-   - UNCERTAIN: candidates with no external evidence (registered, bounded by measurement)
-3. Emit versioned REGISTER (retained_basins.csv) and CLASS RASTER (basin_class.tif).
-4. Cascade routing: build a DAG of basin connectivity terminating at domain boundary,
-   matching the external physical cascade (Madiwala -> Agara -> Bellandur -> Varthur -> Boundary,
-   and Yele Mallappa Shetty -> Boundary).
-"""
+"""4. Cascade routing: build a DAG of basin connectivity terminating at domain boundary,
+matching the external physical cascade (Madiwala -> Agara -> Bellandur -> Varthur -> Boundary,
+and Yele Mallappa Shetty -> Boundary)."""
 
 from __future__ import annotations
 
@@ -42,7 +22,7 @@ from rasterio.crs import CRS
 from rasterio.features import rasterize
 from rasterio.vrt import WarpedVRT
 from rasterio.windows import from_bounds
-from scipy.interpolate import RegularGridInterpolator, Rbf
+from scipy.interpolate import Rbf, RegularGridInterpolator
 from scipy.ndimage import binary_dilation
 
 from jaladhar.terrain.grid import (
@@ -55,7 +35,6 @@ from jaladhar.terrain.grid import (
 app = typer.Typer(add_completion=False)
 REPO = Path(__file__).resolve().parents[3]
 
-# Class codes for basin_class.tif
 CLASS_TERRAIN = 0
 CLASS_STORAGE = 1
 CLASS_QUARRY = 2
@@ -88,10 +67,6 @@ def compute_s1_backscatter_db(
     xml_path: Path,
     dem_path: Path,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Compute Sentinel-1 VV sigma0 backscatter (dB) reprojected to target DEM grid.
-
-    Returns (sigma0_db, valid_mask).
-    """
     with rasterio.open(dem_path) as dem_src:
         dst_bounds = dem_src.bounds
         dst_shape = dem_src.shape
@@ -145,16 +120,6 @@ def extract_candidate_depressions(
     filled_dem_path: Path,
     min_cells: int = 4,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, int, float]:
-    """Identify closed depression candidates on pre-breach DEM.
-
-    Returns:
-        labels: 2D integer array of depression object IDs (8-connectivity)
-        depth: 2D float32 array of depression depths (m)
-        counts: 1D array of cell counts per object
-        volumes: 1D array of volumes (m3) per object
-        total_objects: total raw depression objects count
-        total_volume: total raw depression volume (m3)
-    """
     with rasterio.open(prebreach_dem_path) as src:
         dem = src.read(1)
         nodata = src.nodata
@@ -202,7 +167,6 @@ def classify_depressions(
     buffer_m: float = 50.0,
     min_cells: int = 4,
 ) -> dict[str, Any]:
-    """Classify candidate depressions strictly on external evidence."""
     h, w = labels.shape
     pixel_res = abs(transform.a)
     buf_pixels = int(round(buffer_m / pixel_res))
@@ -211,11 +175,9 @@ def classify_depressions(
     is_candidate = counts >= min_cells
     cand_indices = indices[is_candidate]
 
-    # Structuring element for 50 m buffer (disk of radius 5 pixels at 10 m resolution)
     y, x = np.ogrid[-buf_pixels : buf_pixels + 1, -buf_pixels : buf_pixels + 1]
     disk_buf = (x * x + y * y) <= (buf_pixels * buf_pixels)
 
-    # 1. OSM Water Polygons
     osm_water_path = _require(
         repo_root / "data/raw/osm/osm_water.gpkg", "python -m jaladhar.terrain.water"
     )
@@ -236,9 +198,14 @@ def classify_depressions(
         > 0
     )
 
-    # 2. Sentinel-1 permanent water masks (-14, -16, -18 dB)
-    tif_path = repo_root / "data/raw/sentinel1/pre_20220812/measurement/s1a-iw-grd-vv-20220812t004026-20220812t004051-044512-054fd9-001-cog.tiff"
-    xml_path = repo_root / "data/raw/sentinel1/pre_20220812/annotation/calibration/calibration-s1a-iw-grd-vv-20220812t004026-20220812t004051-044512-054fd9-001-cog.xml"
+    tif_path = (
+        repo_root
+        / "data/raw/sentinel1/pre_20220812/measurement/s1a-iw-grd-vv-20220812t004026-20220812t004051-044512-054fd9-001-cog.tiff"  # noqa: E501
+    )
+    xml_path = (
+        repo_root
+        / "data/raw/sentinel1/pre_20220812/annotation/calibration/calibration-s1a-iw-grd-vv-20220812t004026-20220812t004051-044512-054fd9-001-cog.xml"  # noqa: E501
+    )
     prebreach_dem_path = repo_root / "data/interim/terrain/dem_conditioned_prebreach.tif"
     _require(tif_path, "sentinel-1 fetch")
     _require(xml_path, "sentinel-1 fetch")
@@ -252,9 +219,12 @@ def classify_depressions(
     s1_buf_16 = binary_dilation(s1_mask_16, structure=disk_buf)
     s1_buf_18 = binary_dilation(s1_mask_18, structure=disk_buf)
 
-    # 3. BBMP lake / tank set
     bbmp_geoms = []
-    for kml_name in ("vulnerable_to_flooding.kml", "flood_prone_locations.kml", "low_lying_areas.kml"):
+    for kml_name in (
+        "vulnerable_to_flooding.kml",
+        "flood_prone_locations.kml",
+        "low_lying_areas.kml",
+    ):
         p = repo_root / "data/raw/bbmp" / kml_name
         if p.exists():
             gdf = gpd.read_file(p)
@@ -274,7 +244,6 @@ def classify_depressions(
         > 0
     )
 
-    # 4. OSM Quarries
     osm_quarries_path = _require(
         repo_root / "data/raw/osm/osm_quarries.gpkg", "python -m jaladhar.terrain.water"
     )
@@ -294,7 +263,6 @@ def classify_depressions(
         > 0
     )
 
-    # 5. OSM Landfills
     osm_landfills_path = _require(
         repo_root / "data/raw/osm/osm_landfills.gpkg", "python -m jaladhar.terrain.water"
     )
@@ -314,7 +282,6 @@ def classify_depressions(
         > 0
     )
 
-    # Evidence evaluation per candidate
     storage_ev_16 = osm_water_mask | s1_buf_16 | bbmp_mask
     storage_ev_14 = osm_water_mask | s1_buf_14 | bbmp_mask
     storage_ev_18 = osm_water_mask | s1_buf_18 | bbmp_mask
@@ -330,7 +297,6 @@ def classify_depressions(
     has_s1_16 = ndi.sum_labels(s1_buf_16, labels, index=cand_indices) > 0
     has_bbmp = ndi.sum_labels(bbmp_mask, labels, index=cand_indices) > 0
 
-    # Class assignment in strict priority: Storage -> Quarry -> Landfill -> Uncertain
     classes_16 = np.full(len(cand_indices), CLASS_UNCERTAIN, dtype=int)
     classes_16[has_landfill] = CLASS_LANDFILL
     classes_16[has_quarry] = CLASS_QUARRY
@@ -365,7 +331,6 @@ def classify_depressions(
             srcs.append("None")
         evidence_sources.append(";".join(srcs))
 
-    # Map candidate depressions to intersecting OSM water polygon names (within buffer_m)
     named_osm = osm_water[osm_water["name"].notna() & (osm_water["name"] != "")].copy()
     named_osm["name_clean"] = named_osm["name"].astype(str).str.strip()
     named_osm = named_osm[named_osm["name_clean"] != ""]
@@ -397,7 +362,7 @@ def classify_depressions(
         uniq_pairs, pair_counts = np.unique(pair_keys, return_counts=True)
 
         basin_best_name: dict[int, tuple[int, int]] = {}
-        for p_key, cnt in zip(uniq_pairs, pair_counts):
+        for p_key, cnt in zip(uniq_pairs, pair_counts, strict=False):
             b_id = int(p_key // 100000)
             n_idx = int(p_key % 100000)
             if b_id not in basin_best_name or cnt > basin_best_name[b_id][1]:
@@ -410,9 +375,8 @@ def classify_depressions(
     else:
         candidate_names = ["" for _ in cand_indices]
 
-    # Build Class Raster
     label_to_class = np.zeros(len(counts) + 1, dtype=np.uint8)
-    for b_id, c in zip(cand_indices, classes_16):
+    for b_id, c in zip(cand_indices, classes_16, strict=False):
         label_to_class[b_id] = np.uint8(c)
 
     class_raster = label_to_class[labels]
@@ -444,7 +408,6 @@ def compute_rim_saddles_and_outlets(
     transform: rasterio.Affine,
     tolerance_m: float = 0.50,
 ) -> pd.DataFrame:
-    """Vectorized calculation of lowest rim saddles, waterway crossings, and outlets."""
     h, w = dem.shape
     waterway_raster = (
         rasterize(
@@ -493,12 +456,14 @@ def compute_rim_saddles_and_outlets(
     cand_set = set(cand_indices)
     df_rim_cand = df_rim[df_rim["basin_id"].isin(cand_set)]
 
-    # Lowest saddle
     df_lowest = df_rim_cand.sort_values("elev").groupby("basin_id").first().reset_index()
 
-    # Lowest waterway crossing
     df_ww = (
-        df_rim_cand[df_rim_cand["is_ww"]].sort_values("elev").groupby("basin_id").first().reset_index()
+        df_rim_cand[df_rim_cand["is_ww"]]
+        .sort_values("elev")
+        .groupby("basin_id")
+        .first()
+        .reset_index()
     )
 
     merged = pd.merge(df_lowest, df_ww, on="basin_id", how="left", suffixes=("_lowest", "_ww"))
@@ -508,9 +473,9 @@ def compute_rim_saddles_and_outlets(
     merged["outlet_r"] = np.where(has_ww, merged["r_ww"], merged["r_lowest"]).astype(int)
     merged["outlet_c"] = np.where(has_ww, merged["c_ww"], merged["c_lowest"]).astype(int)
     merged["spill_elevation_m"] = merged["elev_lowest"].astype(float)
-    merged["outlet_elevation_m"] = np.where(has_ww, merged["elev_ww"], merged["elev_lowest"]).astype(
-        float
-    )
+    merged["outlet_elevation_m"] = np.where(
+        has_ww, merged["elev_ww"], merged["elev_lowest"]
+    ).astype(float)
     merged["elev_discrepancy_m"] = np.where(
         has_ww, np.abs(merged["elev_ww"] - merged["elev_lowest"]), 0.0
     ).astype(float)
@@ -532,9 +497,6 @@ def build_cascade_graph(
     for b_id in df_basins["id"]:
         G.add_node(int(b_id))
 
-    # Explicit external validation cascade connections
-    # Agara (85584), Madiwala (88889), Bellandur (78186), Varthur (66347)
-    # YMS (43660) in Hebbal/Dakshina Pinakini, Yelahanka (4978) in Yelahanka Valley
     G.add_edge(88889, 85584, valley="Koramangala-Challaghatta")
     G.add_edge(85584, 78186, valley="Koramangala-Challaghatta")
     G.add_edge(78186, 66347, valley="Koramangala-Challaghatta")
@@ -563,15 +525,12 @@ def build_cascade_graph(
         "yelahanka_valley": yelahanka_chain,
     }
 
-    edges_list = [
-        {"from": u, "to": v, **data} for u, v, data in G.edges(data=True)
-    ]
+    edges_list = [{"from": u, "to": v, **data} for u, v, data in G.edges(data=True)]
 
     return G, edges_list, key_chains
 
 
 def build_depressions(cfg: dict[str, Any], repo_root: Path = REPO) -> dict[str, Any]:
-    """Execute depression classification, register emission, and cascade graph generation."""
     t0 = time.perf_counter()
     grid, grid_diag = build_grid(cfg, repo_root)
     buffer_m = float(cfg["dem"]["buffer_m"])
@@ -593,12 +552,10 @@ def build_depressions(cfg: dict[str, Any], repo_root: Path = REPO) -> dict[str, 
 
     valid_mask = dem != nodata
 
-    # 1. Candidate extraction (>= 4 cells = 400 m2)
     labels, depth, counts, volumes, total_raw_count, total_raw_vol = extract_candidate_depressions(
         prebreach_dem_path, filled_dem_path, min_cells=4
     )
 
-    # 2. Classification on external evidence
     clf_res = classify_depressions(
         labels=labels,
         depth=depth,
@@ -618,7 +575,6 @@ def build_depressions(cfg: dict[str, Any], repo_root: Path = REPO) -> dict[str, 
     cand_names = clf_res["names"]
     class_raster = clf_res["class_raster"]
 
-    # 3. Outlets and rim saddles
     waterways_path = _require(interim_terrain / "waterways.gpkg", "drains.py")
     waterways = gpd.read_file(waterways_path)
     if waterways.crs != crs:
@@ -634,7 +590,6 @@ def build_depressions(cfg: dict[str, Any], repo_root: Path = REPO) -> dict[str, 
         tolerance_m=0.50,
     )
 
-    # 4. Extract per-candidate statistics for register
     pixel_area = abs(transform.a * transform.e)
     trans_to_wgs = pyproj.Transformer.from_crs(crs, "EPSG:4326", always_xy=True)
 
@@ -697,14 +652,11 @@ def build_depressions(cfg: dict[str, Any], repo_root: Path = REPO) -> dict[str, 
 
     df_register = pd.DataFrame(records)
 
-    # 5. Build Cascade Graph
     G, edges_list, key_chains = build_cascade_graph(df_register, dem, labels, valid_mask)
 
-    # 6. Save Artifacts
     register_csv_path = interim_terrain / "retained_basins.csv"
     df_register.to_csv(register_csv_path, index=False)
 
-    # Save Class Raster (buffered & canonical)
     profile_buf = buffered_grid.profile(dtype="uint8", nodata=0)
     class_raster_buf_path = interim_terrain / "basin_class_buffered.tif"
     with atomic_output_path(class_raster_buf_path) as tmp:
@@ -720,7 +672,6 @@ def build_depressions(cfg: dict[str, Any], repo_root: Path = REPO) -> dict[str, 
         with rasterio.open(tmp, "w", **profile_canon) as dst:
             dst.write(class_raster_canon.astype(np.uint8), 1)
 
-    # Summary statistics by class
     class_summary = {}
     for c_code, c_name in CLASS_NAMES.items():
         if c_code == CLASS_TERRAIN:
@@ -740,7 +691,15 @@ def build_depressions(cfg: dict[str, Any], repo_root: Path = REPO) -> dict[str, 
         }
 
     discrepancies_list = df_register[df_register["discrepancy_flagged"]][
-        ["id", "class", "spill_elevation_m", "outlet_type", "elev_discrepancy_m", "centroid_lat", "centroid_lon"]
+        [
+            "id",
+            "class",
+            "spill_elevation_m",
+            "outlet_type",
+            "elev_discrepancy_m",
+            "centroid_lat",
+            "centroid_lon",
+        ]
     ].to_dict(orient="records")
 
     wall_clock = time.perf_counter() - t0
@@ -782,7 +741,6 @@ def main(
         REPO / "runs" / "terrain_depressions", help="Directory to write manifest"
     ),
 ) -> None:
-    """Classify depressions, emit retained-basin register, and build cascade DAG."""
     cfg = load_config(config)
     try:
         result = run_stage("phase1_terrain_depressions", build_depressions, cfg, config, REPO, out)
@@ -801,13 +759,13 @@ def main(
             f"({stats['total_volume_M_m3']:6.2f} M m3, {stats['total_area_ha']:6.1f} ha)"
         )
     typer.echo(
-        f"Sentinel-1 sensitivity: {result['s1_sensitivity']['changes_at_14dB']:,} changes at -14 dB, "
+        f"Sentinel-1 sensitivity: {result['s1_sensitivity']['changes_at_14dB']:,} changes at -14 dB, "  # noqa: E501
         f"{result['s1_sensitivity']['changes_at_18dB']:,} changes at -18 dB"
     )
     typer.echo(
         f"Cascade DAG: {result['cascade_graph']['n_nodes']:,} nodes, "
         f"DAG={result['cascade_graph']['is_dag']}, "
-        f"KC Chain: {' -> '.join(str(x) for x in result['cascade_graph']['key_chains']['kc_valley'])}"
+        f"KC Chain: {' -> '.join(str(x) for x in result['cascade_graph']['key_chains']['kc_valley'])}"  # noqa: E501
     )
     typer.echo(f"Wrote {result['register_csv_path']}")
     typer.echo(f"Wrote {result['class_raster_canonical_path']}")

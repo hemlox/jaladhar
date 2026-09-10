@@ -1,26 +1,5 @@
-"""Static fields for the ACC solver: everything that does not change per step.
-
-The solver's hot path (`acc.py`) consumes only DIFFERENCES of elevation, never
-elevation itself. This module is where those differences are built, and it is
-the only place absolute elevation is ever touched.
-
-WHY ELEVATION ARITHMETIC HAPPENS IN float64 HERE
-------------------------------------------------
-PROMPT.md §7 requires datum-relative elevation, and the invariant that proves
-it is: add 1000 m to every elevation, expect BITWISE-IDENTICAL depths.
-
-That test only passes if the face differences are computed in float64 and cast
-down afterwards. Bengaluru sits at ~725-970 m; in float32, `z + 1000` lands near
-1900 m where ULP is 2.3e-4 m, so the shift would corrupt `z` itself and the
-differences would come out genuinely different — the test would fail for a
-reason that has nothing to do with the solver being wrong.
-
-In float64 the promotion is exact (a float32 value has 24 mantissa bits; 1900.0
-in float64 has 53), so `(z_j + 1000) - (z_i + 1000) == z_j - z_i` exactly, and
-the float32 cast of that difference is bitwise identical either way. The datum
-then cancels out of the solver entirely, which is what makes §7's requirement
-STRUCTURAL rather than merely tested.
-"""
+"""PROMPT.md §7 requires datum-relative elevation, and the invariant that proves
+the float32 cast of that difference is bitwise identical either way. The datum"""
 
 from __future__ import annotations
 
@@ -37,38 +16,29 @@ MM_PER_HR_TO_M_PER_S = 1.0 / 1000.0 / 3600.0
 
 @dataclass(frozen=True)
 class StaticFields:
-    """Per-face and per-cell fields the timestep loop reads but never writes."""
 
-    dz_x: torch.Tensor  # (H, W-1)  z_j - z_i across each x face, float32
-    dz_y: torch.Tensor  # (H-1, W)
+    dz_x: torch.Tensor
+    dz_y: torch.Tensor
     n_x: torch.Tensor  # (H, W-1)  Manning's n at the face
-    n_y: torch.Tensor  # (H-1, W)
-    c_x: torch.Tensor  # (H, W-1)  building conveyance factor at the face
-    c_y: torch.Tensor  # (H-1, W)
-    drain_cap_m_s: torch.Tensor  # (H, W)
-    infil_rate_m_s: torch.Tensor  # (H, W)
+    n_y: torch.Tensor
+    c_x: torch.Tensor
+    c_y: torch.Tensor
+    drain_cap_m_s: torch.Tensor
+    infil_rate_m_s: torch.Tensor
     edge_w_n: torch.Tensor  # (H,)  Manning's n along each domain edge
     edge_e_n: torch.Tensor
-    edge_n_n: torch.Tensor  # (W,)
+    edge_n_n: torch.Tensor
     edge_s_n: torch.Tensor
-    edge_w_s: torch.Tensor  # (H,)  outward bed slope at each edge, floored
+    edge_w_s: torch.Tensor
     edge_e_s: torch.Tensor
-    edge_n_s: torch.Tensor  # (W,)
+    edge_n_s: torch.Tensor
     edge_s_s: torch.Tensor
-    # Per-edge openness (W, E, N, S), 1.0 = free outfall, 0.0 = closed.
-    # Needed because a free outfall driven by a FLOORED bed slope manufactures
-    # outflow even where the bed is genuinely flat — which silently drains a
-    # domain through walls that should hold water (found via the kinematic
-    # overland-flow case, where the upslope divide and the flat side walls were
-    # all leaking).
     edge_open: tuple[float, float, float, float] = (1.0, 1.0, 1.0, 1.0)
     datum_m: float = 0.0  # domain minimum elevation, recorded for the manifest
     shape: tuple[int, int] = (0, 0)
 
     def parameters(self) -> dict[str, torch.Tensor]:
-        """The fields Phase 3 calibrates. Named here so the parameter vector has
-        exactly one definition — and so invariant 25 can assert that
-        `wetdry.ramp_width_m` is NOT among them."""
+        """exactly one definition — and so invariant 25 can assert that"""
         return {
             "n_x": self.n_x,
             "n_y": self.n_y,
@@ -79,13 +49,7 @@ class StaticFields:
 
 
 def _harmonic(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
-    """Harmonic mean — conveyances in SERIES along the flow path.
-
-    Water crossing a face traverses half of each cell, so the two conveyances
-    act in series. Also smooth, where `min` has a subgradient kink: physics and
-    differentiability agree. Both inputs are already floored > 0, so the
-    denominator cannot vanish.
-    """
+    """act in series. Also smooth, where `min` has a subgradient kink: physics and"""
     return 2.0 * a * b / (a + b)
 
 
@@ -103,12 +67,6 @@ def build_static_fields(
     edge_open: tuple[float, float, float, float] = (1.0, 1.0, 1.0, 1.0),
     device: str | torch.device = "cpu",
 ) -> StaticFields:
-    """Assemble the static fields from raw arrays.
-
-    `z` is absolute elevation and is consumed here ONLY as differences — it is
-    promoted to float64 first (see the module docstring) and never reaches the
-    solver.
-    """
     z64 = np.asarray(z, dtype=np.float64)
     datum = float(np.nanmin(z64))
 
@@ -124,9 +82,6 @@ def build_static_fields(
     n_x = t32(0.5 * (n[:, :-1] + n[:, 1:]))
     n_y = t32(0.5 * (n[:-1, :] + n[1:, :]))
 
-    # --- conveyance: floor the CELL values first, so the face value inherits
-    # the floor (a harmonic mean of two values >= f is itself >= f) and no face
-    # can ever fully seal.
     c = np.clip(np.asarray(conveyance, dtype=np.float64), min_conveyance_factor, 1.0)
     c_lo_x, c_hi_x = torch.as_tensor(c[:, :-1]), torch.as_tensor(c[:, 1:])
     c_lo_y, c_hi_y = torch.as_tensor(c[:-1, :]), torch.as_tensor(c[1:, :])
@@ -170,13 +125,7 @@ def build_static_fields(
 
 
 def load_solver_config(path: Path, repo_root: Path) -> dict[str, Any]:
-    """Load `configs/solver.yaml` and attach its referenced domain config.
-
-    The solver config deliberately does not duplicate CRS, resolution, buffer
-    or terrain paths — it names the domain config instead, so the grid has
-    exactly one definition (the same single-source-of-truth reason
-    `terrain/grid.py` exists).
-    """
+    """exactly one definition (the same single-source-of-truth reason"""
     import yaml
 
     with open(path) as f:
@@ -221,22 +170,9 @@ def load_domain(
     use_buffered: bool = True,
     elevation_override: Path | None = None,
 ) -> StaticFields:
-    """Build static fields from Phase 1's `data/processed/` stack.
-
-    When `use_buffered=True` (the default), reads from `data/processed/buffered/`
-    so the ACC shallow-water solver solves on the full buffered domain (3521x3615),
-    isolating domain-edge boundary outfalls from BBMP reporting cells.
-
-    `window` crops to a sub-domain (used for differentiable tiles and for the
-    VRAM measurement). Cropping REAL terrain rather than synthesising a test
-    domain keeps CLAUDE.md rule 1 intact — no invented elevation, ever.
-
-    `elevation_override` replaces ONLY the elevation raster with an on-disk
+    """isolating domain-edge boundary outfalls from BBMP reporting cells.
     variant (goal Part 3's carved DEM) on the SAME grid; manning, conveyance
-    and drains are untouched. The override must match the resolved stack's
-    shape exactly — asserted, not assumed (CLAUDE.md V8: the variant's manifest
-    guarantees the grid, and this assert enforces it at the seam).
-    """
+    shape exactly — asserted, not assumed (CLAUDE.md V8: the variant's manifest"""
     processed = repo_root / "data" / "processed"
     if use_buffered and (processed / "buffered").exists():
         processed = processed / "buffered"

@@ -1,34 +1,14 @@
-"""tests/drainage/test_terminal.py — WF-2 M1 terminal-seed resolution suite.
-
-Red→green coverage for ``jaladhar.drainage.terminal`` (definition v2-lake-boundary,
-``configs/terminal_definition.yaml``):
-
+"""Red→green coverage for ``jaladhar.drainage.terminal`` (definition v2-lake-boundary,
 - synthetic N<=12-node chains terminating INSIDE a fake lake polygon and at the
-  domain boundary minus tolerance — each flips dead_end -> outfall_terminating;
-- the tolerance predicate is exercised on BOTH sides: a node at EXACTLY the
-  configured tolerance fires (inclusive d <= tol), a node at tolerance+epsilon
-  does not;
-- ``counts_by_rule`` partitions the seed union EXACTLY (declared > lake >
-  boundary priority; no double-count of a declared passthrough node);
+domain boundary minus tolerance — each flips dead_end -> outfall_terminating;
+boundary priority; no double-count of a declared passthrough node);
 - V8 CROSS-ASSERTION: the torch BFS behind router._compute_component_classes and
-  the canonical stdlib :func:`classify_reachability` produce the SAME partition
-  on a toy graph assembled through ``build_drain_graph``;
 - REAL-BYTES ANCHOR (single integration point): on the realized producer bytes
-  nodes 1183 / 1512 become ``lake_polygon`` terminal seeds and the
-  ``domain_boundary`` rule adds ZERO seeds — skip→BLOCKED naming the missing
-  artefact if any input is absent;
+``domain_boundary`` rule adds ZERO seeds — skip→BLOCKED naming the missing
 - V5 MUTATION PROBES on /tmp/opencode COPIES of terminal.py (repo untouched):
-  * M-T1 — inclusive '<=' flipped to strict '<' in ``_within_tolerance``;
-  * M-T2 — the lake rule dropped (``if tdef.lake_enabled:`` -> ``if False and ...``).
-  Each mutation must redden its NAMED assertion below; ids are recorded here.
-
+Each mutation must redden its NAMED assertion below; ids are recorded here.
 V7 SCOPE (per test, beside each claim): synthetic scenarios run on <=12-node
-fixtures at ONE tolerance point each (tol=10.0) plus single-point epsilon
-probes — they exercise the PREDICATE and PARTITION logic, NOT city-scale
-geometry; the single real-graph anchor covers realized bytes once (1721 nodes).
-The sensitivity SWEEP itself lives in the post-hoc split product script, not
-here; this suite cannot catch a wrong sweep grid.
-"""
+geometry; the single real-graph anchor covers realized bytes once (1721 nodes)."""
 
 from __future__ import annotations
 
@@ -56,7 +36,6 @@ REPO = Path(__file__).resolve().parents[2]
 TDEF_PATH = REPO / "configs" / "terminal_definition.yaml"
 MUTATION_DIR = Path("/tmp/opencode/wf2_m1_mutations")
 
-# Toy grid: transform [10, 0, 0, 0, -10, 1000] over 100x100 cells -> x[0,1000],
 # y[0,1000]. Boundary distances are then |x|, |1000-x|, |y|, |1000-y|.
 TOY_GRID: dict = {
     "height": 100,
@@ -66,9 +45,7 @@ TOY_GRID: dict = {
 }
 
 
-# ---------------------------------------------------------------------------
 # Fixtures (synthetic, written fresh into tmp_path — never repo data)
-# ---------------------------------------------------------------------------
 
 
 def _write_lake_gpkg(path: Path, name: str = "Fake Lake") -> Path:
@@ -90,7 +67,6 @@ def _write_tdef_yaml(
     bnd_tol_m: float = 10.0,
     require_sink: bool = True,
 ) -> Path:
-    """A minimal-but-complete definition exercising EVERY validated key."""
     p = tmp_path / "terminal_definition.yaml"
     p.write_text(f"""
 definition_version: "v2-lake-boundary-test"
@@ -128,11 +104,6 @@ def tdef(tmp_path):
     return load_terminal_definition(_write_tdef_yaml(tmp_path, gpkg))
 
 
-# ---------------------------------------------------------------------------
-# Aggregated validation of the definition loader (rule-7 style)
-# ---------------------------------------------------------------------------
-
-
 class TestDefinitionLoading:
     def test_real_repo_definition_loads(self):
         """V7 scope: the ONE real config file, every validated key touched."""
@@ -148,8 +119,6 @@ class TestDefinitionLoading:
             load_terminal_definition(tmp_path / "absent.yaml")
 
     def test_many_defects_aggregate_into_one_error(self, tmp_path):
-        """Observable: if aggregation were broken (fail-fast), the error text
-        would name ONE of the planted defects while others stay silent."""
         raw = TDEF_PATH.read_text()
         bad = tmp_path / "bad.yaml"
         bad.write_text(
@@ -169,9 +138,7 @@ class TestDefinitionLoading:
         assert len(ei.value.problems) >= 3, "ALL planted defects named in ONE error"
 
 
-# ---------------------------------------------------------------------------
 # Synthetic classification scenarios (N <= 12 nodes, one tolerance point)
-# ---------------------------------------------------------------------------
 
 
 def _resolve(nodes_xy, edge_pairs, declared, tdef, grid=TOY_GRID):
@@ -186,12 +153,8 @@ def _resolve(nodes_xy, edge_pairs, declared, tdef, grid=TOY_GRID):
 
 class TestSyntheticClassification:
     def test_chain_into_fake_lake_flips_dead_end_to_outfall_terminating(self, tdef):
-        """Chain 1->2->3 with node 3 INSIDE the fake lake (dist 0.0), no declared
-        outfalls. V7 scope: 3-node directed chain, tol=10 only.
-
-        Observable (V2): under v1 declared-only semantics ALL THREE nodes are
-        dead_end; under the extended definition node 3 seeds (lake_polygon) and
-        reachability pulls 1 and 2 into outfall_terminating."""
+        """outfalls. V7 scope: 3-node directed chain, tol=10 only.
+        Observable (V2): under v1 declared-only semantics ALL THREE nodes are"""
         xy = [(200.0, 500.0), (300.0, 500.0), (500.0, 500.0)]
         pairs = [(1, 2), (2, 3)]
 
@@ -206,13 +169,11 @@ class TestSyntheticClassification:
         assert res.seed_union == [3]
         rec3 = res.records[3]
         assert rec3.rule_fired == RULE_LAKE and rec3.is_sink and rec3.dist_to_lake_m == 0.0
-        # the flip, end to end:
         v2 = classify_reachability(pairs, res.seed_union)
         assert v2 == {1, 2, 3}, "chain terminating in the lake HAS reached a terminal sink"
 
     def test_boundary_minus_tolerance_flip_inclusive_at_exact_tolerance(self, tdef):
-        """Chain 1->2->3 with node 3 at x=990 -> EXACTLY 10.0 m from the east
-        grid edge (= configured boundary tolerance). Inclusive predicate: it
+        """grid edge (= configured boundary tolerance). Inclusive predicate: it
         MUST fire. V7 scope: 3-node chain, single tolerance point."""
         xy = [(700.0, 500.0), (800.0, 500.0), (990.0, 500.0)]
         pairs = [(1, 2), (2, 3)]
@@ -223,8 +184,7 @@ class TestSyntheticClassification:
         assert classify_reachability(pairs, res.seed_union) == {1, 2, 3}
 
     def test_boundary_tolerance_plus_epsilon_stays_dead_end(self, tdef):
-        """Node at tolerance + epsilon (10.001 m) must NOT fire — the predicate
-        is exercised on BOTH sides. V7 scope: single node, single offset."""
+        """is exercised on BOTH sides. V7 scope: single node, single offset."""
         xy = [(989.999, 500.0)]
         res = _resolve(xy, [], [], tdef)
         assert res.records[1].rule_fired is None
@@ -232,25 +192,20 @@ class TestSyntheticClassification:
         assert res.seed_union == []
 
     def test_lake_tolerance_plus_epsilon_stays_dead_end(self, tdef):
-        """Lake edge at x=600, tol=10: x=610.0 fires, x=610.001 does not."""
         res_fire = _resolve([(610.0, 500.0)], [], [], tdef)
         assert res_fire.records[1].rule_fired == RULE_LAKE
         res_stay = _resolve([(610.001, 500.0)], [], [], tdef)
         assert res_stay.records[1].rule_fired is None
 
     def test_require_sink_non_sink_node_near_lake_does_not_fire(self, tdef):
-        """A node inside the lake that still has an outgoing edge has NOT
-        terminated there — require_sink=true keeps it non-terminal. V7 scope:
-        2-node chain fully inside the polygon."""
+        """terminated there — require_sink=true keeps it non-terminal. V7 scope:"""
         xy = [(500.0, 500.0), (520.0, 520.0)]
         res = _resolve(xy, [(1, 2)], [], tdef)
         assert res.records[1].is_sink is False and res.records[1].rule_fired is None
         assert res.records[2].is_sink is True and res.records[2].rule_fired == RULE_LAKE
 
     def test_declared_passthrough_no_double_count_and_partition_exact(self, tdef):
-        """A DECLARED node sitting inside the lake keeps rule_fired=RULE_DECLARED
-        (priority), appears ONCE in the union, and counts partition exactly.
-        V7 scope: 3-node fixture with one declared passthrough."""
+        """V7 scope: 3-node fixture with one declared passthrough."""
         xy = [(200.0, 500.0), (500.0, 500.0), (990.0, 500.0)]
         # node 1 flows INTO declared node 2 (in the lake); node 3 is a boundary sink
         pairs = [(1, 2)]
@@ -265,21 +220,20 @@ class TestSyntheticClassification:
 
     def test_counts_partition_over_a_mixed_twelve_node_fixture(self, tdef):
         """12 nodes mixing declared/lake/boundary/interior/deep-water sinks:
-        labels partition EXACTLY and the union is duplicate-free. V7 scope:
-        full label space at tol=10 only."""
+        labels partition EXACTLY and the union is duplicate-free. V7 scope:"""
         xy = [
-            (200.0, 700.0),  # 1 interior sink, near nothing -> dead_end
-            (200.0, 701.0),  # 2 flows into 1
+            (200.0, 700.0),
+            (200.0, 701.0),
             (990.0, 990.0),  # 3 boundary-corner sink
-            (450.0, 450.0),  # 4 inside lake, sink
-            (450.0, 451.0),  # 5 flows into 4 (non-sink, inside lake)
-            (609.0, 500.0),  # 6 lake ring at 9.0 m, sink -> fires
-            (611.0, 500.0),  # 7 at 11.0 m, sink -> stays dead_end
+            (450.0, 450.0),
+            (450.0, 451.0),
+            (609.0, 500.0),
+            (611.0, 500.0),
             (995.0, 500.0),  # 8 boundary at 5.0 m, sink
             (500.0, 990.0),  # 9 north-edge boundary sink
-            (500.0, 978.0),  # 10 at 22 m off north edge -> dead_end
-            (100.0, 100.0),  # 11 isolated interior sink
-            (200.0, 700.5),  # 12 flows into 1 too (non-sink interior)
+            (500.0, 978.0),
+            (100.0, 100.0),
+            (200.0, 700.5),
         ]
         pairs = [(2, 1), (5, 4), (12, 1), (10, 9)]
         res = _resolve(xy, pairs, [], tdef)
@@ -293,8 +247,7 @@ class TestSyntheticClassification:
         assert reached == {3, 4, 5, 6, 8, 9, 10}, "upstream of every seed flips"
 
     def test_sensitivity_copy_moves_both_tolerances_together(self, tdef):
-        """with_tolerances() is the sweep-point constructor: BOTH tolerances take
-        the sweep value; nothing else mutates. V7 scope: constructor behaviour."""
+        """the sweep value; nothing else mutates. V7 scope: constructor behaviour."""
         tight = with_tolerances(tdef, 0.0)
         assert tight.lake_snap_tolerance_m == 0.0 and tight.boundary_tolerance_m == 0.0
         wide = with_tolerances(tdef, 50.0)
@@ -302,24 +255,19 @@ class TestSyntheticClassification:
         assert wide.definition_version == tdef.definition_version
 
 
-# ---------------------------------------------------------------------------
 # V8 cross-assertion: router torch BFS == canonical reference traversal
-# ---------------------------------------------------------------------------
 
 
 class TestCrossTraversalAssertion:
     def test_router_bfs_matches_canonical_on_toy_graph_through_build_drain_graph(self, tdef):
         """V8 at the traversal seam: assemble a toy graph through
         router.build_drain_graph with the EXTENDED seed tensor and assert the
-        torch BFS partition equals :func:`classify_reachability` exactly —
-        if either traversal drifts, this symmetric difference reddens.
         V7 scope: 4-node toy graph (3-chain + 1 isolated), one code path."""
 
         import torch
 
         from jaladhar.coupling.router import build_drain_graph
 
-        # toy geography: chain 1->2->3 ending inside the fake lake, node 4 isolated
         xy = [(200.0, 500.0), (300.0, 500.0), (500.0, 500.0), (900.0, 900.0)]
         pairs = [(1, 2), (2, 3)]
         res = _resolve(xy, pairs, [], tdef)
@@ -353,9 +301,7 @@ class TestCrossTraversalAssertion:
         assert g.component_class[3] == "dead_end", "isolated node stays dead_end"
 
 
-# ---------------------------------------------------------------------------
 # V5 MUTATION PROBES (/tmp copies only — repo untouched)
-# ---------------------------------------------------------------------------
 
 
 def _load_mutant(mutation_id: str, old: str, new: str):
@@ -371,23 +317,16 @@ def _load_mutant(mutation_id: str, old: str, new: str):
     spec = importlib.util.spec_from_file_location(f"terminal_{mutation_id}", mpath)
     assert spec is not None and spec.loader is not None
     mod = importlib.util.module_from_spec(spec)
-    # dataclasses._process_class resolves cls.__module__ through sys.modules;
-    # skipping registration breaks @dataclass at exec time.
     sys.modules[spec.name] = mod
     spec.loader.exec_module(mod)
     return mod
 
 
 def _exact_tolerance_lake_scenario(mod, tdef_path: Path) -> None:
-    """Named assertion M-T1 must redden: the node at EXACTLY snap_tolerance
-    (10.0 m off the lake edge) must fire under the inclusive predicate.
-
-    Uses the FAKE-LAKE fixture definition — the real Bengaluru lakes sit ~1.6 Mm
-    away from the toy grid, which would make every predicate variant pass/fail
-    for the wrong reason."""
+    """Named assertion M-T1 must redden: the node at EXACTLY snap_tolerance"""
     tdef = mod.load_terminal_definition(tdef_path)
     res = mod.resolve_terminal_nodes(
-        node_xy=[(610.0, 500.0)],  # exactly 10.0 m off the x=600 edge
+        node_xy=[(610.0, 500.0)],
         edge_pairs=[],
         declared_outfall_ids=[],
         tdef=tdef,
@@ -399,8 +338,7 @@ def _exact_tolerance_lake_scenario(mod, tdef_path: Path) -> None:
 
 
 def _lake_seed_scenario(mod, tdef_path: Path) -> None:
-    """Named assertion M-T2 must redden: the in-lake chain terminus must appear
-    under seeds_by_rule['lake_polygon']."""
+    """Named assertion M-T2 must redden: the in-lake chain terminus must appear"""
     tdef = mod.load_terminal_definition(tdef_path)
     res = mod.resolve_terminal_nodes(
         node_xy=[(200.0, 500.0), (500.0, 500.0)],
@@ -419,8 +357,7 @@ _PRISTINE_ANCHOR = 'RULE_DECLARED = "declared_gpkg_outfall"'
 
 
 def _load_pristine_copy(copy_id: str):
-    """An UNMUTATED /tmp copy, loaded the same way as the mutants — the control
-    proving each named assertion is green before its mutation reddens it."""
+    """proving each named assertion is green before its mutation reddens it."""
     return _load_mutant(copy_id, _PRISTINE_ANCHOR, _PRISTINE_ANCHOR)
 
 
@@ -452,9 +389,7 @@ class TestMutationProbes:
             _lake_seed_scenario(mut, yml)
 
 
-# ---------------------------------------------------------------------------
 # REAL-BYTES ANCHOR (the one integration point onto realized state)
-# ---------------------------------------------------------------------------
 
 _REAL_ARTEFACTS = (
     REPO / "runs" / "drain_graph_build" / "drain_graph.gpkg",
@@ -475,13 +410,8 @@ pytestmark_real = pytest.mark.skipif(
 class TestRealBytesAnchor:
     def test_nodes_1183_1512_become_lake_terminal_boundary_adds_zero(self):
         """On the REALIZED producer bytes: adjacency sinks 1183/1512 sit at 0.0 m
-        inside Bellandur/Varthur and become lake_polygon seeds; the
         domain_boundary rule adds ZERO seeds at the configured tolerance (that
-        zero IS the answer to suspicion #2's boundary half); the declared-only
-        reachable population is 55 and the extended one 68 [F, measured].
-
-        V7 scope: ONE pass over the full realized 1721-node graph at the single
-        configured tolerance pair (10.0/10.0); no sweep here."""
+        zero IS the answer to suspicion #2's boundary half); the declared-only"""
         import geopandas as gpd
 
         adj = json.loads(

@@ -1,33 +1,4 @@
-"""Phase 2, Milestone 1 — MEASURE the autograd memory cost per timestep.
-
-The phase plan's central quantitative claim is that a differentiable
-full-domain run is infeasible on 8 GB and Phase 3 must therefore calibrate on
-tiles. That claim rests on `I`, the graph intermediates retained per timestep,
-via the single-level checkpointing optimum
-
-    peak = 2 * sqrt(N * S * I)        =>     N_max = B^2 / (4 * S * I)
-
-At planning time `I` was an ESTIMATE, arrived at by counting tensors in a
-stencil that had not been written yet. Per CLAUDE.md V1 that is a DECLARATION,
-not realized state, and the plan committed to replacing it with a measurement
-before any figure derived from it is quoted. This script is that measurement.
-
-METHOD, and why it is a regression rather than a single reading
---------------------------------------------------------------
-Peak allocation for `n` grad-enabled steps is `fixed + n * I`, where `fixed`
-covers the static fields, the state, and allocator overhead. A single reading
-cannot separate the two. Running a sweep over `n` and taking the SLOPE isolates
-`I` and reports the intercept separately, so neither is inferred from the
-other.
-
-The independent observable (V2): if `I` were being mismeasured — say the graph
-were silently not being retained — the slope would be flat, and the sweep would
-show it directly rather than returning a plausible single number.
-
-Terrain is a real crop of `data/processed/`, never synthesised (CLAUDE.md
-rule 1). Only tensor SHAPES affect the quantity being measured, but using real
-data costs nothing and keeps the rule intact.
-"""
+"Phase 2, Milestone 1 — MEASURE the autograd memory cost per timestep. The phase plan's central quantitative claim is that a differentiable full-domain run is infeasible on 8 GB and Phase 3 must therefore calibrate on tiles. That claim rests on `I`, the graph intermediates retained per timestep, via the single-level checkpointing optimum peak = 2 * sqrt(N * S * I) => N_max = B^2 / (4 * S * I) At planning time `I` was an ESTIMATE, arrived at by counting tensors in a stencil that had not been written yet. Per CLAUDE.md V1 that is a DECLARATION, not realized state, and the plan committed to replacing it with a measurement before any figure derived from it is quoted. This script is that measurement. METHOD, and why it is a regression rather than a single reading -------------------------------------------------------------- Peak allocation for `n` grad-enabled steps is `fixed + n * I`, where `fixed` covers the static fields, the state, and allocator overhead. A single reading cannot separate the two. Running a sweep over `n` and taking the SLOPE isolates `I` and reports the intercept separately, so neither is inferred from the other. The independent observable (V2): if `I` were being mismeasured — say the graph were silently not being retained — the slope would be flat, and the sweep would show it directly rather than returning a plausible single number. Terrain is a real crop of `data/processed/`, never synthesised (CLAUDE.md rule 1). Only tensor SHAPES affect the quantity being measured, but using real data costs nothing and keeps the rule intact."  # noqa: E501
 
 from __future__ import annotations
 
@@ -56,13 +27,12 @@ def git_sha() -> str:
 
 
 def measure_peak(static, p: SolverParams, n_steps: int, device: str, rain: float) -> float:
-    """Peak allocated bytes for `n_steps` grad-enabled steps, in MiB."""
     torch.cuda.empty_cache()
     torch.cuda.reset_peak_memory_stats(device)
 
     h, qx, qy = initial_state(static, device=device)
-    # Calibrating Manning's n is the real Phase 3 scenario, so the graph is
-    # rooted where it will actually be rooted.
+    # Calibrating Manning's n is the real Phase 3 scenario, so the graph is rooted where it will
+    # actually be rooted.
     static.n_x.requires_grad_(True)
     static.n_y.requires_grad_(True)
 
@@ -90,7 +60,6 @@ def main(
     steps: str = typer.Option("2,4,8,16,24", help="Comma-separated step counts to sweep"),
     out: Path = typer.Option(REPO / "runs" / "solver_memory"),
 ) -> None:
-    """Measure I (MiB of graph per timestep) and republish N_max from it."""
     if not torch.cuda.is_available():
         typer.echo("FATAL: no CUDA device — this measurement is meaningless on CPU.")
         raise typer.Exit(code=1)
@@ -100,8 +69,8 @@ def main(
     dx = float(cfg["_domain"]["resolution_m"])
     p = SolverParams.from_config(cfg, dx)
 
-    # Real terrain, cropped. Offset into the interior so the tile is genuinely
-    # urban rather than mostly outside the BBMP polygon.
+    # Real terrain, cropped. Offset into the interior so the tile is genuinely urban rather than
+    # mostly outside the BBMP polygon.
     win = (slice(1200, 1200 + tile), slice(1400, 1400 + tile))
     static = load_domain(cfg, REPO, window=win, device=device)
     rain = float(cfg["storm"]["total_mm"]) / 1000.0 / float(cfg["storm"]["duration_s"])

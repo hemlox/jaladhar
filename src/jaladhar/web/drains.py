@@ -1,39 +1,4 @@
-"""Single-attempt drain-network snapshot reader for the dashboard.
-
-WF-1 may be actively rewriting ``runs/drain_graph_build/`` while this server
-runs.  The concurrency contract for this module is therefore:
-
-* exactly ONE read attempt per server process -- no polling, no retry loop;
-* whatever bytes are successfully read become the immutable in-memory
-  snapshot the UI renders against, and their provenance fields
-  (``graph_fingerprint``, manifest ``status`` at read time) are recorded and
-  served so the screen always names the exact graph it drew;
-* a failed or mid-write artefact degrades to "drains unavailable" -- it never
-  blocks startup and never invents geometry;
-
-and, binding under rule 2: **a surcharge pulse is rendered only where one was
-measured.**  The current build's manifest reads
-``status=stopped_owner_adjudication`` with
-``capacity_status=blocked_missing_design_intensity`` and zero capacity edges
-written, so the layer renders GEOMETRY ONLY until a coupled run supplies real
-surcharge events.  The payload shape already carries the slot where measured
-surcharge volumes drop in later without a rewrite.
-
-NOTE for the integrator (WF-6 requirement A5) -- segment-geometry injection
-point: ``causal_for_segment`` maps a STREET segment onto nearby flagged drain
-edges by proximity, which needs the street's own geometry.  This module does
-not read the roads layer (no new dependency here), so the caller injects a
-callable at construction::
-
-    DrainSnapshotReader(geometry_provider=my_centroid_lookup)
-
-where ``my_centroid_lookup(segment_id) -> [x, y]`` returns the street
-segment's representative point in EPSG:32643 metres (the same CRS as the
-drain graph).  In app.py the natural provider is the roads bundle's centroid
-table; routes belong to the integrator.  Without an injected provider every
-causal payload degrades honestly to the ``none_measured`` empty state -- it
-never guesses a location.
-"""
+"Single-attempt drain-network snapshot reader for the dashboard. WF-1 may be actively rewriting ``runs/drain_graph_build/`` while this server runs. The concurrency contract for this module is therefore: * exactly ONE read attempt per server process -- no polling, no retry loop; * whatever bytes are successfully read become the immutable in-memory snapshot the UI renders against, and their provenance fields (``graph_fingerprint``, manifest ``status`` at read time) are recorded and served so the screen always names the exact graph it drew; * a failed or mid-write artefact degrades to \"drains unavailable\" -- it never blocks startup and never invents geometry; and, binding under rule 2: **a surcharge pulse is rendered only where one was measured.** The current build's manifest reads ``status=stopped_owner_adjudication`` with ``capacity_status=blocked_missing_design_intensity`` and zero capacity edges written, so the layer renders GEOMETRY ONLY until a coupled run supplies real surcharge events. The payload shape already carries the slot where measured surcharge volumes drop in later without a rewrite. NOTE for the integrator (WF-6 requirement A5) -- segment-geometry injection point: ``causal_for_segment`` maps a STREET segment onto nearby flagged drain edges by proximity, which needs the street's own geometry. This module does not read the roads layer (no new dependency here), so the caller injects a callable at construction:: DrainSnapshotReader(geometry_provider=my_centroid_lookup) where ``my_centroid_lookup(segment_id) -> [x, y]`` returns the street segment's representative point in EPSG:32643 metres (the same CRS as the drain graph). In app.py the natural provider is the roads bundle's centroid table; routes belong to the integrator. Without an injected provider every causal payload degrades honestly to the ``none_measured`` empty state -- it never guesses a location."  # noqa: E501
 
 from __future__ import annotations
 
@@ -63,8 +28,7 @@ NONE_MEASURED_STATUS = "none_measured"
 
 
 def _distance_within(distance_m: float, tolerance_m: float = CAUSAL_PROXIMITY_M) -> bool:
-    """Single comparison site for the proximity predicate (V5 mutation target):
-    flipping the operator here must redden the WF-6 causal tests."""
+    "Single comparison site for the proximity predicate (V5 mutation target): flipping the operator here must redden the WF-6 causal tests."  # noqa: E501
     return distance_m <= tolerance_m
 
 
@@ -74,13 +38,6 @@ def _point_to_edges_min_distances(
     edge_offsets: np.ndarray,
     edge_ids: np.ndarray,
 ) -> dict[int, float]:
-    """Minimum planar distance (metres) from ``point_xy`` to each drain edge,
-    computed over every polyline SEGMENT (not just vertices), vectorised.
-
-    Coordinates are EPSG:32643 metres held as float32; at Bengaluru easting/
-    northing magnitudes (~1e6) float32 quantisation is <=~0.13 m, far below the
-    25 m tolerance, so f64 accumulation over f32 inputs stays well inside it.
-    """
     pts = np.asarray(edge_coords, dtype="<f8").reshape(-1, 2)
     offsets = np.asarray(edge_offsets, dtype="<i8")
     if pts.shape[0] < 2 or offsets.size < 2:
@@ -91,7 +48,7 @@ def _point_to_edges_min_distances(
     starts = pos_in_edge < (counts[owner_point] - 1)
     start_rows = np.flatnonzero(starts)
     a = pts[start_rows]
-    b = pts[start_rows + 1]  # next vertex, same edge by construction
+    b = pts[start_rows + 1]
     seg_owner = owner_point[start_rows]
 
     p = np.asarray(point_xy, dtype="<f8")
@@ -109,7 +66,6 @@ def _point_to_edges_min_distances(
 
 @dataclass(frozen=True)
 class DrainSnapshot:
-    """One atomic read of the drain-graph artefacts."""
 
     available: bool
     reason: str | None
@@ -127,11 +83,7 @@ class DrainSnapshot:
     node_ids: np.ndarray = field(repr=False, default=None)
     node_xy: np.ndarray = field(repr=False, default=None)
     surcharge: dict[str, Any] = field(default_factory=dict)
-    # --- WF-6 causal-link fields (additive; existing consumers unaffected) ---
-    # edge id per kept geometry row, aligned with edge_offsets/edge_coords.
     edge_ids: np.ndarray = field(repr=False, default=None)
-    # The PREDICTED set: edges whose realised capacity_basis carries the
-    # demand_exceeds_capacity record. (edge_id, from_node, to_node, basis_raw)
     flagged_edges: tuple[tuple[int, int, int, str], ...] = ()
     manifest_sha256_at_read: str | None = None
     node_xy_map: dict[int, list[float]] = field(default_factory=dict)
@@ -160,12 +112,6 @@ class DrainSnapshot:
 
 
 class DrainSnapshotReader:
-    """Reads the drain graph once, on first request, under a lock.
-
-    ``geometry_provider`` (integrator injection point, see module NOTE):
-    ``callable(segment_id) -> [x, y]`` in EPSG:32643, used only by
-    ``causal_for_segment``.
-    """
 
     def __init__(self, geometry_provider: Callable[[str], Sequence[float]] | None = None) -> None:
         self.lock = threading.Lock()
@@ -177,8 +123,6 @@ class DrainSnapshotReader:
             if self._snapshot is None:
                 self._snapshot = self._read_once()
             return self._snapshot
-
-    # ------------------------------------------------------------------ read
 
     def _read_once(self) -> DrainSnapshot:
         now = datetime.now(UTC).isoformat().replace("+00:00", "Z")
@@ -198,11 +142,9 @@ class DrainSnapshotReader:
             coupling_enabled = raw.get("coupling_enabled")
             surcharge_path_value = raw.get("surcharge_events_path")
         except (OSError, json.JSONDecodeError) as exc:
-            # Mid-write or unreadable manifest: record and continue to the gpkg.
             manifest_error = f"{type(exc).__name__}: {exc}"
         else:
             manifest_error = None
-        # Provenance is hashed from the bytes actually read, not from a name
         # (V1): if the manifest changed under us the payload names what it saw.
         manifest_sha256: str | None = None
         try:
@@ -257,10 +199,6 @@ class DrainSnapshotReader:
                         eid = len(edge_id_rows)
                     edge_id_rows.append(eid)
                     basis_raw = properties.get("capacity_basis")
-                    # The predicted set is read from realised bytes: the build
-                    # writes the demand_exceeds_capacity record INTO
-                    # capacity_basis only where rational demand exceeded the
-                    # bounded section's conveyance (drainage/capacity.py D23).
                     if isinstance(basis_raw, str) and "demand_exceeds_capacity" in basis_raw:
                         try:
                             from_node = int(properties.get("from_node"))
@@ -299,8 +237,6 @@ class DrainSnapshotReader:
 
         coords = np.concatenate(edge_chunks) if edge_chunks else np.zeros(0, dtype="<f4")
         source_codes = np.asarray(source_codes, dtype="u1")
-        # count_nonzero, NOT sum(): sum over a uint8 array wraps at 256 and
-        # misclassified 256 synthesised connectors as observed (286 -> 30).
         synth = int(np.count_nonzero(source_codes))
         node_xy_map = {int(nid): list(xy) for nid, xy in zip(node_ids, node_xy, strict=True)}
         return DrainSnapshot(
@@ -335,7 +271,7 @@ class DrainSnapshotReader:
     def _surcharge_state(
         coupling_enabled: bool | None, surcharge_path_value: Any
     ) -> dict[str, Any]:
-        """Surcharge is rendered ONLY where a realised run measured it."""
+        "Surcharge is rendered ONLY where a realised run measured it."
 
         if coupling_enabled is not True:
             return {
@@ -365,25 +301,8 @@ class DrainSnapshotReader:
             return {"available": False, "reason": f"surcharge file unreadable: {exc}"}
         return {"available": True, "path": surcharge_path_value, "n_events": len(rows)}
 
-    # ----------------------------------------------------------------- causal
-
     def causal_for_segment(self, segment_id: str) -> dict[str, Any]:
-        """WF-6 requirement A5: causal-link payload for one street segment.
-
-        Status precedence, bound by rule 2 (never assert unmeasured surcharge):
-
-        * ``measured``   -- only when the snapshot carries per-street MEASURED
-          surcharge events under ``surcharge['segment_events']``.  No coupled
-          run exists today, nothing writes that slot, so this branch is wired
-          but INERT; its statement cites only what the events file records.
-        * ``predicted``  -- the segment's injected geometry sits within
-          ``CAUSAL_PROXIMITY_M`` of an edge in the PREDICTED set (edges whose
-          realised capacity_basis records demand_exceeds_capacity from the
-          cited design storm and cited capacities).  Predicted is never
-          worded as measured.
-        * ``none_measured`` -- default empty state; statement fixed so the UI
-          cannot imply a measurement that did not happen.
-        """
+        "WF-6 requirement A5: causal-link payload for one street segment. Status precedence, bound by rule 2 (never assert unmeasured surcharge): * ``measured`` -- only when the snapshot carries per-street MEASURED surcharge events under ``surcharge['segment_events']``. No coupled run exists today, nothing writes that slot, so this branch is wired but INERT; its statement cites only what the events file records. * ``predicted`` -- the segment's injected geometry sits within ``CAUSAL_PROXIMITY_M`` of an edge in the PREDICTED set (edges whose realised capacity_basis records demand_exceeds_capacity from the cited design storm and cited capacities). Predicted is never worded as measured. * ``none_measured`` -- default empty state; statement fixed so the UI cannot imply a measurement that did not happen."  # noqa: E501
         snapshot = self.get()
         predicted_set = {
             "size": len(snapshot.flagged_edges),
@@ -471,7 +390,6 @@ class DrainSnapshotReader:
                 )
                 if eid not in entry["edge_ids"]:
                     entry["edge_ids"].append(int(eid))
-                # lowest edge id's basis is the node's canonical one (stable)
                 if "capacity_basis" not in entry or eid <= min(entry["edge_ids"]):
                     entry["capacity_basis"] = _parse_capacity_basis(basis_raw)
         return {
@@ -517,8 +435,7 @@ def _linestring_xy(geometry: dict[str, Any]) -> list[float]:
 
 
 def _parse_capacity_basis(basis_raw: str) -> Any:
-    """capacity_basis is written by the build as JSON where it is structured;
-    anything unparseable passes through verbatim rather than being reshaped."""
+    "capacity_basis is written by the build as JSON where it is structured; anything unparseable passes through verbatim rather than being reshaped."  # noqa: E501
     try:
         return json.loads(basis_raw)
     except json.JSONDecodeError:

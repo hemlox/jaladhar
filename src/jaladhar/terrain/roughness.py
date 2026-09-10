@@ -1,30 +1,8 @@
 """Manning's n roughness raster for the JALADHAR terrain pipeline.
-
-Self-sufficient: runs its OWN OSM queries rather than depending on
-`roads.py` or `buildings.py`'s output files. The plan lists roads/
-buildings/roughness/drains as independent, parallelisable siblings with
-no dependency between them — making roughness.py read another module's
-interim output would silently create the ordering dependency the plan
-explicitly rules out, and would break this module if it is ever run alone.
-
 Config-driven throughout (CLAUDE.md: Manning's n is a Phase-3-calibrated
-TUNABLE VECTOR, never a literal in code) — see `configs/domain_bengaluru.
 yaml`'s `roughness:` section: the four Manning classes and their
 [min, max] ranges (`manning_n`), the picked scalar `operating_point` per
-class, the `landuse_classes` OSM-tag mapping, and the per-highway-type
-`road_buffer_halfwidth_m` used to turn road CENTRELINES (OSM's road data
-is overwhelmingly lines, not area polygons) into approximate paved-surface
-polygons.
-
-Class priority where layers overlap (rasterized low-to-high so the higher
-class wins on shared cells, matching roads.py's deterministic-ordering
-approach): vegetated_open < dense_urban < water < roads_paved. A road
-running through a park or across a causeway is, physically, pavement at
-that cell — the local surface, not the underlying landuse tag, is what a
-flowing storm actually meets. Any cell no layer covers gets
-`unclassified_default`, explicit and logged (invariant 6: never silently
-zero, which blows up the ACC scheme's friction term).
-"""
+`unclassified_default`, explicit and logged (invariant 6: never silently"""
 
 from __future__ import annotations
 
@@ -52,19 +30,12 @@ except ImportError:  # pragma: no cover - defensive against an osmnx version bum
 app = typer.Typer(add_completion=False)
 REPO = Path(__file__).resolve().parents[3]
 
-# Rasterized in this order (lowest priority first) so a later layer's
-# rasterize call overwrites an earlier one's cells where they overlap.
 CLASS_PRIORITY = ["vegetated_open", "dense_urban", "water", "roads_paved"]
 
 
 class RoughnessFetchError(Exception):
-    """An OSM fetch failed or returned nothing usable for this layer.
-
-    Per CLAUDE.md rule 1: stop and report — never fall back to a uniform/
-    synthetic roughness raster silently. A landuse or road query returning
-    zero features for a real city this size means something is wrong with
-    the query, not that Bengaluru genuinely has none of that class.
-    """
+    """Per CLAUDE.md rule 1: stop and report — never fall back to a uniform/
+    synthetic roughness raster silently. A landuse or road query returning"""
 
 
 def fetch_road_polygons(
@@ -75,12 +46,6 @@ def fetch_road_polygons(
     grid_crs: Any,
     timeout_s: int,
 ) -> gpd.GeoDataFrame:
-    """Independent highway=* query -> centrelines buffered into paved-surface polygons.
-
-    A SEPARATE Overpass fetch from roads.py's (by design — see module
-    docstring). Buffering happens in the metric CRS (buffer distances are
-    metres; buffering directly in WGS84 degrees would be wrong).
-    """
     ox.settings.requests_timeout = timeout_s
     ox.settings.log_console = False
     try:
@@ -116,14 +81,7 @@ def fetch_landuse_class(
     grid_crs: Any,
     timeout_s: int,
 ) -> gpd.GeoDataFrame | None:
-    """One Manning class's OSM polygons (e.g. dense_urban's landuse=[...] tags).
-
-    Returns None (not an error) if this specific class has zero features —
-    a real possibility for e.g. `water` in a landlocked bbox subset — the
-    caller decides whether an entirely-empty CLASS is fatal; a query that
-    errors outright, versus one that legitimately finds nothing, are
-    different situations and must not be conflated.
-    """
+    """One Manning class's OSM polygons (e.g. dense_urban's landuse=[...] tags)."""
     ox.settings.requests_timeout = timeout_s
     ox.settings.log_console = False
     try:
@@ -147,7 +105,7 @@ def fetch_landuse_class(
 
 
 def build_roughness(cfg: dict[str, Any], repo_root: Path = REPO) -> dict[str, Any]:
-    """Fetch road+landuse polygons over the buffered domain, rasterize Manning's n by class priority."""
+    """Fetch road+landuse polygons over the buffered domain, rasterize Manning's n by class priority."""  # noqa: E501
     grid, grid_diag = build_grid(cfg, repo_root)
     buffer_m = float(cfg["dem"]["buffer_m"])
     buffered_grid = grid.buffered(buffer_m)
@@ -155,7 +113,6 @@ def build_roughness(cfg: dict[str, Any], repo_root: Path = REPO) -> dict[str, An
     ro_cfg = cfg["roughness"]
     roads_cfg = cfg["roads"]
 
-    # Compute bounding box of the BUFFERED domain in WGS84
     buffered_box_proj = box(*buffered_grid.bounds)
     buffered_box_wgs84 = (
         gpd.GeoSeries([buffered_box_proj], crs=grid.crs).to_crs("EPSG:4326").iloc[0]
@@ -206,7 +163,7 @@ def build_roughness(cfg: dict[str, Any], repo_root: Path = REPO) -> dict[str, An
         n_raster_buffered = np.where(class_mask == 1, value, n_raster_buffered)
         class_cell_counts[cls] = int(class_mask.sum())
 
-    if len(classes_with_zero_features) == len(CLASS_PRIORITY) - 1:  # only roads_paved survived
+    if len(classes_with_zero_features) == len(CLASS_PRIORITY) - 1:
         raise RoughnessFetchError(
             f"every landuse class ({classes_with_zero_features}) returned zero features — "
             "suspect a tag-mapping or query error, not that Bengaluru genuinely has none "
@@ -220,7 +177,6 @@ def build_roughness(cfg: dict[str, Any], repo_root: Path = REPO) -> dict[str, An
             "the ACC scheme's friction term; refusing to write it"
         )
 
-    # Crop to canonical grid
     n_raster_canonical = n_raster_buffered[
         buf_cells : buf_cells + grid.height, buf_cells : buf_cells + grid.width
     ]
@@ -228,12 +184,12 @@ def build_roughness(cfg: dict[str, Any], repo_root: Path = REPO) -> dict[str, An
     interim_dir = repo_root / cfg["paths"]["interim_terrain_dir"]
     interim_dir.mkdir(parents=True, exist_ok=True)
 
-    # Write buffered raster
     buffered_raster_path = interim_dir / "manning_n_buffered.tif"
-    with rasterio.open(buffered_raster_path, "w", **buffered_grid.profile(dtype="float32", nodata=None)) as dst:
+    with rasterio.open(
+        buffered_raster_path, "w", **buffered_grid.profile(dtype="float32", nodata=None)
+    ) as dst:
         dst.write(n_raster_buffered, 1)
 
-    # Write canonical raster
     raster_path = interim_dir / "manning_n.tif"
     with rasterio.open(raster_path, "w", **grid.profile(dtype="float32", nodata=None)) as dst:
         dst.write(n_raster_canonical, 1)

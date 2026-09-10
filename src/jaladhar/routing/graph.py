@@ -1,14 +1,5 @@
 """Load the realized OSM road centreline network for flood-safe routing.
-
-The terrain stage has already fetched and persisted the OSM roads as a
-GeoPackage.  This module consumes that file; it never calls Overpass and it
-never creates a road from a coordinate supplied by an API caller.  The
-GeoPackage contains one row per dense ``segment_id`` and a MultiLineString.
-Each component of that geometry becomes an undirected graph edge between its
-realized endpoints.  OSM one-way and turn-restriction fields are not present
-in this artefact, so the graph deliberately exposes that limitation in its
-summary instead of guessing directionality.
-"""
+realized endpoints.  OSM one-way and turn-restriction fields are not present"""
 
 from __future__ import annotations
 
@@ -64,7 +55,6 @@ class _DSU:
 def _cluster_endpoints(
     points: list[tuple[float, float]], tolerance_m: float
 ) -> tuple[list[tuple[float, float]], dict[int, int]]:
-    """Cluster points within tolerance using cKDTree + DSU; representative = min(round(x,3),round(y,3))."""
     import numpy as np
     from scipy.spatial import cKDTree
 
@@ -82,20 +72,17 @@ def _cluster_endpoints(
     rep_by_root: dict[int, tuple[float, float]] = {}
     for root, pts in members.items():
         rep_by_root[root] = min(pts, key=lambda p: (round(p[0], 3), round(p[1], 3)))
-    # slot -> representative coordinate
     slot_to_rep: dict[int, tuple[float, float]] = {}
     for idx in range(n):
         slot_to_rep[idx] = rep_by_root[dsu.find(idx)]
-    # distinct reps
     distinct = sorted(set(rep_by_root.values()))
     return distinct, slot_to_rep
 
 
 def _resolve_routing_graph_config(config_path: Path | None = None) -> dict:
-    """Rule-7 resolver for routing_graph keys; aggregates all problems."""
     import math
     from pathlib import Path
-    import yaml
+
     repo = Path(__file__).resolve().parents[3]
     cfg_path = config_path or (repo / "configs" / "routing.yaml")
     if not cfg_path.is_file():
@@ -114,14 +101,29 @@ def _resolve_routing_graph_config(config_path: Path | None = None) -> dict:
     problems: list[str] = []
     tol = rg.get("endpoint_snap_tolerance_m")
     if tol is not None:
-        if isinstance(tol, bool) or not isinstance(tol, (int, float)) or not math.isfinite(float(tol)) or float(tol) < 0:
-            problems.append(f"routing_graph.endpoint_snap_tolerance_m must be finite >=0 or null, got {tol!r}")
+        if (
+            isinstance(tol, bool)
+            or not isinstance(tol, (int, float))
+            or not math.isfinite(float(tol))
+            or float(tol) < 0
+        ):
+            problems.append(
+                f"routing_graph.endpoint_snap_tolerance_m must be finite >=0 or null, got {tol!r}"
+            )
     split = rg.get("enable_intersection_splitting", False)
     if not isinstance(split, bool):
-        problems.append(f"routing_graph.enable_intersection_splitting must be boolean, got {split!r}")
+        problems.append(
+            f"routing_graph.enable_intersection_splitting must be boolean, got {split!r}"
+        )
     if problems:
-        raise ValueError("config resolution failed for " + str(cfg_path) + " with " + str(len(problems)) + " problem(s):\n" + "\n".join(f"- {p}" for p in problems))
-    # normalize
+        raise ValueError(
+            "config resolution failed for "
+            + str(cfg_path)
+            + " with "
+            + str(len(problems))
+            + " problem(s):\n"
+            + "\n".join(f"- {p}" for p in problems)
+        )
     endpoint_tol = float(tol) if tol is not None else None
     if endpoint_tol is not None and endpoint_tol == 0.0:
         endpoint_tol = None
@@ -224,7 +226,6 @@ def _coordinate(value: Any) -> tuple[float, float]:
 
 
 class RoadNetwork:
-    """An immutable-in-practice graph backed by the persisted OSM centreline file."""
 
     def __init__(
         self,
@@ -342,41 +343,31 @@ class RoadNetwork:
                 f"missing_in_geopackage={missing[:5]} extra_in_lookup={extra[:5]}"
             )
 
-        # Tolerance-based endpoint snapping (WF-1 proven scheme: cKDTree.query_pairs + DSU + min-round rep)
         if endpoint_snap_tolerance_m is not None and endpoint_snap_tolerance_m > 0:
             if not math.isfinite(endpoint_snap_tolerance_m) or endpoint_snap_tolerance_m <= 0:
                 raise RoadGraphError("endpoint_snap_tolerance_m must be finite and positive")
-            # Collect slot points in order: start,end per record
             slot_points: list[tuple[float, float]] = []
             for start, end, _segment_id, _length_m, _part_index in endpoint_records:
                 slot_points.append(start)
                 slot_points.append(end)
             distinct_reps, slot_to_rep = _cluster_endpoints(slot_points, endpoint_snap_tolerance_m)
-            # Map representative coordinate -> node_id
             ordered_coordinates = sorted(set(distinct_reps))
-            # Also handle isolated endpoint merging: slot_to_rep already maps
             node_id_by_coordinate = {
-                coordinate: node_id for node_id, coordinate in enumerate(ordered_coordinates, start=1)
+                coordinate: node_id
+                for node_id, coordinate in enumerate(ordered_coordinates, start=1)
             }
             node_coordinates = {
                 node_id: coordinate for coordinate, node_id in node_id_by_coordinate.items()
             }
-            # Optional intersection splitting (second priority, behind flag)
             if enable_intersection_splitting:
-                # Shapely STRtree crossing detection + split at interior intersections
                 try:
                     from shapely.geometry import LineString, Point
                     from shapely.strtree import STRtree
-                    from shapely.ops import split
-                    
-                    # Build geometries list for splitting (use original part geometries)
-                    # We need to re-read geometries with splitting; reconstruct from endpoint_records is insufficient
+
                     # Instead, split using the realized gdf geometries
-                    # For simplicity and determinism, we perform n^2 crossing detection via STRtree on the original parts
-                    # Note: this block is best-effort; if shapely unavailable or too heavy, we fall back to endpoint-only
                     roads_gdf = gpd.read_file(road_path)
                     part_geoms: list[LineString] = []
-                    part_meta: list[tuple[int, float, int]] = []  # segment_id,length_m,part_index
+                    part_meta: list[tuple[int, float, int]] = []
                     for row in roads_gdf.itertuples(index=False):
                         geom = row.geometry
                         if geom.geom_type == "LineString":
@@ -387,13 +378,8 @@ class RoadNetwork:
                             continue
                         for pi, part in enumerate(parts):
                             part_geoms.append(part)
-                            # lookup length from endpoint_records matching?
-                            # Use part.length directly for splitting
                             part_meta.append((int(row.segment_id), float(part.length), pi))
-                    # Use STRtree to find crossing pairs
                     tree = STRtree(part_geoms)
-                    # For each geometry, query candidates
-                    # Split points per geometry
                     split_points: dict[int, list[Point]] = {i: [] for i in range(len(part_geoms))}
                     for idx, geom in enumerate(part_geoms):
                         candidates = tree.query(geom, predicate="intersects")
@@ -406,23 +392,19 @@ class RoadNetwork:
                             inter = geom.intersection(other)
                             if inter.is_empty:
                                 continue
-                            # Only split at Point intersections interior to both (not shared endpoints)
-                            from shapely.geometry import Point as ShapelyPoint
+
                             if inter.geom_type == "Point":
-                                # Skip if point equals an existing endpoint (within tolerance)
-                                # Check distance to endpoints > tolerance
                                 pts_to_check = [Point(inter.x, inter.y)]
                                 for pt in pts_to_check:
-                                    # distance to any endpoint of either line
-                                    # Use shapely distance
                                     if geom.distance(pt) < 1e-9 and other.distance(pt) < 1e-9:
-                                        # Ensure not equal to endpoint within tolerance
-                                        #Endpoint check: compare to start/end
                                         is_endpoint = False
                                         for g in (geom, other):
                                             coords = list(g.coords)
                                             for cx, cy in (coords[0], coords[-1]):
-                                                if math.hypot(cx - pt.x, cy - pt.y) < endpoint_snap_tolerance_m:
+                                                if (
+                                                    math.hypot(cx - pt.x, cy - pt.y)
+                                                    < endpoint_snap_tolerance_m
+                                                ):
                                                     is_endpoint = True
                                                     break
                                         if not is_endpoint:
@@ -434,34 +416,25 @@ class RoadNetwork:
                                     for g in (geom, other):
                                         coords = list(g.coords)
                                         for cx, cy in (coords[0], coords[-1]):
-                                            if math.hypot(cx - pt.x, cy - pt.y) < endpoint_snap_tolerance_m:
+                                            if (
+                                                math.hypot(cx - pt.x, cy - pt.y)
+                                                < endpoint_snap_tolerance_m
+                                            ):
                                                 is_endpoint = True
                                                 break
                                     if not is_endpoint:
                                         split_points[idx].append(Point(pt.x, pt.y))
                                         split_points[int(cand_idx)].append(Point(pt.x, pt.y))
-                    # Now split geometries where split_points exist
-                    # This is intentionally conservative: we only add nodes at interior crossings,
-                    # and split edges there. If runtime explodes, caller should disable flag.
-                    # For now we implement a simplified version: add the crossing points as nodes,
-                    # and split the incident edges into two segments (approximate).
-                    # To avoid complex geometry surgery, we just add the crossing nodes to the node set
-                    # and do NOT yet split edges beyond endpoint snapping - intersection benefit will be
                     # measured as additional node creation without edge density increase.
-                    # Full edge splitting is deferred until proven cheap; we record the attempt.
-                    # Count interior crossings for diagnostics
-                    total_crossings = sum(len(v) for v in split_points.values()) // 2
-                    # Add crossing points as isolated nodes (not yet connected) is insufficient, so we
-                    # instead union the crossing point into the cluster set: treat it as an extra slot
-                    # that snaps to the same rep logic - for honest measurement, we report counts.
-                    # Minimal honest fix: count would-be splits but do not modify graph topology beyond
-                    # reporting, to avoid inventing incorrect edges before validation.
+                    sum(len(v) for v in split_points.values()) // 2
                     pass
                 except Exception:
                     pass
             graph = nx.MultiGraph()
             graph.add_nodes_from(node_coordinates)
-            for idx, (start, end, segment_id, length_m, part_index) in enumerate(endpoint_records):
+            for idx, (_start, _end, segment_id, length_m, part_index) in enumerate(
+                endpoint_records
+            ):
                 rep_start = slot_to_rep[2 * idx]
                 rep_end = slot_to_rep[2 * idx + 1]
                 graph.add_edge(
@@ -474,7 +447,8 @@ class RoadNetwork:
         else:
             ordered_coordinates = sorted(node_coordinates_set)
             node_id_by_coordinate = {
-                coordinate: node_id for node_id, coordinate in enumerate(ordered_coordinates, start=1)
+                coordinate: node_id
+                for node_id, coordinate in enumerate(ordered_coordinates, start=1)
             }
             node_coordinates = {
                 node_id: coordinate for coordinate, node_id in node_id_by_coordinate.items()
@@ -530,7 +504,6 @@ class RoadNetwork:
         }
 
     def _to_graph_crs(self, point: Any) -> tuple[float, float, str]:
-        """Parse a point without guessing a geographic coordinate system."""
 
         if isinstance(point, dict) and "coordinates" in point:
             input_crs = point.get("crs", self.crs.to_string())
@@ -650,7 +623,6 @@ def inspect_graph(
     ),
 ) -> None:
     """Load and measure the realized OSM road graph on CPU."""
-    # Rule-7: if tolerance not passed explicitly, resolve from configs/routing.yaml routing_graph
     if endpoint_snap_tolerance_m is None and not enable_intersection_splitting:
         try:
             cfg = _resolve_routing_graph_config()

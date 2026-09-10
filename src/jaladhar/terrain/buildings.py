@@ -1,43 +1,6 @@
-"""Building footprints for the JALADHAR terrain pipeline: OSM union Microsoft ML.
-
-Two sources, combined:
-
-  - OSM `building=*` via `osmnx` — typically better-attributed in Bengaluru's
-    dense core.
-  - Microsoft Global ML Building Footprints (ODbL) — fills gaps OSM doesn't
-    cover, mainly the peri-urban fringe. `configs/domain_bengaluru.yaml`'s
-    `buildings.microsoft_footprints` names exactly ONE zoom-9 quadkey,
-    "123303312", verified during Phase 1 planning to be the single tile that
-    covers the entire BBMP extent (~88 MB gzipped).
-
-⚠ Despite the `.csv.gz` extension, Microsoft's per-quadkey files are
-newline-delimited GeoJSON (one `{"type": "Feature", ...}` object per line),
-NOT comma-separated rows — confirmed by downloading and inspecting a real
-byte-range sample before writing this parser, rather than guessing from the
-filename. `pd.read_csv` would silently mis-parse this. `properties.height`
-and `properties.confidence` use Microsoft's sentinel `-1.0` for "not
-computed" — never trusted as a real height here; the blockage height always
-comes from config (`buildings.blockage_height_m`), matching the plan's
+"""Two sources, combined:
 "raise cells by a CONFIGURED height" (not a per-building measured one, which
-we don't reliably have).
-
-STREAMED, never fully loaded: the gz file is read line-by-line with a cheap
-bbox pre-filter before any shapely geometry is even constructed for a
-candidate outside it — CLAUDE.md, host RAM is the binding constraint on this
-machine, and loading an ~88 MB-gzipped (larger decompressed) national-tile
-file whole risks repeating the OOM history already logged this project.
-
-Two treatments, both implemented behind `buildings.treatment` in config —
-neither is fabricated: `blockage` raises building cells by a configured
-height so water routes around them; `porosity` instead scales down a cell's
-storage/conveyance without full blocking. Both `building_mask` and
-`building_height_delta` are always written (independent of `treatment`) —
-THIS module's output does not change with `treatment` at all. It is
-`conditioning.py` that picks a burn strategy at ITS config-read time from
-the same key (writing a THIRD layer, `building_conveyance_factor`, for the
-porosity side — see that module's BURN PRECEDENCE docstring section), so
-switching treatments never requires re-running this module.
-"""
+neither is fabricated: `blockage` raises building cells by a configured"""
 
 from __future__ import annotations
 
@@ -63,15 +26,10 @@ REPO = Path(__file__).resolve().parents[3]
 
 
 class BuildingFetchError(Exception):
-    """An OSM or Microsoft building fetch failed or returned nothing usable.
-
-    Per CLAUDE.md rule 1: stop and report, never fall back to a synthetic
-    or empty building layer silently.
-    """
+    """Per CLAUDE.md rule 1: stop and report, never fall back to a synthetic"""
 
 
 def fetch_osm_buildings(query_polygon_wgs84: Any, timeout_s: int = 180) -> gpd.GeoDataFrame:
-    """Fetch building=* footprints within a WGS84 polygon via Overpass."""
     ox.settings.requests_timeout = timeout_s
     ox.settings.log_console = False
     try:
@@ -89,12 +47,6 @@ def fetch_osm_buildings(query_polygon_wgs84: Any, timeout_s: int = 180) -> gpd.G
 
 
 def resolve_ms_tile_url(cfg: dict[str, Any], repo_root: Path) -> str:
-    """Download (or reuse a cached) Microsoft index CSV, return the one quadkey's URL.
-
-    The INDEX itself (dataset-links.csv, one row per country-quadkey pair,
-    tens of thousands of rows but each row is short) is small enough to load
-    fully — it is the per-quadkey DATA files that are large and must stream.
-    """
     b_cfg = cfg["buildings"]["microsoft_footprints"]
     raw_dir = repo_root / cfg["paths"]["raw_microsoft_dir"]
     raw_dir.mkdir(parents=True, exist_ok=True)
@@ -115,15 +67,6 @@ def resolve_ms_tile_url(cfg: dict[str, Any], repo_root: Path) -> str:
 def stream_ms_footprints_in_polygon(
     gz_path: Path, query_polygon_wgs84: Any
 ) -> list[dict[str, Any]]:
-    """Line-by-line GeoJSONL parse, filtered to the query polygon as we go.
-
-    Two-stage filter per candidate: a cheap bounds-tuple comparison against
-    the polygon's bbox BEFORE constructing any shapely geometry (rejects
-    the vast majority of a zoom-9 tile's footprints — the tile covers a much
-    larger area than the true BBMP polygon), then a precise `.intersects()`
-    check for bbox survivors. Never loads the file as a single json/DataFrame
-    object; each line is parsed, checked, and discarded independently.
-    """
     qminx, qminy, qmaxx, qmaxy = query_polygon_wgs84.bounds
     kept: list[dict[str, Any]] = []
     n_lines = 0
@@ -137,7 +80,7 @@ def stream_ms_footprints_in_polygon(
             try:
                 feat = json.loads(line)
             except json.JSONDecodeError:
-                continue  # a malformed line is skipped, not fatal to the whole stream
+                continue
             coords_flat = _flatten_coords(feat["geometry"]["coordinates"])
             if not coords_flat:
                 continue
@@ -146,7 +89,7 @@ def stream_ms_footprints_in_polygon(
             fminx, fmaxx = min(lons), max(lons)
             fminy, fmaxy = min(lats), max(lats)
             if fmaxx < qminx or fminx > qmaxx or fmaxy < qminy or fminy > qmaxy:
-                continue  # cheap bbox reject — no shapely object built
+                continue
             n_bbox_survivors += 1
             geom = shape(feat["geometry"])
             if not geom.intersects(query_polygon_wgs84):
@@ -163,13 +106,12 @@ def stream_ms_footprints_in_polygon(
 
 
 def _flatten_coords(coords: Any) -> list[float]:
-    """Flatten a GeoJSON coordinate array (any nesting depth) to [x0,y0,x1,y1,...]."""
     out: list[float] = []
     stack = [coords]
     while stack:
         c = stack.pop()
         if isinstance(c, (int, float)):
-            continue  # a lone number never reaches here in valid GeoJSON coords
+            continue
         if len(c) >= 2 and all(isinstance(v, (int, float)) for v in c[:2]) and len(c) == 2:
             out.append(c[0])
             out.append(c[1])
@@ -181,14 +123,6 @@ def _flatten_coords(coords: Any) -> list[float]:
 def dedup_ms_against_osm(
     ms_gdf: gpd.GeoDataFrame, osm_gdf: gpd.GeoDataFrame, predicate: str
 ) -> gpd.GeoDataFrame:
-    """Drop Microsoft footprints that intersect any OSM building.
-
-    OSM preferred where both exist (typically better attributed in the
-    core); Microsoft kept only where it fills a gap. `gpd.sjoin` with
-    `how="left"` + drop-matched is the standard spatial-dedup idiom and
-    avoids an O(n*m) Python-level double loop over tens of thousands of
-    polygons on each side.
-    """
     osm_geoms_only = osm_gdf[["geometry"]].reset_index(drop=True)
     joined = gpd.sjoin(ms_gdf, osm_geoms_only, how="left", predicate=predicate)
     unmatched = joined[joined["index_right"].isna()].drop(columns=["index_right"])
@@ -196,14 +130,12 @@ def dedup_ms_against_osm(
 
 
 def build_buildings(cfg: dict[str, Any], repo_root: Path = REPO) -> dict[str, Any]:
-    """Fetch OSM + MS buildings over the buffered domain, dedup, rasterize mask + height-delta."""
     grid, grid_diag = build_grid(cfg, repo_root)
     buffer_m = float(cfg["dem"]["buffer_m"])
     buffered_grid = grid.buffered(buffer_m)
     buf_cells = round(buffer_m / grid.resolution)
     b_cfg = cfg["buildings"]
 
-    # Compute bounding box of the BUFFERED domain in WGS84
     buffered_box_proj = box(*buffered_grid.bounds)
     buffered_box_wgs84 = (
         gpd.GeoSeries([buffered_box_proj], crs=grid.crs).to_crs("EPSG:4326").iloc[0]
@@ -221,7 +153,9 @@ def build_buildings(cfg: dict[str, Any], repo_root: Path = REPO) -> dict[str, An
     quadkey = b_cfg["microsoft_footprints"]["quadkey"]
     ms_dest = repo_root / cfg["paths"]["raw_microsoft_dir"] / f"quadkey_{quadkey}.geojsonl.gz"
     status, size = download_file(ms_url, ms_dest, timeout=600)
-    ms_rows, n_lines, n_bbox_survivors = stream_ms_footprints_in_polygon(ms_dest, buffered_box_wgs84)
+    ms_rows, n_lines, n_bbox_survivors = stream_ms_footprints_in_polygon(
+        ms_dest, buffered_box_wgs84
+    )
     if not ms_rows:
         raise BuildingFetchError(
             f"streamed {n_lines} lines from the Microsoft quadkey file ({ms_dest}, "
@@ -240,7 +174,6 @@ def build_buildings(cfg: dict[str, Any], repo_root: Path = REPO) -> dict[str, An
     combined = pd.concat([osm_gdf, ms_gdf_kept], ignore_index=True)
     combined = gpd.GeoDataFrame(combined, crs="EPSG:4326").to_crs(grid.crs)
 
-    # Rasterize on the BUFFERED grid
     mask_buffered = rasterize(
         [(geom, 1) for geom in combined.geometry],
         out_shape=(buffered_grid.height, buffered_grid.width),
@@ -255,7 +188,6 @@ def build_buildings(cfg: dict[str, Any], repo_root: Path = REPO) -> dict[str, An
         mask_buffered == 1, np.float32(blockage_height_m), np.float32(0.0)
     ).astype(np.float32)
 
-    # Crop to the canonical grid
     mask_canonical = mask_buffered[
         buf_cells : buf_cells + grid.height, buf_cells : buf_cells + grid.width
     ]
@@ -269,16 +201,18 @@ def build_buildings(cfg: dict[str, Any], repo_root: Path = REPO) -> dict[str, An
     vector_path = interim_dir / "buildings.gpkg"
     combined.to_file(vector_path, driver="GPKG")
 
-    # Write buffered rasters
     buffered_mask_path = interim_dir / "building_mask_buffered.tif"
-    with rasterio.open(buffered_mask_path, "w", **buffered_grid.profile(dtype="uint8", nodata=0)) as dst:
+    with rasterio.open(
+        buffered_mask_path, "w", **buffered_grid.profile(dtype="uint8", nodata=0)
+    ) as dst:
         dst.write(mask_buffered, 1)
 
     buffered_delta_path = interim_dir / "building_height_delta_buffered.tif"
-    with rasterio.open(buffered_delta_path, "w", **buffered_grid.profile(dtype="float32", nodata=0.0)) as dst:
+    with rasterio.open(
+        buffered_delta_path, "w", **buffered_grid.profile(dtype="float32", nodata=0.0)
+    ) as dst:
         dst.write(height_delta_buffered, 1)
 
-    # Write canonical rasters
     mask_path = interim_dir / "building_mask.tif"
     with rasterio.open(mask_path, "w", **grid.profile(dtype="uint8", nodata=0)) as dst:
         dst.write(mask_canonical, 1)
@@ -330,7 +264,6 @@ def main(
         REPO / "runs" / "terrain_buildings", help="Directory to write the manifest into"
     ),
 ) -> None:
-    """Fetch OSM + Microsoft ML buildings, dedup, rasterize mask + height-delta."""
     cfg = load_config(config)
     try:
         result = run_stage("phase1_terrain_buildings", build_buildings, cfg, config, REPO, out)

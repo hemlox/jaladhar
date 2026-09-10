@@ -78,12 +78,6 @@ app = typer.Typer(add_completion=False)
 
 REPO = Path(__file__).resolve().parents[2]
 
-# --- measured-rate provenance (rule 3: every number names its file) --------
-# Direct full-domain acc+couple rate from the production-path probe
-# (test_real_artefact_loads_production_path_past_former_d_g_seam, 2026-08-26):
-# ~1.1 s/step on the 3521x3615 grid. The couple COMPONENT is separately
-# measured and logged in runs/wf2_fullgraph_cost/manifest.json (143.15 ms/step
-# mean); the twin (uncoupled acc-only) rate below is DERIVED as the difference.
 MEASURED_FULLDOMAIN_ACC_COUPLE_S_PER_STEP = 1.1
 MEASURED_RATE_SOURCE = (
     "production-path probe 2026-08-26 "
@@ -95,12 +89,6 @@ OLD_WINDOW_MANIFEST = REPO / "runs" / "wf2_coupled_smoke" / "manifest.json"
 
 
 def _proxy_steps_for(duration_s: float, runs_rle: list[list[float]]) -> int | None:
-    """Steps the OLD WINDOW's realized dt schedule would need to cover duration_s.
-
-    A PROXY for step-count planning ONLY — the full domain's h_max extremes are
-    deeper, so this is an OPTIMISTIC end of the band, declared as such wherever
-    it is printed. Returns None when the schedule cannot cover duration_s.
-    """
     t = 0.0
     n = 0
     for dt, run_len in runs_rle:
@@ -113,7 +101,6 @@ def _proxy_steps_for(duration_s: float, runs_rle: list[list[float]]) -> int | No
 
 
 def _measured_couple_ms() -> float | None:
-    """Full-graph couple_step mean ms/step from the logged cost run (or None)."""
     try:
         man = json.loads(FULLGRAPH_COST_MANIFEST.read_text())
         return float(man["fullgraph_couple_ms_per_step"]["mean"])
@@ -127,7 +114,6 @@ def _print_budget_gate(
     duration: float,
     max_steps: int,
 ) -> bool:
-    """Print the wall-budget arithmetic BEFORE the run; True => PROCEED."""
     cap_min = float(cfg.smoke.cpu_budget_wall_clock_min)
     couple_ms = _measured_couple_ms()
     twin_rate_s = MEASURED_FULLDOMAIN_ACC_COUPLE_S_PER_STEP - (
@@ -148,9 +134,6 @@ def _print_budget_gate(
     except (OSError, json.JSONDecodeError, KeyError, TypeError):
         proxy_steps = None
 
-    # Expected band: proxy x2 for the full domain's deeper h_max extremes
-    # (declared worsening factor, not a measurement). Analytic hi is the
-    # fail-safe ceiling (deepest h_max end), NOT the expectation.
     exp_lo = proxy_steps if proxy_steps is not None else n_lo
     exp_hi = max(exp_lo * 2, n_lo)
     proj_lo_min = exp_lo * pair_rate_s / 60.0
@@ -197,7 +180,6 @@ def _print_budget_gate(
 
 
 def _read_events_csv(path: Path) -> list[dict[str, Any]]:
-    """Realized surcharge events from disk (schema-exact G2 header required)."""
     if not path.exists():
         return []
     with open(path, newline="") as f:
@@ -216,7 +198,6 @@ def _read_events_csv(path: Path) -> list[dict[str, Any]]:
 
 
 def _partial_report(manifest_path: Path, exc: BaseException) -> None:
-    """Report a halt/refusal FROM THE REALIZED TERMINAL MANIFEST BYTES, then exit."""
     typer.echo(f"RUN STOPPED: {type(exc).__name__}: {exc}")
     try:
         man = json.loads(manifest_path.read_text())
@@ -238,10 +219,6 @@ def _partial_report(manifest_path: Path, exc: BaseException) -> None:
 
 
 def _require_config(value: Path | None) -> Path:
-    """D4 (round 3): --config carries NO default. The old default was the frozen
-    53-leaf resmoke snapshot, which refuses rule-7 resolution now that the schema
-    has grown — a stale-snapshot invocation must fail HERE with instructions,
-    not three minutes into a run."""
     if value is None:
         raise typer.BadParameter(
             "--config is REQUIRED (no default). The previous default pointed at the frozen "
@@ -270,11 +247,9 @@ def main(
         None, "--duration-s", help="Override smoke.duration_s (test envelope bound)"
     ),
 ) -> None:
-    """WF-2 re-smoke: FULL-DOMAIN production-path coupled run (CPU-only, V12)."""
     repo = REPO
     t_all = time.perf_counter()
 
-    # ---- STAGE config (rule-7 resolver; outputs redirected to --out-dir) -----
     cfg_resolved = resolve_config(config, repo)
     od = Path(out_dir)
     smoke_overrides: dict[str, Any] = {}
@@ -311,14 +286,9 @@ def main(
     storm = solver_cfg["storm"]
     duration = float(cfg.smoke.duration_s)
 
-    # ---- STAGE wall budget (printed BEFORE any simulation work) --------------
     if not _print_budget_gate(cfg, solver_cfg, duration, int(cfg.smoke.max_steps)):
         raise typer.Exit(code=1)
 
-    # ---- STAGES load/transformation/forcing/loop: PRODUCTION PATH ------------
-    # graph=None + static=None + window=None => router.load_drain_graph(full
-    # domain) -> load_domain(full buffered grid) -> guards -> uncoupled twin ->
-    # coupled loop, exactly as the production CLI drives it. NO injection.
     try:
         res = simulate_coupled(
             cfg,
@@ -339,7 +309,6 @@ def main(
     except CouplingMassBreach as exc:
         _partial_report(cfg.outputs.manifest, exc)
 
-    # ---- STAGE report: everything below reads REALIZED bytes -----------------
     man = json.loads(cfg.outputs.manifest.read_text())
     assert man["status"] == "completed", f"terminal status {man['status']!r} != completed"
     assert man.get("start_time"), "manifest lost its rule-6 start_time"
@@ -347,8 +316,7 @@ def main(
 
     steps_realized = int(res.steps)
     twin_wall_s = float(res.twin_summary["wall_clock_s"])
-    # Loop-side mean includes input assembly + product writes (DERIVATION STATED);
-    # it is the realized number THIS run produced, not the pre-run constant.
+
     loop_side_s = res.wall_clock_s - twin_wall_s
     realized_ms_per_step = (loop_side_s * 1000.0 / steps_realized) if steps_realized else 0.0
     twin_ms_per_step = (
@@ -390,7 +358,6 @@ def main(
         f"twin realized {twin_ms_per_step:.1f} ms/step"
     )
 
-    # ---- budget lines (guard c: legacy sink EXACTLY zero) --------------------
     led = res.ledger
     assert (
         led.legacy_drain_out_m3 == 0.0
@@ -406,7 +373,6 @@ def main(
         f"{cfg.budget.realized_reference_residual:.2e})"
     )
 
-    # ---- surcharge + directive-2 split (from manifest + realized products) ---
     events = _read_events_csv(cfg.outputs.surcharge_events_csv)
     any_surcharge = led.total_surcharging_steps > 0 and len(events) > 0
     max_head = max((e["max_head_m"] for e in events), default=0.0)
@@ -426,7 +392,6 @@ def main(
         "scripts/wf2_return_ratio_split.py (independent adjacency reachability join)"
     )
 
-    # ---- diagnostics stage: library functions on realized artefacts ----------
     fs = load_falsifier_set(cfg.diagnostics.falsifier_set)
     cmp_block = compare_falsifier(cfg.outputs.surcharge_events_csv, fs, sha256_file(cfg.graph.gpkg))
     gt_block = man["gt_attribution"]
@@ -460,9 +425,6 @@ def main(
         f"{man['g2']['reason']}"
     )
 
-    # ---- EXTRAPOLATION-FROM-MEASURED band for a 3h full-domain run -----------
-    # Directive 3: labelled an extrapolation everywhere it appears; arithmetic
-    # uses THIS RUN'S realized loop-side and twin rates, not assumptions.
     steps_3h_lo = int(-(-10800 // max(dt_max, 1e-9)))
     steps_3h_hi = int(-(-10800 // max(dt_min, 1e-9)))
     rate_pair_ms = realized_ms_per_step + twin_ms_per_step
@@ -496,7 +458,6 @@ def main(
         "(band; see scope_warning in manifest)"
     )
 
-    # ---- STAGE manifest: merge the driver report IN PLACE (rule 6) -----------
     current = json.loads(cfg.outputs.manifest.read_text())
     merged = {
         **current,

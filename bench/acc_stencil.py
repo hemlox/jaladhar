@@ -1,33 +1,4 @@
-"""Phase 0, open question A — hardware throughput of the ACC solver kernel.
-
-WHAT THIS MEASURES, AND WHAT IT DOES NOT
-----------------------------------------
-This is a *hardware* benchmark, not a hydrological result. It runs the exact
-tensor operations the Bates et al. (2010) local-inertial scheme performs per
-timestep -- the same stencil shape, dtype, and memory traffic -- on synthetic
-tensors, and measures milliseconds per timestep and peak VRAM against grid size.
-
-Stencil arithmetic cost is independent of the *values* in the elevation array,
-so ms/timestep is a genuine measurement. It is NOT a claim about Bengaluru.
-No depth, discharge, or flood extent produced here means anything physically;
-nothing from this file may be reported as a hydrological finding.
-
-THE BAND, AND WHY THERE IS ONE
-------------------------------
-Wall clock per scenario = (ms/timestep) x (timesteps per simulated hour).
-
-The first factor is measured here. The second comes from the CFL condition
-
-    dt = alpha * dx / sqrt(g * h_max)
-
-where h_max is the maximum water depth in the domain -- physics we do not have
-in Phase 0. So timesteps/hour is reported as a BAND over an explicit range of
-(alpha, h_max), never as a point estimate. Phase 2 collapses the band by
-measuring real h_max from a real storm.
-
-Per CLAUDE.md: tensors are allocated directly on device. Host RAM on this
-machine is tighter than VRAM, and a 32M-cell CPU-side stack would OOM the box.
-"""
+"Phase 0, open question A — hardware throughput of the ACC solver kernel. WHAT THIS MEASURES, AND WHAT IT DOES NOT ---------------------------------------- This is a *hardware* benchmark, not a hydrological result. It runs the exact tensor operations the Bates et al. (2010) local-inertial scheme performs per timestep -- the same stencil shape, dtype, and memory traffic -- on synthetic tensors, and measures milliseconds per timestep and peak VRAM against grid size. Stencil arithmetic cost is independent of the *values* in the elevation array, so ms/timestep is a genuine measurement. It is NOT a claim about Bengaluru. No depth, discharge, or flood extent produced here means anything physically; nothing from this file may be reported as a hydrological finding. THE BAND, AND WHY THERE IS ONE ------------------------------ Wall clock per scenario = (ms/timestep) x (timesteps per simulated hour). The first factor is measured here. The second comes from the CFL condition dt = alpha * dx / sqrt(g * h_max) where h_max is the maximum water depth in the domain -- physics we do not have in Phase 0. So timesteps/hour is reported as a BAND over an explicit range of (alpha, h_max), never as a point estimate. Phase 2 collapses the band by measuring real h_max from a real storm. Per CLAUDE.md: tensors are allocated directly on device. Host RAM on this machine is tighter than VRAM, and a 32M-cell CPU-side stack would OOM the box."  # noqa: E501
 
 from __future__ import annotations
 
@@ -49,7 +20,6 @@ G = 9.81  # m/s^2
 
 @dataclass(frozen=True)
 class GridSpec:
-    """A candidate resolution over the real BBMP extent."""
 
     resolution_m: float
     width_m: float
@@ -78,18 +48,7 @@ def acc_timestep(
     dt: float,
     depth_threshold: float = 1e-3,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    """One local-inertial (ACC) timestep. Shape-faithful to the real scheme.
-
-    Flux, x-direction (y is symmetric):
-
-        h_flow = max(h_i + z_i, h_j + z_j) - max(z_i, z_j)
-
-        q_(t+dt) = (q_t - g * h_flow * dt * d(h+z)/dx)
-                   / (1 + g * dt * n^2 * |q_t| / h_flow^(7/3))
-
-    Guarded by a depth threshold: below ~1 mm the flux is zeroed, which is
-    required for stability and avoids spending compute on dry cells.
-    """
+    "One local-inertial (ACC) timestep. Shape-faithful to the real scheme. Flux, x-direction (y is symmetric): h_flow = max(h_i + z_i, h_j + z_j) - max(z_i, z_j) q_(t+dt) = (q_t - g * h_flow * dt * d(h+z)/dx) / (1 + g * dt * n^2 * |q_t| / h_flow^(7/3)) Guarded by a depth threshold: below ~1 mm the flux is zeroed, which is required for stability and avoids spending compute on dry cells."  # noqa: E501
     eta = h + z
 
     # --- x faces ---
@@ -129,18 +88,16 @@ def acc_timestep(
 
 
 def timesteps_per_hour(dx: float, alpha: float, h_max: float) -> float:
-    """CFL timestep count for one simulated hour. h_max is the unknown."""
     dt = alpha * dx / math.sqrt(G * h_max)
     return 3600.0 / dt
 
 
 def bench_grid(nx: int, ny: int, dx: float, iters: int, warmup: int, device: str) -> dict:
-    """Time one grid size. Allocates directly on device (see module docstring)."""
     torch.cuda.reset_peak_memory_stats(device) if device == "cuda" else None
     gen = torch.Generator(device=device).manual_seed(0)
 
-    # Synthetic terrain: a gentle plane plus noise. Values are arbitrary --
-    # only the tensor SHAPE and dtype affect the kernel cost being measured.
+    # Synthetic terrain: a gentle plane plus noise. Values are arbitrary -- only the tensor SHAPE
+    # and dtype affect the kernel cost being measured.
     z = torch.rand((ny, nx), generator=gen, device=device, dtype=torch.float32) * 10.0
     z += torch.linspace(0, 50, nx, device=device, dtype=torch.float32).unsqueeze(0)
     h = torch.full((ny, nx), 0.05, device=device, dtype=torch.float32)
@@ -194,7 +151,6 @@ def main(
     warmup: int = typer.Option(10, help="Warm-up iterations"),
     out: Path = typer.Option(Path("runs/bench_phase0"), help="Output directory"),
 ) -> None:
-    """Benchmark the ACC kernel across candidate resolutions. See module docstring."""
     device = "cuda" if torch.cuda.is_available() else "cpu"
     if device == "cpu":
         typer.echo("WARNING: no CUDA device — CPU timings are not comparable to the GPU target.")

@@ -1,67 +1,3 @@
-"""WF-2 surcharge diagnostics — falsifier compare, class split, GT attribution, G2 gate.
-
-Spec §4.6 + §11 (``runs/wf2_design_phase/spec.md``), contract ``g2_anti_vacuity`` /
-workflow CONTRACTS (``wf2-coupling.js``). This unit owns everything scored AFTER a
-coupled run: the pre-registered falsifier comparison (§11.2), the component-class
-split (§11.3), ground-truth attribution with the SUSPICIOUS headline rule, the
-surcharge-events CSV serialization (§11.1 exact G2 schema), and the G2 anti-vacuity
-verdict + ``score_g2`` CLI.
-
-WHAT EACH NUMBER MEANS (R1 labelling discipline; spec §0/§11.3):
-
-- **Directed node-count split** (55 outfall_terminating / 1666 dead_end on the
-  realized graph [F]): a COUNT of nodes that can reach one of the 17 outfall nodes
-  following DIRECTED downstream edges — computed live from
-  ``DrainGraph.component_class`` at every call, never hardcoded.
-- **Length-weighted weak-connectivity fraction** (0.736484 [F], owner-accepted
-  2026-08-25): the OBSERVED-LENGTH-weighted share of the network lying in
-  components connected to outfall-terminating reaches under WEAK (undirected)
-  connectivity — read from the WF-1 build manifest's ``component_policy`` block
-  when present, never recomputed here. The two measure different things and the
-  difference is itself informative (spec §11.3); both are carried, distinctly
-  labelled, in :func:`component_split` output.
-
-WHY THE SPLIT IS MANDATORY: under deviation D-A (no terminal export term in v1)
-every captured m³ in a dead-end component must eventually surcharge back —
-dead-end-dominated surcharge is EXPECTED BY CONSTRUCTION, which is why
-dead-end-dominated ground-truth reproduction is flagged SUSPICIOUS rather than
-celebrated, and why :func:`g2_verdict` REFUSES an unsplit input (invariant #13).
-
-PURITY: every public function is a pure function of its arguments plus disk reads
-it declares (falsifier JSON, GT manifest+CSV). NOTHING here is tuned against any
-target: the falsifier overlap is recorded, not optimized (owner directive R5/R6),
-and no function takes a parameter that could move a score toward "pass".
-
-CSV OWNERSHIP: per the build-unit dispatch, THIS module owns the
-``products/surcharge_events.csv`` serialization path (:func:`write_surcharge_events_csv`)
-and keeps it BYTE-COMPATIBLE with the format ``solver_hook._write_products`` already
-emits (header ``node_id,total_returned_m3,first_step,last_step,max_head_m``, rows
-sorted by node_id, ``repr()`` float fields, trailing newline, zero-row file allowed)
-so the Smoke-phase wiring can repoint the driver here without touching any green
-test. ``solver_hook.py`` is another unit's file and is not modified.
-
-Ground-truth join reality (inspected this session, adapted — see build report):
-``runs/groundtruth/manifest.json`` carries NO inline points; it declares
-``csv_path`` -> ``data/raw/groundtruth/sept2022_points.csv`` with WGS84 lat/lon and
-``points_count: 24`` [F]. Attribution therefore (a) reads points through the
-manifest's declared pointer, (b) asserts the declared count against the parsed
-rows (V8 consumer-side), (c) reprojects EPSG:4326 -> the graph's pinned CRS
-(``CRS_EXPECTED``, EPSG:32643) with pyproj. Node positions come from the loaded
-:class:`~jalaladhar.coupling.router.DrainGraph` (cell-centre reconstruction from
-``node_cell_row/col`` + the producer-declared grid transform, disclosed quantization
-<= res*sqrt(2)/2) or from explicit ``node_xy_m`` overrides.
-
-MODES (owner ruling D-GT 2026-08-26): :func:`attribute_ground_truth_edges` is
-the DEFAULT — each GT point joins its nearest drain EDGE (true multi-vertex
-polyline, ties -> lowest edge_id) within an INCLUSIVE geometry-anchored radius,
-and that edge's DOWNSTREAM node is the responsible node. The older
-:func:`attribute_ground_truth` (nearest surcharging NODE within radius) is
-RETAINED but SUPERSEDED-BY-RULING-2026-08-26: regression/A-B evidence only.
-The SUSPICIOUS dead-end-share rule is byte-identical in both modes.
-
-CPU-only throughout (V12). Python 3.11, type hints.
-"""
-
 from __future__ import annotations
 
 import csv
@@ -106,8 +42,6 @@ __all__ = [
     "write_surcharge_events_csv",
 ]
 
-# EXACT G2 per-node table schema (contract g2_anti_vacuity.per_node_table; §11.1).
-# G2 consumes exactly this file; a zero-row file is allowed (then G2 fails loudly).
 SURCHARGE_EVENTS_SCHEMA: tuple[str, ...] = (
     "node_id",
     "total_returned_m3",
@@ -116,12 +50,10 @@ SURCHARGE_EVENTS_SCHEMA: tuple[str, ...] = (
     "max_head_m",
 )
 
-# Component-class labels (producer: router.DrainGraph.component_class).
 COMPONENT_CLASSES: tuple[str, str] = ("outfall_terminating", "dead_end")
 
-# Contract anti-vacuity floor (config diagnostics.g2_min_returned_m3 default).
 G2_MIN_RETURNED_M3_DEFAULT: float = 1.0
-# SUSPICIOUS threshold (config diagnostics.suspicious_deadend_share default).
+
 SUSPICIOUS_DEADEND_SHARE_DEFAULT: float = 0.5
 
 
@@ -135,24 +67,13 @@ class DiagnosticsRefusal(ValueError):
     """
 
 
-# ---------------------------------------------------------------------------
-# Falsifier set (§11.2): loaded at run START, recorded, NEVER tuned
-# ---------------------------------------------------------------------------
-
-
 @dataclass(frozen=True)
 class FalsifierSet:
-    """The pre-registered surcharge prediction set (spec §4.6 fields verbatim).
 
-    Built ONLY by :func:`load_falsifier_set`, which validates internal
-    consistency before construction — an instance of this class is therefore a
-    declaration WITH a verified backing file behind it.
-    """
-
-    n_predicted_edges: int  # 70 on the realized set [F]
-    predicted_node_ids: tuple[int, ...]  # 116 unique, ascending
-    edges: tuple[dict[str, Any], ...]  # 70 flagged-edge records from gpkg bytes
-    source_gpkg_sha256: str  # sha256 of the gpkg bytes the set was recorded from
+    n_predicted_edges: int
+    predicted_node_ids: tuple[int, ...]
+    edges: tuple[dict[str, Any], ...]
+    source_gpkg_sha256: str
 
     @property
     def n_predicted_nodes(self) -> int:
@@ -169,7 +90,6 @@ _EDGE_REQUIRED_KEYS: tuple[str, ...] = ("edge_id", "from_node", "to_node")
 
 
 def sha256_file(path: Path) -> str:
-    """sha256 hex digest of a file's bytes (gpkg cross-check helper, §11.2)."""
     h = hashlib.sha256()
     with open(path, "rb") as f:
         for chunk in iter(lambda: f.read(1 << 20), b""):
@@ -178,21 +98,6 @@ def sha256_file(path: Path) -> str:
 
 
 def load_falsifier_set(path: Path) -> FalsifierSet:
-    """Load the pre-registered prediction set; REFUSE TO START on absence/mismatch.
-
-    Absent file, unreadable JSON, missing keys, an ``n_predicted_edges`` that
-    disagrees with the actual edge list, malformed edge records, non-ascending or
-    duplicate ``predicted_node_ids``, or a non-hex ``source_gpkg_sha256`` ALL
-    raise :class:`DiagnosticsRefusal` — aggregated where several defects exist
-    (rule-7 spirit: all problems named in one refusal).
-
-    Args:
-        path: path to ``surcharge_prediction_set.json`` (config key
-            ``diagnostics.falsifier_set``).
-
-    Returns:
-        The frozen :class:`FalsifierSet`.
-    """
     path = Path(path)
     if not path.exists():
         raise DiagnosticsRefusal(
@@ -225,7 +130,7 @@ def load_falsifier_set(path: Path) -> FalsifierSet:
         if not isinstance(n_edges, int) or isinstance(n_edges, bool) or n_edges < 0:
             problems.append(f"'n_predicted_edges' must be a non-negative int, got {n_edges!r}")
     if edges_raw is None:
-        pass  # 'missing required key' already recorded above
+        pass
     elif not isinstance(edges_raw, list):
         problems.append(f"'edges' must be a list, got {type(edges_raw).__name__}")
     elif isinstance(n_edges, int) and not isinstance(n_edges, bool) and len(edges_raw) != n_edges:
@@ -247,7 +152,7 @@ def load_falsifier_set(path: Path) -> FalsifierSet:
                         problems.append(f"'edges[{i}].{k}' must be an int, got {e[k]!r}")
 
     if ids_raw is None:
-        pass  # already recorded
+        pass
     elif not isinstance(ids_raw, list) or not ids_raw:
         problems.append(f"'predicted_node_ids' must be a non-empty list, got {ids_raw!r}")
     else:
@@ -286,17 +191,7 @@ def load_falsifier_set(path: Path) -> FalsifierSet:
     )
 
 
-# ---------------------------------------------------------------------------
-# Surcharge events CSV (§11.1): EXACT G2 schema, byte-compatible with solver_hook
-# ---------------------------------------------------------------------------
-
-
 def _normalize_event_rows(rows: Iterable[Mapping[str, Any]] | str | Path) -> list[dict[str, Any]]:
-    """Coerce event rows (ledger dicts, CSV path, or CSV text source) to typed dicts.
-
-    Ledger rows carry EXTRA continuity fields (§10.4); those are ignored here.
-    Missing REQUIRED schema fields aggregate into ONE :class:`DiagnosticsRefusal`.
-    """
     if isinstance(rows, (str, Path)):
         p = Path(rows)
         if not p.exists():
@@ -335,18 +230,6 @@ def _normalize_event_rows(rows: Iterable[Mapping[str, Any]] | str | Path) -> lis
 
 
 def write_surcharge_events_csv(rows: Iterable[Mapping[str, Any]] | Path | str, path: Path) -> None:
-    """Write ``products/surcharge_events.csv`` in the EXACT §11.1 G2 schema.
-
-    Byte-format pinned to what ``solver_hook._write_products`` already emits so the
-    existing suite stays green and the Smoke-phase wiring can repoint here:
-    header ``node_id,total_returned_m3,first_step,last_step,max_head_m``; rows
-    sorted by ``node_id``; ``repr()`` for the two float fields; plain ints for
-    step fields; single trailing newline; a ZERO-ROW file is allowed (header only)
-    — G2 then fails loudly on it, which is the point of the anti-vacuity gate.
-
-    Raises:
-        DiagnosticsRefusal: aggregated, if any row lacks a required schema field.
-    """
     norm = _normalize_event_rows(rows)
     path = Path(path)
     if path.parent != Path(""):
@@ -360,11 +243,6 @@ def write_surcharge_events_csv(rows: Iterable[Mapping[str, Any]] | Path | str, p
 
 
 def read_surcharge_events_csv(path: Path) -> list[dict[str, Any]]:
-    """Read a surcharge-events CSV back, asserting the EXACT header (byte schema).
-
-    G2 consumes exactly this file, so a drifted header/column order is refused
-    rather than silently tolerated.
-    """
     path = Path(path)
     text = path.read_text()
     lines = text.splitlines()
@@ -397,32 +275,11 @@ def read_surcharge_events_csv(path: Path) -> list[dict[str, Any]]:
     return out
 
 
-# ---------------------------------------------------------------------------
-# Falsifier comparison (§11.2) — recorded into the run manifest, never tuned
-# ---------------------------------------------------------------------------
-
-
 def compare_falsifier(
     events: Iterable[Mapping[str, Any]] | Path | str,
     fs: FalsifierSet,
     gpkg_sha256_of_loaded_graph: str | None = None,
 ) -> dict[str, Any]:
-    """Predicted-vs-actual surcharge overlap — pure function of events + set.
-
-    Args:
-        events: ledger event rows (or an events-CSV path) from the coupled run.
-        fs: the pre-registered :class:`FalsifierSet`.
-        gpkg_sha256_of_loaded_graph: sha256 of the gpkg bytes behind the LOADED
-            graph (``sha256_file(cfg.graph.gpkg)``), when known; ``None`` marks
-            the cross-check explicitly unchecked rather than silently skipped.
-
-    Returns:
-        Manifest block per spec §11.2: ``n_predicted_edges`` (70 [F]),
-        ``n_predicted_nodes`` (116 [F]), ``predicted_nodes_surcharged`` (int),
-        ``flagged_edges_whose_downstream_node_surcharged`` (int),
-        ``flagged_edges_not_surcharged`` (ids), ``unflagged_surcharging_nodes``
-        (ids), and the explicit ``source_gpkg_sha256_crosscheck`` status.
-    """
     rows = _normalize_event_rows(events)
     event_nodes = {r["node_id"] for r in rows}
     predicted = set(fs.predicted_node_ids)
@@ -465,24 +322,9 @@ def compare_falsifier(
     }
 
 
-# ---------------------------------------------------------------------------
-# Component-class split (§11.3) — both headline fractions, distinctly labelled
-# ---------------------------------------------------------------------------
-
-
 def component_split(
     events: Iterable[Mapping[str, Any]] | Path | str, graph: DrainGraph
 ) -> dict[str, Any]:
-    """Partition surcharge events by directed-reachability component class.
-
-    Every event joins ``graph.component_class`` (index convention: tensor index =
-    node_id - 1). Output carries per-class ``{n_events, returned_m3}``, the LIVE
-    directed node-count split measured from the loaded graph, and — when the
-    graph manifest carries it — the length-weighted weak-connectivity fraction
-    from the WF-1 ``component_policy`` block. The two figures measure DIFFERENT
-    things (see module docstring) and are labelled separately; neither is
-    hardcoded (their realized values live in each run's manifest, never here).
-    """
     rows = _normalize_event_rows(events)
     classes = list(graph.component_class)
     per_class: dict[str, dict[str, Any]] = {
@@ -503,10 +345,7 @@ def component_split(
     directed_counts = {cls: classes.count(cls) for cls in COMPONENT_CLASSES}
     policy = (graph.manifest or {}).get("component_policy") or {}
     length_fraction = policy.get("outfall_terminating_observed_length_fraction")
-    # WF-2 M1: when the loaded graph carries the terminal-seed echo, the labels
-    # name the ACTUAL definition_version + rule counts in effect instead of the
-    # stale hardcoded '55/1666 + 0.736484' narrative. Class LABELS are
-    # unchanged; historical manifests without the echo keep the v1 wording.
+
     term_echo = (graph.manifest or {}).get("terminal_seed_resolution") or {}
     def_version = term_echo.get("definition_version")
 
@@ -574,11 +413,7 @@ def component_split(
     }
 
 
-# ---------------------------------------------------------------------------
-# Ground-truth attribution (§11.3) + SUSPICIOUS headline rule
-# ---------------------------------------------------------------------------
-
-_WGS84_TO_GRAPH = None  # lazily-built pyproj transformer (module-level cache)
+_WGS84_TO_GRAPH = None
 
 
 def _transformer():
@@ -591,15 +426,6 @@ def _transformer():
 
 
 def _load_gt_points(gt_manifest_path: Path) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    """Read GT points through the manifest's declared ``csv_path`` pointer.
-
-    The manifest declares ``csv_path`` and ``points_count`` [F]; the parsed row
-    count is asserted against the DECLARED count (V8 consumer-side). Relative
-    csv_paths resolve against the manifest's own directory (self-contained
-    bundle). Optional ``x_m``/``y_m`` columns (projected, ``CRS_EXPECTED``) are
-    used verbatim when present — the realized Sept-2022 CSV has none, so the
-    production path is the lat/lon reprojection.
-    """
     gt_manifest_path = Path(gt_manifest_path)
     if not gt_manifest_path.exists():
         raise DiagnosticsRefusal(
@@ -684,21 +510,6 @@ def _resolve_node_geometry(
     ),
     node_class: Mapping[int, str] | Sequence[str] | None,
 ) -> tuple[Any, Any, str]:
-    """Resolve node geometry into ``pos(node_id)`` / ``class(node_id)`` accessors.
-
-    Three accepted sources, in priority order:
-    1. the loaded :class:`DrainGraph` (preferred): cell-centre reconstruction from
-       ``node_cell_row/col`` + the producer-declared grid transform; classes from
-       ``component_class``;
-    2. explicit DENSE ``(N,2)`` positions + per-node class list (index = id - 1);
-    3. explicit SPARSE mappings ``{node_id: (x, y)}`` and ``{node_id: class}``
-       for scoring a subset of nodes without materializing the full graph.
-
-    Raises:
-        DiagnosticsRefusal: when no geometry source is usable, when classes are
-            missing (the dead-end share — hence SUSPICIOUS — would be
-            uncomputable), or on shape disagreements.
-    """
     if graph is not None:
         grid = ((graph.manifest or {}).get("config_snapshot") or {}).get("grid") or {}
         if "transform" not in grid:
@@ -761,7 +572,7 @@ def _resolve_node_geometry(
         return pos_s, cls_s, "positions/classes taken verbatim from caller-provided sparse maps"
 
     if node_xy_m is not None:
-        pairs = [tuple(p) for p in node_xy_m]  # type: ignore[arg-type]
+        pairs = [tuple(p) for p in node_xy_m]
         if not pairs or any(len(p) != 2 for p in pairs):
             raise DiagnosticsRefusal("[diagnostics] node_xy_m must be an (N,2) sequence")
         if node_class is None or isinstance(node_class, Mapping):
@@ -811,52 +622,10 @@ def attribute_ground_truth(
     suspicious_deadend_share: float = SUSPICIOUS_DEADEND_SHARE_DEFAULT,
     radius_basis: str | None = None,
 ) -> dict[str, Any]:
-    """Match GT flood points to surcharging nodes; report the class split + flag.
-
-    SUPERSEDED-BY-RULING-2026-08-26 for production attribution (edge mode is the
-    default); RETAINED for regression/A-B evidence. A GT point is REPRODUCED iff
-    it lies within ``radius_m`` (**inclusive boundary**) of at least one
-    surcharging node; its recorded match is the NEAREST such node (ties ->
-    lowest node_id, OQ1 pin). The DEFAULT ``radius_m=100.0`` is the HISTORICAL
-    v1 node-mode pin — production callers pass the config-declared leaf
-    ``diagnostics.attribution_radius_node_m`` explicitly (round-3 fix C2/D2:
-    the shared ``attribution_radius_m`` leaf now carries the EDGE-mode radius,
-    so dispatching on it here would silently confound every A/B against
-    history). Per-point records carry the nearest-node id + its component
-    class. The dead-end share is computed over the SET of GT-matched nodes
-    (each node's returned volume counted ONCE, no double-counting through
-    points sharing a node) and the SUSPICIOUS flag fires when that share
-    STRICTLY exceeds ``suspicious_deadend_share``.
-
-    Args:
-        events: surcharge event rows (ledger dicts or CSV path).
-        gt_manifest_path: the ground-truth manifest (declares ``csv_path`` +
-            ``points_count``; realized file: 24 points [F]).
-        radius_m: attribution radius [m] — declared assumption ‡; historical
-            v1 node-mode pin 100.0 (config leaf
-            ``diagnostics.attribution_radius_node_m``).
-        graph: the loaded :class:`DrainGraph` (preferred geometry source).
-        node_xy_m: explicit projected positions overriding ``graph`` — either a
-            DENSE ``(N,2)`` sequence (index = id - 1) or a SPARSE
-            ``{node_id: (x, y)}`` mapping.
-        node_class: per-node classes matching ``node_xy_m``'s form (list, or
-            sparse ``{node_id: class}``). Required: without classes the
-            dead-end share — hence SUSPICIOUS — is uncomputable and we refuse.
-        suspicious_deadend_share: SUSPICIOUS threshold (config
-            ``diagnostics.suspicious_deadend_share``, default 0.5).
-        radius_basis: provenance string echoed into the block (D9 symmetry:
-            both modes' manifest blocks record mode + effective radius + basis).
-
-    Returns:
-        Manifest block: per-point matches, matched-node set, returned volume by
-        class over matched nodes, ``dead_end_share_of_gt_matched_returned_volume``
-        (``None`` when nothing matched — NOT_ASSESSED, honestly), and the
-        ``suspicious`` boolean + ``suspicious_state`` string.
-    """
     rows = _normalize_event_rows(events)
     pos_of, class_of, geom_note = _resolve_node_geometry(graph, node_xy_m, node_class)
     pts, gt_prov = _load_gt_points(Path(gt_manifest_path))
-    surged = sorted(rows, key=lambda r: r["node_id"])  # ascending => stable lowest-id ties
+    surged = sorted(rows, key=lambda r: r["node_id"])
     vol_by_node = {r["node_id"]: r["total_returned_m3"] for r in rows}
 
     per_point: list[dict[str, Any]] = []
@@ -934,22 +703,9 @@ def attribute_ground_truth(
     }
 
 
-# ---------------------------------------------------------------------------
-# Ground-truth EDGE attribution (owner ruling D-GT 2026-08-26) — the DEFAULT mode
-# ---------------------------------------------------------------------------
-
-
 def load_drain_edges_geoms(
     gpkg_path: Path, layer: str = "drain_edges"
 ) -> tuple[dict[int, Any], dict[int, int], dict[int, int], str]:
-    """Load TRUE multi-vertex drain-edge polylines from the WF-1 artefact.
-
-    Returns ``(geom_by_edge_id, from_node_by_id, to_node_by_id, crs_str)``.
-    NO straight-segment approximation is permitted (ruling D-GT): the gpkg's
-    LineString geometries are used verbatim. Refuses a layer whose CRS is not
-    metre-projected and any row with a missing/empty geometry — both aggregated
-    into one :class:`DiagnosticsRefusal`.
-    """
     import geopandas as gpd
 
     gpkg_path = Path(gpkg_path)
@@ -1072,7 +828,6 @@ def attribute_ground_truth_edges(
     rows = _normalize_event_rows(events)
     pts, gt_prov = _load_gt_points(Path(gt_manifest_path))
 
-    # --- structural validation, aggregated ------------------------------------
     problems: list[str] = []
     if expected_edge_count is not None and len(edge_geoms) != int(expected_edge_count):
         problems.append(
@@ -1111,7 +866,6 @@ def attribute_ground_truth_edges(
             f"{len(problems)} problem(s):\n" + "\n".join(f"  - {p}" for p in problems)
         )
 
-    # --- class source resolution (no positions needed in edge mode) -----------
     classes_seq: list[str] | None = None
     if graph is not None:
         classes_seq = list(graph.component_class)
@@ -1141,7 +895,6 @@ def attribute_ground_truth_edges(
             "graph/class source — event/graph mismatch (wrong run scored?), refusing"
         )
 
-    # --- nearest-edge scan: ascending edge_id order => strict < keeps lowest id ---
     from shapely import Point as _Point
     from shapely import distance as _shp_distance
 
@@ -1167,7 +920,7 @@ def attribute_ground_truth_edges(
             "nearest_edge_id": best_eid,
             "nearest_distance_m": best_d,
             "responsible_node_id": resp,
-            "responsible_node_class": cls_of(resp),  # None honestly if unresolvable
+            "responsible_node_class": cls_of(resp),
         }
         if matched:
             responsible_nodes.add(resp)
@@ -1178,8 +931,7 @@ def attribute_ground_truth_edges(
     for nid in sorted(responsible_nodes):
         cls = cls_of(nid)
         if cls is None:
-            # Matched => responsible node IS an event node => already validated
-            # above; landing here means the two checks disagree — fail loudly.
+
             unresolved_matched.append(nid)
             continue
         vol_by_class[cls] += vol_by_node[nid]
@@ -1226,19 +978,7 @@ def attribute_ground_truth_edges(
     }
 
 
-# ---------------------------------------------------------------------------
-# G2 verdict (§11.1) — the anti-vacuity gate
-# ---------------------------------------------------------------------------
-
-
 def _suspicious_state_of(inputs: Mapping[str, Any]) -> str:
-    """Extract the SUSPICIOUS state string from a manifest-shaped mapping.
-
-    Two accepted locations (item E-iii): the driver's TOP-LEVEL ``gt_attribution``
-    block, and the smoke pipeline's ``diagnostics.gt_attribution_and_suspicious``
-    nesting — a smoke-produced manifest must re-score to the state it actually
-    carries, not degrade to NOT_ASSESSED because of where the block sits.
-    """
     gt = inputs.get("gt_attribution")
     if not isinstance(gt, Mapping):
         nested = inputs.get("diagnostics")
@@ -1256,8 +996,6 @@ def _suspicious_state_of(inputs: Mapping[str, Any]) -> str:
 
 
 def _normalized_class_counts(split: Any) -> dict[str, int]:
-    """Accept either the driver's flat ``component_class_split`` counts or this
-    module's richer :func:`component_split` block; return flat counts or raise."""
     if isinstance(split, Mapping):
         if isinstance(split.get("per_class"), Mapping):
             split = split["per_class"]
@@ -1285,18 +1023,6 @@ def g2_verdict(
     manifest_or_inputs: Mapping[str, Any],
     g2_min_returned_m3: float = G2_MIN_RETURNED_M3_DEFAULT,
 ) -> tuple[str, str]:
-    """The G2 anti-vacuity verdict: ``(verdict, reason)`` with verdict in pass|fail.
-
-    FAIL if ``total_surcharging_steps == 0`` OR ``total_returned_m3 <
-    g2_min_returned_m3`` — regardless of all other scores (contract
-    ``g2_anti_vacuity``). REFUSES (raises :class:`DiagnosticsRefusal`) an input
-    lacking the counters or the component-class split: an unsplit G2 number is
-    meaningless by owner directive (invariant #13 red target). The reason text
-    always carries the split numbers and the SUSPICIOUS state.
-
-    This function is PURE and NEVER TUNED: nothing about the inputs can be
-    adjusted to flip a verdict except the physics itself.
-    """
     data = manifest_or_inputs
     problems: list[str] = []
     steps = data.get("total_surcharging_steps")
@@ -1312,7 +1038,7 @@ def g2_verdict(
         raise DiagnosticsRefusal(
             "[diagnostics] G2 input malformed:\n" + "\n".join(f"  - {p}" for p in problems)
         )
-    steps_i, returned_f = int(steps), float(returned)  # type: ignore[arg-type]
+    steps_i, returned_f = int(steps), float(returned)
     sus = _suspicious_state_of(data)
     split_txt = (
         f"split outfall_terminating={counts['outfall_terminating']} "
@@ -1349,11 +1075,6 @@ def g2_verdict(
     return verdict, reason
 
 
-# ---------------------------------------------------------------------------
-# CLI (AGENTS.md style rule: every stage runnable standalone)
-# ---------------------------------------------------------------------------
-
-
 @app.command()
 def score_g2(
     manifest_path: Path = typer.Argument(
@@ -1363,18 +1084,6 @@ def score_g2(
         G2_MIN_RETURNED_M3_DEFAULT, help="Contract anti-vacuity floor [m3]"
     ),
 ) -> None:
-    """Score a coupled-run manifest against the G2 anti-vacuity gate.
-
-    HEADLINE line is either exactly ``G2 FAIL: NO NODE EVER SURCHARGED`` (zero
-    surcharging steps) or ``G2 <VERDICT> | ... | SUSPICIOUS=<state>`` carrying the
-    component-split numbers — the SUSPICIOUS state is ALWAYS in the headline (owner
-    directive wf2-coupling.js:145-152: dead-end-dominated GT reproduction is flagged
-    IN THE HEADLINE; the flag flags, it does not fail). On a run WITH surcharging
-    steps whose state is NOT_ASSESSED, an explicit warning line names the missing
-    block so an unassessed contamination can never look like a clean pass. Exits
-    NON-ZERO on any fail/refusal only (anti-vacuity rules) — gate runs must never
-    look green through a quiet window.
-    """
     try:
         man = json.loads(Path(manifest_path).read_text())
     except (OSError, json.JSONDecodeError) as exc:
@@ -1411,7 +1120,7 @@ def score_g2(
     counts = _normalized_class_counts(
         man.get("component_class_split") or man.get("component_split")
     )
-    returned = float(man["total_returned_m3"])  # type: ignore[arg-type]
+    returned = float(man["total_returned_m3"])
     typer.echo(
         f"G2 {verdict.upper()} | outfall_terminating={counts['outfall_terminating']} "
         f"dead_end={counts['dead_end']} (node-class counts) | "
@@ -1419,17 +1128,15 @@ def score_g2(
     )
     typer.echo(f"  {reason}")
     if sus == "NOT_ASSESSED":
-        # Reaching here means surcharging_steps > 0: exactly the run shape where
-        # dead-end contamination matters and must not pass looking clean (item E-ii).
-        # The headline above still carries SUSPICIOUS=NOT_ASSESSED; this names WHY.
+
         typer.echo("WARNING: dead-end contamination UNASSESSED - no gt_attribution block")
     if verdict == "fail":
         raise typer.Exit(code=1)
 
 
-def main() -> None:  # pragma: no cover
+def main() -> None:
     app()
 
 
-if __name__ == "__main__":  # pragma: no cover
+if __name__ == "__main__":
     main()

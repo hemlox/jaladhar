@@ -1,19 +1,7 @@
-"""WF-1 drain-graph build pipeline (orchestrator-owned).
-
-Runs the full literal-pin composite end to end on CPU:
-
-    loader.load_reaches -> stitch.stitch_components -> capacity.assign_capacity
-    -> graph_io.finalize_manifest -> graph_io.write_candidate (publish gated)
-
+"""-> graph_io.finalize_manifest -> graph_io.write_candidate (publish gated)
 Rule 6: the run manifest is created by graph_io.init_manifest at start
-(status "running") and updated in place by finalize/write_candidate.
-Rule 7: every module resolves its own config keys with aggregated errors.
-
-Expected honest end state (pre-registered, spec.md ACCEPTANCE RULE):
 status="stopped_owner_adjudication" while component_count_post_stitch > 1 and/or
-capacity_status == "blocked_missing_design_intensity"; candidate artefacts live
-only under runs/drain_graph_build/ - nothing is placed at data/processed/.
-"""
+capacity_status == "blocked_missing_design_intensity"; candidate artefacts live"""
 
 from __future__ import annotations
 

@@ -1,23 +1,14 @@
-"""Closed-form analytical solutions for shallow water validation ladder.
-
-This module provides exact closed-form benchmark solutions to validate the ACC
-(local-inertial, Bates et al. 2010) solver:
-  1. Ritter (1892) dry-bed dam break (frictionless, advection-dominated, Fr >= 1)
-  2. Stoker (1957) wet-bed dam break (frictionless, shock-forming, Fr ~ 1.2)
-  3. Thacker (1981) oscillating flow in a parabolic bowl (frictionless, low-Froude, Fr ~ 0.03)
-  4. MacDonald (1997) steady channel flow with Manning friction (frictional, subcritical, Fr ~ 0.3)
-
+"""(local-inertial, Bates et al. 2010) solver:
+1. Ritter (1892) dry-bed dam break (frictionless, advection-dominated, Fr >= 1)
+2. Stoker (1957) wet-bed dam break (frictionless, shock-forming, Fr ~ 1.2)
+3. Thacker (1981) oscillating flow in a parabolic bowl (frictionless, low-Froude, Fr ~ 0.03)
+4. MacDonald (1997) steady channel flow with Manning friction (frictional, subcritical, Fr ~ 0.3)
 CRITICAL PHYSICS GUARD (CLAUDE.md V1-V8):
 The ACC formulation drops the nonlinear advection term (u * du/dx) to achieve
-computational efficiency and unconditional gradient stability.
-  - Cases 1 & 2 (Ritter, Stoker) are advection-dominated and high-Froude.
-    The solver is EXPECTED to disagree with the exact SWE solutions near the front.
-    These cases characterise the degradation envelope as a function of Froude number.
-  - Cases 3 & 4 (Thacker, MacDonald) operate at low Froude (Fr << 0.5). In Thacker,
-    spatial velocity gradient du/dx is identically zero, making it an exact
-    solution for both SWE and ACC. The solver is EXPECTED TO MATCH Thacker and
-    MacDonald to high precision.
-"""
+- Cases 1 & 2 (Ritter, Stoker) are advection-dominated and high-Froude.
+- Cases 3 & 4 (Thacker, MacDonald) operate at low Froude (Fr << 0.5). In Thacker,
+solution for both SWE and ACC. The solver is EXPECTED TO MATCH Thacker and
+MacDonald to high precision."""
 
 from __future__ import annotations
 
@@ -36,11 +27,7 @@ GRAVITY = 9.81
 
 @dataclass(frozen=True)
 class RitterCase:
-    """Ritter (1892) frictionless dry-bed dam break.
-
-    Reservoir depth h0 for x <= 0, dry bed (h=0) for x > 0.
-    Rarefaction wave expands between x = -t*sqrt(g*h0) and x = 2*t*sqrt(g*h0).
-    """
+    """Ritter (1892) frictionless dry-bed dam break."""
 
     h0: float = 1.0
     g: float = GRAVITY
@@ -50,7 +37,6 @@ class RitterCase:
         return math.sqrt(self.g * self.h0)
 
     def exact_h(self, x: np.ndarray, t: float) -> np.ndarray:
-        """Exact depth profile h(x, t)."""
         x_arr = np.asarray(x, dtype=np.float64)
         if t <= 0.0:
             return np.where(x_arr <= 0.0, self.h0, 0.0)
@@ -64,7 +50,6 @@ class RitterCase:
         return h
 
     def exact_u(self, x: np.ndarray, t: float) -> np.ndarray:
-        """Exact flow velocity profile u(x, t)."""
         x_arr = np.asarray(x, dtype=np.float64)
         if t <= 0.0:
             return np.zeros_like(x_arr)
@@ -79,7 +64,6 @@ class RitterCase:
         return self.exact_h(x, t) * self.exact_u(x, t)
 
     def froude(self, x: np.ndarray, t: float) -> np.ndarray:
-        """Froude number Fr(x, t) = u / sqrt(g*h)."""
         h = self.exact_h(x, t)
         u = self.exact_u(x, t)
         fr = np.zeros_like(h)
@@ -94,21 +78,20 @@ class RitterCase:
         width_cells: int = 3,
         device: str = "cpu",
     ) -> tuple[StaticFields, np.ndarray, torch.Tensor]:
-        """Create static fields, 1D x coordinates, and initial depth tensor."""
         nx = int(round(length_m / dx))
         ny = max(width_cells, 3)
         x = (np.arange(nx) + 0.5) * dx - (length_m / 2.0)
         z = np.zeros((ny, nx), dtype=np.float64)
         static = build_static_fields(
             z,
-            np.zeros((ny, nx), dtype=np.float64),  # frictionless n = 0
+            np.zeros((ny, nx), dtype=np.float64),
             np.ones((ny, nx), dtype=np.float64),
             np.zeros((ny, nx), dtype=np.float64),
             dx=dx,
             infil_mm_hr=0.0,
             min_conveyance_factor=0.05,
             min_bed_slope=1e-6,
-            edge_open=(0.0, 0.0, 0.0, 0.0),  # closed reflective walls
+            edge_open=(0.0, 0.0, 0.0, 0.0),
             device=device,
         )
         h0_1d = np.where(x <= 0.0, self.h0, 0.0).astype(np.float32)
@@ -118,12 +101,7 @@ class RitterCase:
 
 @dataclass(frozen=True)
 class StokerCase:
-    """Stoker (1957) frictionless wet-bed dam break (1D Riemann problem).
-
-    Upstream depth h0 for x <= 0, downstream depth h1 > 0 for x > 0.
-    Produces an upstream rarefaction wave, an intermediate plateau (hm, um),
-    and a downstream bore (shock) propagating at speed S.
-    """
+    """Stoker (1957) frictionless wet-bed dam break (1D Riemann problem)."""
 
     h0: float = 1.0
     h1: float = 0.1
@@ -143,7 +121,6 @@ class StokerCase:
 
     @property
     def hm(self) -> float:
-        """Intermediate plateau depth solving the Rankine-Hugoniot match."""
 
         def f(h_test: float) -> float:
             c_test = math.sqrt(self.g * h_test)
@@ -241,17 +218,11 @@ class StokerCase:
 @dataclass(frozen=True)
 class ThackerCase:
     """Thacker (1981) exact planar oscillation in a parabolic bowl.
+    This makes Thacker an exact solution for BOTH full SWE and ACC local-inertial schemes."""
 
-    Bed topography: z(x) = h0 * (x / a)^2
-    Water surface oscillates as an inclined plane with frequency omega = sqrt(2*g*h0) / a.
-    Velocity u(x, t) = -eta0 * omega * sin(omega * t) is SPATIALLY UNIFORM,
-    so du/dx = 0 identically -> nonlinear advection term u*du/dx is IDENTICALLY ZERO.
-    This makes Thacker an exact solution for BOTH full SWE and ACC local-inertial schemes.
-    """
-
-    a: float = 1000.0  # bowl half-width (m)
-    h0: float = 1.0  # central water depth at rest (m)
-    eta0: float = 20.0  # oscillation amplitude (m)
+    a: float = 1000.0
+    h0: float = 1.0
+    eta0: float = 20.0
     g: float = GRAVITY
 
     @property
@@ -319,11 +290,8 @@ class ThackerCase:
 @dataclass(frozen=True)
 class MacDonaldCase:
     """MacDonald (1997) steady 1D subcritical channel flow with Manning friction.
-
     Prescribes a smooth subcritical depth profile h(x) with unit discharge q0.
-    The bed elevation z(x) is derived to balance friction and pressure gradient:
-      dz/dx = (Fr^2 - 1) * dh/dx - Sf, where Sf = (n*q0)^2 / h^(10/3).
-    """
+    The bed elevation z(x) is derived to balance friction and pressure gradient:"""
 
     length_m: float = 1000.0
     q0: float = 1.0
@@ -381,7 +349,7 @@ class MacDonaldCase:
             infil_mm_hr=0.0,
             min_conveyance_factor=0.05,
             min_bed_slope=1e-4,
-            edge_open=(0.0, 1.0, 0.0, 0.0),  # west closed, east open outfall
+            edge_open=(0.0, 1.0, 0.0, 0.0),
             device=device,
         )
         h0_1d = self.exact_h(x).astype(np.float32)

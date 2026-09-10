@@ -49,14 +49,12 @@ test_exchange.py (fixture STYLE reused, values different).
 
 from __future__ import annotations
 
-import importlib.util
 import math
-import sys
-import tempfile
 from pathlib import Path
 
 import pytest
 import torch
+from conftest import load_mutated_source, static_fields
 
 from jaladhar.coupling.config import resolve_config
 from jaladhar.coupling.exchange import (
@@ -73,23 +71,18 @@ EXCHANGE_SRC = REPO / "src" / "jaladhar" / "coupling" / "exchange.py"
 RED_DEMO_ROOT = Path("/tmp") / "opencode"
 
 # Hand-computation constants — typed LITERALLY here (V2: the reference shares no code with
-# jaladhar.coupling.exchange; every config-sourced float is marked at the use site).
-CW = 1.7  # FHWA HEC-22 / EPA SWMM Ref Manual Vol II (weir forms) — spec §6
-CD = 0.65  # ditto (orifice forms) — spec §6
-G = 9.81  # m/s2 — solver physics.gravity_m_s2 parity — spec §6
-AREA = 100.0  # m2, contract units block (loader refuses any other producer cell area)
+
+CW = 1.7
+CD = 0.65
+G = 9.81
+AREA = 100.0
 
 # V5 mutation anchors — full lines, asserted to occur EXACTLY ONCE in the committed source so the
-# demos break loudly instead of mutating nothing if exchange.py ever drifts.
+
 _ANCHOR_CAP_LINE = "    return torch.minimum(hydraulic_rate_depth, cap_depth)"
 _MUTANT_UNCONDITIONAL = "    return hydraulic_rate_depth"
 _ANCHOR_FRACTION = "CAPTURE_CAP_FRACTION: float = 0.9"
 _MUTANT_FRACTION_1_1 = "CAPTURE_CAP_FRACTION: float = 1.1"
-
-
-# ---------------------------------------------------------------------------
-# Fixtures (declared-synthetic; through the PRODUCTION assembly path)
-# ---------------------------------------------------------------------------
 
 
 @pytest.fixture(scope="session")
@@ -106,12 +99,6 @@ def _toy_graph(
     nmap: torch.Tensor,
     outfalls: tuple[int, ...] = (),
 ) -> DrainGraph:
-    """edges (from_id, to_id, cap_or_None), 1-based ids; ownership via nmap (test_exchange style).
-
-    An empty edge list gets ONE null-capacity edge appended (Q == 0 ALWAYS, D-C pin): production
-    ``build_drain_graph`` reduces over the edge tensors and cannot accept an empty edge set; the
-    appended edge is physically inert for every assertion here.
-    """
     if not edges:
         edges = [(1, num_nodes if num_nodes >= 2 else 2, None)]
         num_nodes = max(num_nodes, 2)
@@ -144,32 +131,10 @@ def _toy_graph(
 
 
 def _static_zero(shape: tuple[int, int]) -> StaticFields:
-    """Dry StaticFields shell with drain_cap EXACTLY zero (coupled-mode state)."""
-    hh, ww = shape
-    z = lambda *s: torch.zeros(*s, dtype=torch.float32)  # noqa: E731
-    return StaticFields(
-        dz_x=z(hh, ww - 1),
-        dz_y=z(hh - 1, ww),
-        n_x=z(hh, ww - 1),
-        n_y=z(hh - 1, ww),
-        c_x=z(hh, ww - 1),
-        c_y=z(hh - 1, ww),
-        drain_cap_m_s=z(hh, ww),
-        infil_rate_m_s=z(hh, ww),
-        edge_w_n=z(hh),
-        edge_e_n=z(hh),
-        edge_n_n=z(ww),
-        edge_n_s=z(ww),
-        edge_s_n=z(ww),
-        edge_w_s=z(hh),
-        edge_e_s=z(hh),
-        edge_s_s=z(ww),
-        shape=shape,
-    )
+    return static_fields(shape, zeroed=True)
 
 
 def _state(heads: list[float]) -> NodeState:
-    """NodeState preset to given f32 heads, zero books."""
     hs = torch.tensor(heads, dtype=torch.float32)
     z64 = torch.zeros(len(heads), dtype=torch.float64)
     return NodeState(h_node_m=hs, vol_in_m3_cum=z64, vol_out_m3_cum=z64.clone())
@@ -178,7 +143,6 @@ def _state(heads: list[float]) -> NodeState:
 def _run(
     fn_couple_step, h: torch.Tensor, graph: DrainGraph, node_state: NodeState, dt: float
 ) -> CoupleResult:
-    """Drive ONE couple_step (pristine or mutated module) through the standard call shape."""
     st = _static_zero(tuple(h.shape))
     qx = torch.zeros(h.shape[0], h.shape[1] - 1)
     qy = torch.zeros(h.shape[0] - 1, h.shape[1])
@@ -192,12 +156,6 @@ def _bounds_reference(
     dt: float,
     cfg,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-    """Independent recomputation of BOTH per-cell bounds from inputs + resolved config ONLY.
-
-    Returns (cap_depth, hydraulic_rate_depth, owner_index, mapped_mask) over the FLATTENED
-    allocated cells, f64. Spec §6 forms typed literally: regime switch from config, clamp-first
-    floors, no-reverse-capture gate as a multiplicative mask. Shares no code with exchange.py.
-    """
     frac = float(cfg.exchange.capture_cap_fraction)
     hf = float(cfg.exchange.hf_floor_m)
     switch = float(cfg.exchange.regime_switch_m)
@@ -223,37 +181,9 @@ def _load_mutated_exchange(replacements: list[tuple[str, str]], tag: str) -> tup
     The repo source is NEVER modified. Each old string must occur EXACTLY ONCE in the committed
     source — a drift fails HERE, loudly, rather than mutating nothing (a vacuous red demo).
     """
-    src = EXCHANGE_SRC.read_text()
-    out = src
-    for old, new in replacements:
-        n = out.count(old)
-        if n != 1:
-            raise AssertionError(
-                f"[inv03 red demo] mutation anchor occurs {n}x (need exactly 1) — "
-                f"exchange.py drifted past the demo; fix the anchor: {old!r}"
-            )
-        out = out.replace(old, new)
-    if out == src:
-        raise AssertionError("[inv03 red demo] replacements produced no textual change")
-    RED_DEMO_ROOT.mkdir(parents=True, exist_ok=True)
-    work = Path(tempfile.mkdtemp(prefix=f"inv03_{tag}_", dir=RED_DEMO_ROOT))
-    path = work / "exchange_mutated.py"
-    path.write_text(out)
-    spec = importlib.util.spec_from_file_location(f"_inv03_exchange_mutated_{tag}", path)
-    if spec is None or spec.loader is None:
-        raise AssertionError(f"[inv03 red demo] could not spec-load {path}")
-    mod = importlib.util.module_from_spec(spec)
-    # Register BEFORE exec: the copy keeps `from __future__ import annotations`, and dataclass
-    # field processing resolves string annotations via sys.modules[cls.__module__] — an
-    # unregistered module Nones out there (AttributeError deep in dataclasses.py).
-    sys.modules[spec.name] = mod
-    spec.loader.exec_module(mod)
-    return mod, path
-
-
-# ---------------------------------------------------------------------------
-# GREEN — invariant #3 proper, against independent recomputation
-# ---------------------------------------------------------------------------
+    return load_mutated_source(
+        EXCHANGE_SRC, replacements, tag=tag, prefix="inv03", directory=RED_DEMO_ROOT
+    )
 
 
 class TestCaptureBoundGreen:
@@ -327,11 +257,9 @@ class TestCaptureBoundGreen:
                     f"{float((got_m - hyd).max()):.3e} m over rate {float(hyd.max()):.6f} m"
                 )
                 # Binding-coverage evidence (V7, inv04's pattern): count cell-steps where
-                # the stability cap actually BINDS (captured AT the cap value, cap > 0 so
-                # sub-floor zeros cannot masquerade as bindings — Phase-1 #15 vacuity
-                # class); asserted > 0 at sweep end below.
+
                 cap_bound_cell_steps += int(((got_m >= cap * (1 - 1e-6)) & (cap > 0)).sum().item())
-                # claim clause 2 at NODE granularity: aggregated capture <= aggregated inlet rates
+
                 for j in range(g.num_nodes):
                     sel = owner == j
                     if not bool(sel.any()):
@@ -434,9 +362,7 @@ class TestCaptureBoundGreen:
         )
 
 
-# ---------------------------------------------------------------------------
 # RED DEMOS (V5) — /tmp copies only; repo source untouched
-# ---------------------------------------------------------------------------
 
 
 class TestCaptureCapRedDemos:
@@ -457,10 +383,9 @@ class TestCaptureCapRedDemos:
         hf = float(cfg.exchange.hf_floor_m)
         dt = 0.48
 
-        # --- Fixture A: bound violation observable, no exit-guard involvement ------------------
         g_a = _toy_graph([], 1, widths=[950.0], nmap=torch.tensor([[1]], dtype=torch.int32))
         h_a = torch.full((1, 1), 2.0, dtype=torch.float32)
-        bound_a = frac * max(0.0, float(h_a[0, 0]) - hf)  # 0.9*(2 - 0.001) = 1.7991 m
+        bound_a = frac * max(0.0, float(h_a[0, 0]) - hf)
 
         cr_ok = _run(couple_step, h_a.clone(), g_a, build_node_state(g_a), dt)
         got_ok = float(cr_ok.captured_depth_m[0, 0])
@@ -488,7 +413,6 @@ class TestCaptureCapRedDemos:
             f"mutated copy: {path_a}"
         )
 
-        # --- Fixture B: the loud trip — unconditional capture drains more than the pond --------
         g_b = _toy_graph([], 1, widths=[5000.0], nmap=torch.tensor([[1]], dtype=torch.int32))
         h_b = torch.full((1, 1), 2.0, dtype=torch.float32)
         cr_ok_b = _run(couple_step, h_b.clone(), g_b, build_node_state(g_b), dt)
@@ -496,7 +420,7 @@ class TestCaptureCapRedDemos:
 
         with pytest.raises(RuntimeError, match="negative") as excinfo:
             # mutant calls need the MUTANT's own NodeState class: couple_step isinstance-checks
-            # its node_state argument against its own module-level NodeState.
+
             _run(mut.couple_step, h_b.clone(), g_b, mut.build_node_state(g_b), dt)
         failing = str(excinfo.value)
         assert "capture cap invariant" in failing, failing

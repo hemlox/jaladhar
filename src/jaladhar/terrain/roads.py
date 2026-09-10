@@ -1,32 +1,5 @@
-"""Road centrelines and road-segment IDs for the JALADHAR terrain pipeline.
-
-ONE OSM/Overpass fetch produces TWO outputs that must come from the SAME
-query, never two separate ones — if the burn geometry and the ID raster came
-from different queries, the two ID sets could silently diverge and the join
-that §12's per-road-segment reporting depends on breaks with no exception:
-
-  (a) centreline geometry (a GeoPackage), handed off to `conditioning.py`
-      (not built this session) for burning into the DEM as shallow channels;
-  (b) a `road_segment_id` int32 raster on the CANONICAL (unbuffered) Grid,
-      with a sidecar CSV mapping each dense integer ID back to the real OSM
-      way ID plus useful tags (highway class, name).
-
-Per-road-segment status ("closure", "routing around flooded segments",
-§12) is a TOPOLOGICAL claim we can defend — unlike per-square-metre depth at
-10 m resolution, which we cannot (§14.1). This module is what makes that
-topology exist as data.
-
-Scope: drivable network only (`configs/domain_bengaluru.yaml` `roads.
-highway_types`) — footway/path/steps/cycleway/pedestrian/bridleway/corridor
-are not vehicle-routable and are excluded, matching §12's routing/closure
-use case rather than every pedestrian path in the city.
-
-Dense re-indexing, not raw OSM IDs: OSM way IDs are 64-bit and can exceed
-int32 range, but the plan specifies an int32 raster. Segment IDs here are a
-contiguous 1..N sequence assigned by SORTING on the real OSM way ID first —
-deterministic and reproducible run-to-run — with the OSM ID preserved in the
-sidecar table (invariant 11: unique, and round-trips to a real OSM feature).
-"""
+"""Scope: drivable network only (`configs/domain_bengaluru.yaml` `roads.
+sidecar table (invariant 11: unique, and round-trips to a real OSM feature)."""
 
 from __future__ import annotations
 
@@ -48,23 +21,14 @@ REPO = Path(__file__).resolve().parents[3]
 
 
 class RoadFetchError(Exception):
-    """Overpass/OSM fetch failed or returned nothing usable.
-
-    Per CLAUDE.md rule 1: the caller stops and reports this. It must never
-    be caught and silently papered over with an empty/synthetic road layer.
-    """
+    """Per CLAUDE.md rule 1: the caller stops and reports this. It must never
+    be caught and silently papered over with an empty/synthetic road layer."""
 
 
 def fetch_osm_roads(
     query_polygon_wgs84: Any, highway_types: list[str], timeout_s: int
 ) -> gpd.GeoDataFrame:
-    """Fetch highway=* features within a WGS84 polygon via Overpass.
-
-    Returns a GeoDataFrame in WGS84 (osmnx's native output CRS), filtered to
-    `highway_types` and to LineString/MultiLineString geometry (a `highway`
-    tag can appear on an area-mapped polygon too — e.g. a pedestrian plaza —
-    which is not a centreline and is out of scope here).
-    """
+    """which is not a centreline and is out of scope here)."""
     ox.settings.requests_timeout = timeout_s
     ox.settings.log_console = False
     try:
@@ -86,14 +50,6 @@ def fetch_osm_roads(
 
 
 def assign_segment_ids(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
-    """Dense, deterministic int32 `segment_id` (1..N), sorted by OSM way ID.
-
-    osmnx exposes the OSM element ID via the GeoDataFrame index for
-    `features_from_polygon` results (a (element_type, osmid) MultiIndex).
-    Sorting by that raw ID before assigning 1..N makes the mapping
-    reproducible across runs even if Overpass ever returns features in a
-    different order.
-    """
     gdf = gdf.reset_index()
     id_col = "osmid" if "osmid" in gdf.columns else "id"
     gdf = gdf.sort_values(id_col, kind="stable").reset_index(drop=True)
@@ -103,19 +59,6 @@ def assign_segment_ids(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
 
 
 def rasterize_segment_ids(gdf_proj: gpd.GeoDataFrame, grid: Grid) -> np.ndarray:
-    """Burn `segment_id` onto the canonical Grid. 0 = no road (nodata).
-
-    `all_touched=True` gives a connected line of cells along each
-    centreline's path (standard for line-burning; a `False` setting can
-    leave gaps at shallow-angle crossings, which would break the burn
-    conditioning.py performs later and any connectivity-dependent use of
-    this raster, e.g. tracing a segment along the network).
-
-    Shapes are rasterized in ASCENDING segment_id order, so at the rare
-    pixel where two segments' lines cross in exactly the same cell, the
-    higher segment_id deterministically wins (rasterize's last-shape-wins
-    semantics) — reproducible, not an artifact of dict/iteration order.
-    """
     shapes = list(
         zip(
             gdf_proj.sort_values("segment_id")["geometry"],
@@ -135,14 +78,14 @@ def rasterize_segment_ids(gdf_proj: gpd.GeoDataFrame, grid: Grid) -> np.ndarray:
 
 
 def build_roads(cfg: dict[str, Any], repo_root: Path = REPO) -> dict[str, Any]:
-    """Fetch, ID, and rasterize the drivable road network over the buffered domain. Returns manifest fields."""
+    """Fetch, ID, and rasterize the drivable road network over the buffered domain. Returns manifest
+    fields."""  # noqa: E501
     grid, grid_diag = build_grid(cfg, repo_root)
     buffer_m = float(cfg["dem"]["buffer_m"])
     buffered_grid = grid.buffered(buffer_m)
     buf_cells = round(buffer_m / grid.resolution)
     r_cfg = cfg["roads"]
 
-    # Compute bounding box of the BUFFERED domain in WGS84
     buffered_box_proj = box(*buffered_grid.bounds)
     buffered_box_wgs84 = (
         gpd.GeoSeries([buffered_box_proj], crs=grid.crs).to_crs("EPSG:4326").iloc[0]
@@ -164,7 +107,6 @@ def build_roads(cfg: dict[str, Any], repo_root: Path = REPO) -> dict[str, Any]:
     gdf = assign_segment_ids(gdf)
     gdf_proj = gdf.to_crs(grid.crs)
 
-    # Rasterize on the BUFFERED grid
     id_raster_buffered = rasterize_segment_ids(gdf_proj, buffered_grid)
     buffered_grid.assert_aligned(
         {
@@ -175,7 +117,6 @@ def build_roads(cfg: dict[str, Any], repo_root: Path = REPO) -> dict[str, Any]:
         }
     )
 
-    # Crop to the canonical grid
     id_raster_canonical = id_raster_buffered[
         buf_cells : buf_cells + grid.height, buf_cells : buf_cells + grid.width
     ]
@@ -196,21 +137,23 @@ def build_roads(cfg: dict[str, Any], repo_root: Path = REPO) -> dict[str, Any]:
     lookup_cols = [c for c in ["segment_id", "osm_id", "highway", "name"] if c in gdf_out.columns]
     gdf_out[lookup_cols].to_csv(lookup_path, index=False)
 
-    # Write buffered raster
     buffered_raster_path = interim_dir / "road_segment_id_buffered.tif"
     buffered_profile = buffered_grid.profile(dtype="int32", nodata=0, compress="deflate")
     with rasterio.open(buffered_raster_path, "w", **buffered_profile) as dst:
         dst.write(id_raster_buffered, 1)
 
-    # Write canonical raster
     raster_path = interim_dir / "road_segment_id.tif"
     profile = grid.profile(dtype="int32", nodata=0, compress="deflate")
     with rasterio.open(raster_path, "w", **profile) as dst:
         dst.write(id_raster_canonical, 1)
 
     n_ids = int(id_raster_buffered.max())
-    n_unique_raster_ids = len(np.unique(id_raster_canonical)) - (1 if 0 in id_raster_canonical else 0)
-    n_unique_buffered_ids = len(np.unique(id_raster_buffered)) - (1 if 0 in id_raster_buffered else 0)
+    n_unique_raster_ids = len(np.unique(id_raster_canonical)) - (
+        1 if 0 in id_raster_canonical else 0
+    )
+    n_unique_buffered_ids = len(np.unique(id_raster_buffered)) - (
+        1 if 0 in id_raster_buffered else 0
+    )
     ids_are_unique = gdf_out["segment_id"].is_unique
     osm_ids_are_unique = gdf_out["osm_id"].is_unique
 
@@ -243,7 +186,6 @@ def main(
         REPO / "runs" / "terrain_roads", help="Directory to write the manifest into"
     ),
 ) -> None:
-    """Fetch OSM road centrelines, assign segment IDs, rasterize onto the canonical grid."""
     cfg = load_config(config)
     try:
         result = run_stage("phase1_terrain_roads", build_roads, cfg, config, REPO, out)

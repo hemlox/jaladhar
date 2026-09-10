@@ -59,7 +59,6 @@ V7 SCOPE (each scope stated beside its claim; overall label: PARTIAL):
 
 from __future__ import annotations
 
-import copy
 import json
 import math
 import os
@@ -73,121 +72,32 @@ from pathlib import Path
 import pytest
 import torch
 import yaml
+from conftest import chain_graph, closed_solver_config, hermetic_config, static_fields
 from typer.testing import CliRunner
 
 from jaladhar.coupling.config import resolve_config
 from jaladhar.coupling.diagnostics import app as diagnostics_app
-from jaladhar.coupling.router import RefuseLoadError, build_drain_graph, load_drain_graph
+from jaladhar.coupling.router import RefuseLoadError, load_drain_graph
 from jaladhar.coupling.solver_hook import simulate_coupled
 from jaladhar.solver.run import uniform_storm
-from jaladhar.solver.state import StaticFields, load_solver_config
 
 REPO = Path(__file__).resolve().parents[2]
 G2_HEADLINE = "G2 FAIL: NO NODE EVER SURCHARGED"
 CSV_HEADER = "node_id,total_returned_m3,first_step,last_step,max_head_m"
 
-
-# ---------------------------------------------------------------------------
-# Fixtures — the proven injected-small-graph + wet-storm pattern reused verbatim
-# from tests/coupling/test_solver_hook.py (declared-synthetic; NOT Bengaluru data).
-# ---------------------------------------------------------------------------
+_static = static_fields
+_chain_graph = chain_graph
 
 
-def _static(shape: tuple[int, int], *, drain_cap_m_s: float = 3.2e-6) -> StaticFields:
-    """Flat closed micro-domain with a LIVE legacy drain prior (zeroing must matter)."""
-    hh, ww = shape
-    z = lambda *s: torch.zeros(*s, dtype=torch.float32)  # noqa: E731
-    f = lambda *s, v=0.0: torch.full((*s,), v, dtype=torch.float32)  # noqa: E731
-    return StaticFields(
-        dz_x=z(hh, ww - 1),
-        dz_y=z(hh - 1, ww),
-        n_x=f(hh, ww - 1, v=0.03),
-        n_y=f(hh - 1, ww, v=0.03),
-        c_x=torch.ones(hh, ww - 1, dtype=torch.float32),
-        c_y=torch.ones(hh - 1, ww, dtype=torch.float32),
-        drain_cap_m_s=f(hh, ww, v=drain_cap_m_s),
-        infil_rate_m_s=z(hh, ww),
-        edge_w_n=f(hh, v=0.03),
-        edge_e_n=f(hh, v=0.03),
-        edge_n_n=f(ww, v=0.03),
-        edge_s_n=f(ww, v=0.03),
-        edge_w_s=f(hh, v=1e-4),
-        edge_e_s=f(hh, v=1e-4),
-        edge_n_s=f(ww, v=1e-4),
-        edge_s_s=f(ww, v=1e-4),
-        edge_open=(0.0, 0.0, 0.0, 0.0),  # CLOSED micro-domain: boundary_out == 0 exactly
-        shape=shape,
-    )
-
-
-def _chain_graph(rows: int, cols: int, n_nodes: int = 8, cap: float = 0.05):
-    """Capacity-bearing chain across distinct cells; terminal node is an outfall."""
-    base_r, base_c = max(1, rows // 8), max(1, cols // 8)
-    cells = [(base_r + i, base_c) for i in range(n_nodes)]
-    assert cells[-1][0] < rows and cells[-1][1] < cols
-    nmap = torch.full((rows, cols), -1, dtype=torch.int32)
-    for i, (r, c) in enumerate(cells):
-        nmap[r, c] = i + 1
-    edges = [(i, i + 1, cap) for i in range(1, n_nodes)]
-    edge_from = torch.tensor([e[0] - 1 for e in edges], dtype=torch.int64)
-    edge_to = torch.tensor([e[1] - 1 for e in edges], dtype=torch.int64)
-    cb = torch.ones(len(edges), dtype=torch.bool)
-    q_cap = torch.tensor([float(e[2]) for e in edges], dtype=torch.float64)
-    outfall = torch.zeros(n_nodes, dtype=torch.bool)
-    outfall[n_nodes - 1] = True
-    return build_drain_graph(
-        edge_from=edge_from,
-        edge_to=edge_to,
-        capacity_bearing=cb,
-        q_cap_nom_m3s=q_cap,
-        width_mean_m=torch.tensor([6.71] * n_nodes, dtype=torch.float64),
-        shaft_length_proxy_m=1.0,
-        node_elev_m=torch.linspace(10.0, 0.0, n_nodes, dtype=torch.float64),
-        contrib_area_m2=torch.zeros(n_nodes, dtype=torch.float64),
-        outfall_node=outfall,
-        node_cell_row=torch.tensor([c[0] for c in cells], dtype=torch.int32),
-        node_cell_col=torch.tensor([c[1] for c in cells], dtype=torch.int32),
-        node_id_map=nmap,
-        node_cell_count=torch.ones(n_nodes, dtype=torch.int64),
-    )
+def _solver_cfg():
+    return closed_solver_config(REPO)
 
 
 def _hermetic_cfg(tmp_path: Path, subdir: str = "run"):
-    """Coupling cfg with tmp outputs AND a valid falsifier set under tmp_path, so these
-    tests never depend on the repo's realized preregistration artefact."""
-    run_dir = tmp_path / subdir
-    fset = tmp_path / f"falsifier_{subdir}.json"
-    fset.write_text(
-        json.dumps(
-            {
-                "n_predicted_edges": 1,
-                "predicted_node_ids": [1],
-                "source_gpkg_sha256": "0" * 64,
-            }
-        )
-    )
-    base = resolve_config(REPO / "configs" / "coupling.yaml", REPO)
-    outs = dc_replace(
-        base.outputs,
-        run_dir=run_dir,
-        manifest=run_dir / "manifest.json",
-        surcharge_events_csv=run_dir / "products" / "surcharge_events.csv",
-        event_continuity_csv=run_dir / "products" / "event_continuity.csv",
-        depth_series_dir=run_dir / "depth",
-    )
-    return dc_replace(
-        base, outputs=outs, diagnostics=dc_replace(base.diagnostics, falsifier_set=fset)
-    )
-
-
-def _solver_cfg() -> dict:
-    cfg = copy.deepcopy(load_solver_config(REPO / "configs" / "solver.yaml", REPO))
-    cfg["boundaries"]["mode"] = "closed"  # closed synthetic micro-domain
-    return cfg
+    return hermetic_config(REPO, tmp_path, subdir=subdir)
 
 
 def _install_cli_fixtures(monkeypatch, cfg, *, n_nodes: int, shape: tuple[int, int]):
-    """Point the solver_hook CLI's lookups at hermetic toy fixtures (existing pattern)."""
     import jaladhar.coupling.solver_hook as hook
 
     monkeypatch.setattr(hook, "resolve_config", lambda p, r: cfg)
@@ -195,11 +105,6 @@ def _install_cli_fixtures(monkeypatch, cfg, *, n_nodes: int, shape: tuple[int, i
         hook, "load_drain_graph", lambda c, r, window=None: _chain_graph(*shape, n_nodes=n_nodes)
     )
     monkeypatch.setattr(hook, "load_domain", lambda *a, **k: _static(shape))
-
-
-# ---------------------------------------------------------------------------
-# ARM (a) — GREEN: a wet over-capacity storm surcharges with non-zero volume
-# ---------------------------------------------------------------------------
 
 
 class TestArmAWetStormSurcharges:
@@ -248,17 +153,13 @@ class TestArmAWetStormSurcharges:
         events = led.flush_open_events()
         assert len(events) >= 1 and all(e["total_returned_m3"] > 0.0 for e in events)
 
-        # realized BYTES on disk, not the return object (V1): CSV schema + volume reconcile
         man = json.loads(cfg.outputs.manifest.read_text())
         lines = Path(man["surcharge_events_csv"]).read_text().splitlines()
         assert lines[0] == CSV_HEADER
         rows = lines[1:]
         assert len(rows) >= 1
-        csv_vol = sum(float(r.split(",")[1]) for r in rows)  # repr-precision floats on disk
-        # Reconciliation EQUALITY (strengthened from the one-sided ">= floor on each
-        # side"): the CSV rows are the per-event partition of the SAME per-step return
-        # increments that build led.surcharge_returned_m3, so the two sides must agree to
-        # f64 addition-order noise — not merely both clear the G2 floor independently.
+        csv_vol = sum(float(r.split(",")[1]) for r in rows)
+
         assert abs(csv_vol - led.surcharge_returned_m3) <= 1e-9 * max(
             1.0, led.surcharge_returned_m3
         ), (
@@ -267,13 +168,12 @@ class TestArmAWetStormSurcharges:
             "event partition"
         )
 
-        # detector quiet on a genuinely wet run — the positive arm is satisfiable
         assert res.g2_anti_vacuity_fail is False
         assert man["status"] == "completed"
         assert man["g2"]["anti_vacuity_fail"] is False
         assert man["total_surcharging_steps"] == led.total_surcharging_steps
         assert man["total_returned_m3"] == led.surcharge_returned_m3
-        # original StaticFields untouched bitwise (guard a, incidental realized check)
+
         assert torch.equal(static_before.drain_cap_m_s, drain_before)
 
     def test_wet_control_cli_exits_zero_without_headline(self, tmp_path, monkeypatch):
@@ -295,11 +195,6 @@ class TestArmAWetStormSurcharges:
         assert man["total_surcharging_steps"] > 0
         assert man["total_returned_m3"] >= cfg.diagnostics.g2_min_returned_m3
         assert man["g2"]["anti_vacuity_fail"] is False
-
-
-# ---------------------------------------------------------------------------
-# ARM (b) — GREEN: a dry/no-surcharge run is DETECTED and REPORTED AS FAILURE
-# ---------------------------------------------------------------------------
 
 
 class TestArmBDryRunReportedAsFailure:
@@ -331,11 +226,10 @@ class TestArmBDryRunReportedAsFailure:
             mass_check_every=10_000_000,
         )
 
-        # detection inputs, realized on the ledger
         assert res.steps == 3
         assert res.ledger.total_surcharging_steps == 0
         assert res.ledger.surcharge_returned_m3 < floor
-        # detection surfaces: result object, returned manifest, DISK bytes (V1)
+
         assert res.g2_anti_vacuity_fail is True
         assert res.final_manifest["g2"]["anti_vacuity_fail"] is True
         man = json.loads(cfg.outputs.manifest.read_text())
@@ -343,11 +237,10 @@ class TestArmBDryRunReportedAsFailure:
         assert man["g2"]["anti_vacuity_fail"] is True
         assert man["total_surcharging_steps"] == 0
         assert man["total_returned_m3"] == res.ledger.surcharge_returned_m3 < floor
-        # the vacuous window also produced a header-only CSV (zero rows allowed, G2 fails)
+
         assert Path(man["surcharge_events_csv"]).read_text().splitlines()[0] == CSV_HEADER
         assert len(Path(man["surcharge_events_csv"]).read_text().splitlines()) == 1
 
-        # reporting: solver_hook CLI (CliRunner) exits 1 with the headline FIRST
         cli_cfg = _hermetic_cfg(tmp_path, "dry_cli")
         cli_cfg = dc_replace(cli_cfg, smoke=dc_replace(cli_cfg.smoke, duration_s=30.0, max_steps=3))
         _install_cli_fixtures(monkeypatch, cli_cfg, n_nodes=2, shape=(16, 16))
@@ -363,15 +256,12 @@ class TestArmBDryRunReportedAsFailure:
         assert cli_man["total_surcharging_steps"] == 0
         assert cli_man["g2"]["anti_vacuity_fail"] is True
 
-        # reporting: the gate reporter scores the SAME realized library-manifest bytes
         gate = CliRunner().invoke(diagnostics_app, ["score-g2", str(cfg.outputs.manifest)])
         assert gate.exit_code == 1, gate.output
         assert G2_HEADLINE in gate.output.splitlines()[0]
 
 
-# ---------------------------------------------------------------------------
 # RED DEMOS (V5) — /tmp mirrors only; the repo tree is never modified
-# ---------------------------------------------------------------------------
 
 _DRIVER_SOURCE = '''
 """INV02 red-demo driver — runs INSIDE a subprocess against a mirrored src tree.
@@ -412,20 +302,16 @@ from jaladhar.solver.state import StaticFields, load_solver_config  # noqa: E402
 CSV_HEADER = "node_id,total_returned_m3,first_step,last_step,max_head_m"
 G2_HEADLINE = "G2 FAIL: NO NODE EVER SURCHARGED"
 
-
 def log(*parts) -> None:
     print("[inv02][" + MODE + "]", *parts, flush=True)
-
 
 def bail(code: int, msg: str) -> None:
     log(msg)
     raise SystemExit(code)
 
-
 def hard(cond, msg) -> None:
     if not cond:
         raise AssertionError(msg)
-
 
 # --- provenance: WHICH bytes are actually executing (V1) ----------------------
 log("exchange module:", ex_mod.__file__)
@@ -441,7 +327,6 @@ expected_fb = float("inf") if MODE == "mutant_a" else 1.5
 if ex_mod.ASSUMED_FREEBOARD_M != expected_fb:
     bail(5, "HARNESS ERROR: %s running with ASSUMED_FREEBOARD_M=%r (expected %r) — "
             "wrong mirror handed to this mode" % (MODE, ex_mod.ASSUMED_FREEBOARD_M, expected_fb))
-
 
 # --- fixtures: byte-equivalent to tests/coupling/test_solver_hook.py ----------
 def _static(shape, drain_cap_m_s=3.2e-6):
@@ -460,7 +345,6 @@ def _static(shape, drain_cap_m_s=3.2e-6):
         edge_n_s=f(ww, v=1e-4), edge_s_s=f(ww, v=1e-4),
         edge_open=(0.0, 0.0, 0.0, 0.0), shape=shape,
     )
-
 
 def _chain_graph(rows, cols, n_nodes=8, cap=0.05):
     base_r, base_c = max(1, rows // 8), max(1, cols // 8)
@@ -487,7 +371,6 @@ def _chain_graph(rows, cols, n_nodes=8, cap=0.05):
         node_cell_count=torch.ones(n_nodes, dtype=torch.int64),
     )
 
-
 def hermetic_cfg(run_dir: Path):
     fset = run_dir.parent / ("falsifier_" + run_dir.name + ".json")
     fset.parent.mkdir(parents=True, exist_ok=True)
@@ -504,12 +387,10 @@ def hermetic_cfg(run_dir: Path):
     return dc_replace(base, outputs=outs,
                       diagnostics=dc_replace(base.diagnostics, falsifier_set=fset))
 
-
 def solver_cfg():
     cfg = copy.deepcopy(load_solver_config(REPO / "configs" / "solver.yaml", REPO))
     cfg["boundaries"]["mode"] = "closed"
     return cfg
-
 
 def wet_run(run_dir: Path):
     cfg = hermetic_cfg(run_dir)
@@ -521,7 +402,6 @@ def wet_run(run_dir: Path):
         snapshot_every_s=900.0, smoke=True)
     return cfg, res
 
-
 def dry_run(run_dir: Path):
     cfg = hermetic_cfg(run_dir)
     res = hook_mod.simulate_coupled(
@@ -529,7 +409,6 @@ def dry_run(run_dir: Path):
         graph=_chain_graph(16, 16, n_nodes=2), static=_static((16, 16)),
         duration_s=30.0, max_steps=3, mass_check_every=10_000_000)
     return cfg, res
-
 
 def run_checks(checks):
     results = {}
@@ -543,7 +422,6 @@ def run_checks(checks):
             log("FAILED", name, "::", exc)
     return results
 
-
 def install_cli_fixtures(cfg, n_nodes, shape, duration_s, max_steps):
     # hook_mod.REPO derives REPO from __file__, which inside the mirror points at the
     # mirror root (no configs/) — repoint it at the real repo so the CLI's
@@ -555,10 +433,8 @@ def install_cli_fixtures(cfg, n_nodes, shape, duration_s, max_steps):
     hook_mod.load_domain = lambda *a, **k: _static(shape)
     return cfg
 
-
 def cli_invoke(cfg):
     return CliRunner().invoke(hook_mod.app, ["--config", "unused.yaml", "--smoke"])
-
 
 # --- ARM (a) checks: the GREEN wet-storm expectations ------------------------
 def arm_a_checks(cfg, res):
@@ -610,10 +486,8 @@ def arm_a_checks(cfg, res):
         "A6_manifest_reconciles_with_ledger": c6,
     }
 
-
 PHYSICS_ARM = ("A1_wet_total_surcharging_steps>=1", "A2_wet_total_returned_m3>=floor",
                "A3_wet_events>=1_positive_volume")
-
 
 def mode_control_a() -> None:
     cfg, res = wet_run(WORK / "control_a")
@@ -623,7 +497,6 @@ def mode_control_a() -> None:
         bail(4, "CONTROL-NOT-GREEN: pristine-mirror wet run failed its own checks: %r" % bad)
     log("CONTROL-GREEN: pristine mirror surcharges (%d steps, %r m3)"
         % (res.ledger.total_surcharging_steps, res.ledger.surcharge_returned_m3))
-
 
 def mode_mutant_a() -> None:
     cfg, res = wet_run(WORK / "mutant_a")
@@ -645,7 +518,6 @@ def mode_mutant_a() -> None:
                 "g2_anti_vacuity_fail=True — a never-surcharging coupling could pass")
     log("RED-CONFIRMED (mutation 1, freeboard->inf): wet-physics assertions A1/A2/A3 "
         "failed verbatim above; detector flagged the vacuous window (cannot pass)")
-
 
 # --- ARM (b) checks: the GREEN dry-run detection/reporting expectations ------
 def mode_control_b() -> None:
@@ -698,7 +570,6 @@ def mode_control_b() -> None:
         bail(4, "CONTROL-NOT-GREEN: pristine-mirror dry run failed its own checks: %r" % bad)
     log("CONTROL-GREEN: pristine mirror detects the vacuous window and exits 1")
 
-
 def mode_mutant_b() -> None:
     cli_cfg = install_cli_fixtures(hermetic_cfg(WORK / "mutant_b_cli"), 2, (16, 16), 30.0, 3)
     result = cli_invoke(cli_cfg)
@@ -719,7 +590,6 @@ def mode_mutant_b() -> None:
         "headline prints and the manifest still records the fail — the exact "
         "pre-2026-08-26 defect restored")
 
-
 def main() -> None:
     try:
         {"control_a": mode_control_a, "mutant_a": mode_mutant_a,
@@ -730,12 +600,10 @@ def main() -> None:
         traceback.print_exc()
         bail(5, "HARNESS ERROR: unexpected exception in mode %r (traceback above)" % MODE)
 
-
 if __name__ == "__main__":
     main()
 '''
 
-# Exact anchors (verified unique in the repo sources this session). If either anchor
 # drifts, the mirror builder REFUSES — an unapplied mutation is an invalid demo.
 _MUTATION_ANCHORS: dict[str, tuple[str, str]] = {
     "exchange": (
@@ -753,14 +621,9 @@ _MUTATION_ANCHORS: dict[str, tuple[str, str]] = {
     ),
 }
 
-
 _FREEBOARD_YAML_ANCHOR = (
     # targeted line replace for the mutation-1 PARITY surface: the mirrored
-    # coupling.yaml must carry the SAME +inf the mirrored exchange.py executes,
     # or config.py pass 4d refuses the mutant at resolve_config (declared/executed
-    # parity) and the demo dies before couple_step. Uniqueness asserted on apply;
-    # ``.inf`` is the YAML scalar PyYAML parses to float('inf') ('1e999' parses as
-    # a str under the YAML 1.1 resolver and would fail the 'num' kind check).
     "assumed_freeboard_m:",
     "  assumed_freeboard_m: .inf"
     "  # INV02 RED MUTATION 1 (parity surface): mirrors exchange.py\n"
@@ -792,7 +655,7 @@ def _write_parity_cfg(work: Path, target: str) -> None:
     out = _mutated_parity_cfg_path(work, target)
     out.parent.mkdir(parents=True)
     out.write_text("".join(lines), encoding="utf-8")
-    # realized-state verification of BOTH properties the demo depends on
+
     src_doc = yaml.safe_load(src_text)
     mut_doc = yaml.safe_load(out.read_text(encoding="utf-8"))
     fb = mut_doc["storage"]["assumed_freeboard_m"]
@@ -898,9 +761,9 @@ class TestRedDemos:
 
         mut = _run_demo("mutant_a", work, mutated, cfg_override=parity_cfg)
         assert mut.returncode == 0, f"mutation-1 demo protocol error: {mut.stdout[-4000:]}"
-        # BOTH surfaces carried inf into resolve_config (V1): the executed constant AND
+
         # the resolved yaml value — otherwise the mutant exercised the parity guard,
-        # not the surcharge branch.
+
         assert "ASSUMED_FREEBOARD_M = inf" in mut.stdout
         assert "resolved storage.assumed_freeboard_m = inf" in mut.stdout
         assert "MUTATION-DID-NOT-REDDEN" not in mut.stdout
@@ -930,9 +793,7 @@ class TestRedDemos:
         assert "RED-CONFIRMED" in mut.stdout
 
 
-# ---------------------------------------------------------------------------
 # BLOCKED companion (V7): the city-scale G2 event population over the real graph
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.slow

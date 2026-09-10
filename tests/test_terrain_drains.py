@@ -1,11 +1,6 @@
-"""Tests for terrain drain representation and capacity prior (BBMP & OSM side-by-side).
-
-Verification of:
-- Realized raster profiles, bounds, dtypes, and non-overwriting coexistence (V1).
+"""- Realized raster profiles, bounds, dtypes, and non-overwriting coexistence (V1).
 - V8 contract seam assertions between drain manifest producer and solver consumer.
-- Invariant V5 red-under-mutation testing on consumer-side assertions.
-- Statistical consistency of BBMP distance transform and exponential capacity decay.
-"""
+- Invariant V5 red-under-mutation testing on consumer-side assertions."""
 
 from __future__ import annotations
 
@@ -39,11 +34,8 @@ def _require_realized(*paths: Path) -> None:
 
 def test_source_artifacts_publish_identical_canonical_aliases_without_overwrite(tmp_path):
     """V2/V5: canonical bytes track selection while the other source survives.
-
     If publication breaks, the selected-source and canonical digests differ.
-    The deliberate canonical mutation below demonstrates that observable red
-    before republishing repairs it.
-    """
+    The deliberate canonical mutation below demonstrates that observable red"""
     osm = tmp_path / "waterways_osm.gpkg"
     bbmp = tmp_path / "waterways_bbmp.gpkg"
     canonical = tmp_path / "waterways.gpkg"
@@ -66,9 +58,7 @@ def test_source_artifacts_publish_identical_canonical_aliases_without_overwrite(
 
 def test_interrupted_publish_preserves_previous_canonical(tmp_path, monkeypatch):
     """If broken: a failed copy exposes partial bytes at the consumer path.
-
-    Scope: one source/canonical pair with a deliberately interrupted copy.
-    """
+    Scope: one source/canonical pair with a deliberately interrupted copy."""
     source = tmp_path / "drain_capacity_bbmp.tif"
     canonical = tmp_path / "drain_capacity.tif"
     source.write_bytes(b"new-complete-source")
@@ -85,17 +75,11 @@ def test_interrupted_publish_preserves_previous_canonical(tmp_path, monkeypatch)
     assert canonical.read_bytes() == b"previous-complete-canonical"
     assert list(tmp_path.glob(".drain_capacity.tif.*.tmp")) == []
 
+
 def test_bbmp_drain_rasters_match_grid_specs_when_realized():
     """Realized raster check (V1): verify canonical and buffered BBMP drain rasters.
-
     V5 red demonstration: on a clean machine without the BBMP boundary file
-    (data/raw/boundary/bbmp_wards_2023_final.kml) this test previously failed
-    hard with FileNotFoundError from build_grid instead of BLOCKED-skipping.
-    The review at runs/codex_phase3_review/REPORT.md §5 demonstrated that red:
-    1 failed / 145 passed before boundary was materialized, vs 0 failures after.
-    The fix gates the boundary precondition BEFORE build_grid via _require_realized,
-    so the test BLOCKED-skips naming the missing prerequisite, and passes when present.
-    """
+    (data/raw/boundary/bbmp_wards_2023_final.kml) this test previously failed"""
     cfg = load_config(REPO / "configs" / "domain_bengaluru.yaml")
     # Gate boundary precondition before build_grid (V8 seam: grid requires boundary)
     boundary_path = REPO / cfg["boundary"]["path"]
@@ -147,17 +131,14 @@ def test_osm_and_bbmp_rasters_coexist_side_by_side():
 
     _require_realized(osm_dist, bbmp_dist, osm_cap, bbmp_cap, osm_gpkg, bbmp_gpkg)
 
-    # Verify vector datasets are distinct
     gdf_osm = gpd.read_file(osm_gpkg)
     gdf_bbmp = gpd.read_file(bbmp_gpkg)
     assert not gdf_osm.empty
     assert not gdf_bbmp.empty
 
-    # Verify raster data arrays are distinct (BBMP is denser)
     with rasterio.open(osm_dist) as ds_o, rasterio.open(bbmp_dist) as ds_b:
         arr_o = ds_o.read(1)
         arr_b = ds_b.read(1)
-        # BBMP has more 0-distance drain cells
         assert (arr_b == 0.0).sum() > (arr_o == 0.0).sum()
         assert not np.array_equal(arr_o, arr_b)
 
@@ -175,9 +156,6 @@ def test_drain_manifest_v8_guaranteed_properties():
     assert m["crs"] == "EPSG:32643"
     assert m["total_length_km"] > 0.0
 
-    # Class breakdown verification. `total` is an aggregate row, not a drain
-    # class: it intentionally exposes features_total/total_length_km rather
-    # than the per-class fields. The previous test incorrectly treated the
     # aggregate as a class and crashed before testing the V8 contract.
     cb = m["class_breakdown"]
     assert cb
@@ -190,7 +168,6 @@ def test_drain_manifest_v8_guaranteed_properties():
     assert cb["total"]["features_total"] == m["feature_count"]
     assert cb["total"]["total_length_km"] == pytest.approx(m["total_length_km"], rel=1e-5)
 
-    # Prior status preservation
     assert m["assumed_uncalibrated"] is True
     assert m["is_prior"] is True
     assert "PRIOR" in m["capacity_status"]
@@ -240,13 +217,11 @@ def test_consumer_side_drain_manifest_assertion_red_under_mutations():
 
 
 def test_capacity_prior_mathematical_consistency():
-    """Verify capacity raster conforms exactly to baseline * exp(-dist / decay)."""
-    _require_realized(
-        INTERIM / "distance_to_drain_bbmp.tif", INTERIM / "drain_capacity_bbmp.tif"
-    )
-    with rasterio.open(INTERIM / "distance_to_drain_bbmp.tif") as ds_d, rasterio.open(
-        INTERIM / "drain_capacity_bbmp.tif"
-    ) as ds_c:
+    _require_realized(INTERIM / "distance_to_drain_bbmp.tif", INTERIM / "drain_capacity_bbmp.tif")
+    with (
+        rasterio.open(INTERIM / "distance_to_drain_bbmp.tif") as ds_d,
+        rasterio.open(INTERIM / "drain_capacity_bbmp.tif") as ds_c,
+    ):
         dist = ds_d.read(1)
         cap = ds_c.read(1)
 
@@ -254,7 +229,6 @@ def test_capacity_prior_mathematical_consistency():
     baseline = float(next(iter(cfg["drains"]["baseline_capacity_by_landuse_mm_per_hr"].values())))
     decay_m = float(cfg["drains"]["distance_decay"]["decay_m"])
 
-    # On drain cells (dist == 0), cap must be exactly baseline
     drain_cells = dist == 0.0
     assert np.allclose(cap[drain_cells], baseline, atol=1e-5)
 

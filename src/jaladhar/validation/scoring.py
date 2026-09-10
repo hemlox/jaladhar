@@ -1,24 +1,3 @@
-"""Validation Scoring Harness for Predicted Flood Extent vs Observations.
-
-Computes contingency table metrics:
-    CSI (Critical Success Index / Threat Score) = hits / (hits + misses + false_alarms)
-    POD (Probability of Detection / Hit Rate)   = hits / (hits + misses)
-    FAR (False Alarm Ratio)                     = false_alarms / (hits + false_alarms)
-
-Predicted flooded = depth > threshold.
-Threshold is a parameterized sweep; no hardcoded cut is baked in.
-
-PERMANENT WATER BODY EXCLUSION:
-Permanently-wet water bodies (lakes, tanks, quarries) match SAR water detection
-regardless of storm flooding. The harness takes an optional permanent water mask,
-excludes those cells, and reports metrics both WITH and WITHOUT exclusion (or
-explicitly flags UNMASKED when absent).
-
-TIMING INTEGRITY:
-The comparison timestamp is a REQUIRED argument with NO DEFAULT, preventing
-silent comparison against the wrong temporal instant (e.g. event max vs SAR epoch).
-"""
-
 from __future__ import annotations
 
 import json
@@ -48,7 +27,6 @@ def git_sha() -> str:
 
 @dataclass(frozen=True)
 class ContingencyTable:
-    """Standard 2x2 contingency table for binary event verification."""
 
     hits: int
     misses: int
@@ -61,11 +39,6 @@ class ContingencyTable:
 
     @property
     def csi(self) -> float:
-        """Critical Success Index (Threat Score).
-
-        Returns float('nan') if hits + misses + false_alarms == 0 (undefined).
-        Never silently returns 0.0 when undefined.
-        """
         denom = self.hits + self.misses + self.false_alarms
         if denom == 0:
             return float("nan")
@@ -73,10 +46,7 @@ class ContingencyTable:
 
     @property
     def pod(self) -> float:
-        """Probability of Detection (Hit Rate).
-
-        Returns float('nan') if hits + misses == 0 (no observed events).
-        """
+        """Returns float('nan') if hits + misses == 0 (no observed events)."""
         denom = self.hits + self.misses
         if denom == 0:
             return float("nan")
@@ -84,10 +54,6 @@ class ContingencyTable:
 
     @property
     def far(self) -> float:
-        """False Alarm Ratio.
-
-        Returns float('nan') if hits + false_alarms == 0 (no predicted events).
-        """
         denom = self.hits + self.false_alarms
         if denom == 0:
             return float("nan")
@@ -108,10 +74,6 @@ class ContingencyTable:
 
 @dataclass(frozen=True)
 class ValidationScoreResult:
-    """Scoring result at a specific depth threshold.
-
-    Supports optional permanent water and density stratification.
-    """
 
     comparison_timestamp: datetime
     threshold_m: float
@@ -145,7 +107,6 @@ def compute_contingency_counts(
     obs_binary: np.ndarray,
     valid_mask: np.ndarray | None = None,
 ) -> ContingencyTable:
-    """Compute hits, misses, false alarms, and correct negatives over valid cells."""
     if pred_binary.shape != obs_binary.shape:
         raise ValueError(
             f"Shape mismatch: predicted {pred_binary.shape} != observed {obs_binary.shape}"
@@ -185,19 +146,7 @@ def score_extent(
     density_classes: dict[str, int] | dict[int, str] | list[str] | None = None,
 ) -> ValidationScoreResult:
     """Score predicted depth against observed binary flooding at a specific instant.
-
-    Args:
-        predicted_depth: 2D array of water depths in meters.
-        observed_flooded: 2D boolean array (True = observed flooded).
-        comparison_timestamp: Explicit instant for comparison (no default).
-        permanent_water_mask: 2D boolean array (True = permanent water,
-            excluded from masked evaluation).
-        density_raster: Optional 2D integer array of urban density classes.
-        density_classes: Optional mapping or list of density class names/IDs.
-
-    Returns:
-        ValidationScoreResult containing unmasked, masked, and stratified contingency tables.
-    """
+    observed_flooded: 2D boolean array (True = observed flooded)."""
     if comparison_timestamp is None or not isinstance(comparison_timestamp, datetime):
         raise TypeError(
             "comparison_timestamp is a required datetime argument with no default. "
@@ -207,21 +156,17 @@ def score_extent(
     pred_flooded = predicted_depth > threshold_m
     obs_flooded = observed_flooded.astype(bool)
 
-    # 1. Unmasked evaluation (all cells)
     unmasked_table = compute_contingency_counts(pred_flooded, obs_flooded, valid_mask=None)
 
-    # 2. Masked evaluation (excluding permanent water bodies)
     masked_table: ContingencyTable | None = None
     excluded_count = 0
     is_masked = permanent_water_mask is not None
 
     if is_masked:
-        # valid_mask is True for NON-permanent water cells
         valid_mask = ~permanent_water_mask
         excluded_count = int(np.sum(permanent_water_mask))
         masked_table = compute_contingency_counts(pred_flooded, obs_flooded, valid_mask=valid_mask)
 
-    # 3. Density-stratified evaluation (PROMPT.md §8 item 3)
     stratified_unmasked: dict[str, ContingencyTable] | None = None
     stratified_masked: dict[str, ContingencyTable] | None = None
     is_stratified = density_raster is not None
@@ -231,7 +176,6 @@ def score_extent(
             raise ValueError(
                 f"Density raster shape {density_raster.shape} != pred shape {pred_flooded.shape}"
             )
-        # Normalize class dictionary
         class_mapping: dict[str, int] = {}
         if density_classes is None:
             unique_ids = np.unique(density_raster)
@@ -243,7 +187,6 @@ def score_extent(
             for idx, name in enumerate(density_classes):
                 class_mapping[name] = idx
         elif isinstance(density_classes, dict):
-            # Could be {name: id} or {id: name}
             for k, v in density_classes.items():
                 if isinstance(k, str) and isinstance(v, int):
                     class_mapping[k] = v
@@ -286,7 +229,6 @@ def score_threshold_curve(
     density_raster: np.ndarray | None = None,
     density_classes: dict[str, int] | dict[int, str] | list[str] | None = None,
 ) -> list[ValidationScoreResult]:
-    """Evaluate validation scores across a sweep of depth thresholds."""
     results: list[ValidationScoreResult] = []
     for th in thresholds_m:
         res = score_extent(
@@ -322,28 +264,23 @@ def main(
     try:
         # Benchmark synthetic case from specification:
         # 10x10 grid with 20 predicted flooded, 15 observed flooded, 12 overlap.
-        # hits=12, misses=3, false_alarms=8 -> CSI=12/23=0.5217, POD=0.8, FAR=0.4
         grid_shape = (10, 10)
         pred_depth = np.zeros(grid_shape, dtype=np.float32)
         obs_flooded = np.zeros(grid_shape, dtype=bool)
 
-        # 12 overlapping cells (0 to 11)
-        pred_depth.flat[0:12] = 0.2  # > 0.1 m threshold
+        pred_depth.flat[0:12] = 0.2
         obs_flooded.flat[0:12] = True
 
-        # 8 false alarm cells (12 to 19)
         pred_depth.flat[12:20] = 0.2
         obs_flooded.flat[12:20] = False
 
-        # 3 miss cells (20 to 22)
         pred_depth.flat[20:23] = 0.0
         obs_flooded.flat[20:23] = True
 
-        # Add permanent water mask on cells 0 and 1 (2 cells)
         water_mask = np.zeros(grid_shape, dtype=bool)
         water_mask.flat[0:2] = True
 
-        ts = datetime(2022, 9, 5, 0, 40, tzinfo=UTC)  # 06:10 IST SAR pass
+        ts = datetime(2022, 9, 5, 0, 40, tzinfo=UTC)
         result = score_extent(
             predicted_depth=pred_depth,
             observed_flooded=obs_flooded,

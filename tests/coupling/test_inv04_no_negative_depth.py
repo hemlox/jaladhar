@@ -87,32 +87,18 @@ from jaladhar.coupling.router import build_drain_graph
 from jaladhar.solver.state import StaticFields
 
 # Hand-typed literals for THIS file's references (V2: shares no code with
-# jaladhar.coupling.exchange beyond the public call itself).
-HF = 0.001  # physics.hf_floor_m parity value
-CAP_FRACTION_PINNED = 0.9  # contract stability_constraints.capture_cap_fraction
-MIN_F32_SUBNORMAL = float(np.nextafter(np.float32(0.0), np.float32(1.0)))  # 1.401298464324817e-45
 
-# This file's own seeds (test_exchange uses none of these).
+HF = 0.001
+CAP_FRACTION_PINNED = 0.9
+MIN_F32_SUBNORMAL = float(np.nextafter(np.float32(0.0), np.float32(1.0)))
+
 FIELD_SEEDS = (4041, 4047, 4053, 4059, 4061)
-HEAD_SEED_BASE = 4107  # + chain index
+HEAD_SEED_BASE = 4107
 DT_GRID = (0.01, 0.48, 5.0)
 STEPS_PER_CHAIN = 12
 
 
-# ---------------------------------------------------------------------------
-# Fixtures (declared-synthetic; through the PRODUCTION build_drain_graph path)
-# ---------------------------------------------------------------------------
-
-
 def _inv_graph():
-    """4-node DAG on a 6x8 tile: two capacity-bearing edges, one NULL edge.
-
-    Own values throughout: widths [3200.0, 47.3, 910.0, 2.285] m (node4 takes
-    the contract-pinned isolated nominal), capacities 25.7 / 88.2 m3/s, edge
-    2->3 null-capacity (Q == 0 ALWAYS, D-C pin). Allocation: node1 owns 2
-    cells, node2 owns 3, node3 owns 3, node4 owns 1; 39 cells stay unallocated
-    (-1) and ride the pure raster path.
-    """
     edges = [(1, 3, 25.7), (2, 3, None), (3, 4, 88.2)]
     num_nodes = 4
     edge_from = torch.tensor([e[0] - 1 for e in edges], dtype=torch.int64)
@@ -145,9 +131,11 @@ def _inv_graph():
 
 
 def _static_shell(shape: tuple[int, int]) -> StaticFields:
-    """Dry coupled-mode shell: drain_cap EXACTLY zero everywhere (guard (a))."""
     hh, ww = shape
-    z = lambda *s: torch.zeros(*s, dtype=torch.float32)  # noqa: E731
+
+    def z(*s):
+        return torch.zeros(*s, dtype=torch.float32)
+
     return StaticFields(
         dz_x=z(hh, ww - 1),
         dz_y=z(hh - 1, ww),
@@ -170,8 +158,6 @@ def _static_shell(shape: tuple[int, int]) -> StaticFields:
 
 
 def _heads(seed: int) -> NodeState:
-    """Seeded node heads: two dry-to-shallow nodes (capture stays live), one
-    mid, one ABOVE freeboard (return path active from step 1). Zero books."""
     g = torch.Generator().manual_seed(seed)
     u = torch.rand(3, generator=g)
     heads = [0.0, 0.05 * float(u[0]), 0.6 * float(u[1]), 1.5 + 0.5 * float(u[2])]
@@ -181,30 +167,21 @@ def _heads(seed: int) -> NodeState:
 
 
 def _seeded_depth_field(seed: int) -> torch.Tensor:
-    """Seeded 6x8 f32 depth field spanning denormal..1e6 m.
-
-    Half the cells draw log-uniformly over [1e-30, 1e6] m (span), half over
-    [1e-3, 1e3] m (dense in the band where a >1.0 cap fraction bites:
-    h > 11*hf_floor and the hydraulic rate can reach the inflated cap).
-    Structured boundary values are pinned on top: exact zero and min f32
-    denormal on node1's cells, 1e6 m THROUGH node2's allocation, 2x denormal
-    / hf_floor-exactly / regime-switch-exactly on unallocated cells.
-    """
     g = torch.Generator().manual_seed(seed)
     u = torch.rand(6, 8, generator=g)
     pick = torch.rand(6, 8, generator=g)
-    g2 = torch.Generator().manual_seed(seed + 17)  # per-seed span bounds in [-30, 6]
+    g2 = torch.Generator().manual_seed(seed + 17)
     lo = -30.0 + 2.0 * float(torch.rand(1, generator=g2))
     hi = 4.0 + 2.0 * float(torch.rand(1, generator=g2))
     span = torch.pow(torch.tensor(10.0, dtype=torch.float64), lo + (hi - lo) * u)
     dense = torch.pow(torch.tensor(10.0, dtype=torch.float64), -3.0 + 6.0 * u)
     field = torch.where(pick < 0.5, span, dense).to(torch.float32)
-    field[0, 0] = 0.0  # exact zero (owned by node1)
-    field[0, 1] = MIN_F32_SUBNORMAL  # min denormal (owned by node1)
-    field[1, 5] = 1.0e6  # 1e6 m THROUGH node2's allocation
-    field[2, 2] = 2.0 * MIN_F32_SUBNORMAL  # 2x denormal, unallocated
-    field[4, 4] = HF  # hf_floor exactly, unallocated
-    field[5, 5] = 0.1  # regime switch exactly, unallocated
+    field[0, 0] = 0.0
+    field[0, 1] = MIN_F32_SUBNORMAL
+    field[1, 5] = 1.0e6
+    field[2, 2] = 2.0 * MIN_F32_SUBNORMAL
+    field[4, 4] = HF
+    field[5, 5] = 0.1
     return field
 
 
@@ -219,11 +196,6 @@ def _step(h, graph, node_state, dt):
         graph,
         dt,
     )
-
-
-# ---------------------------------------------------------------------------
-# The invariant (green tier) — min(h_new) measured BY THE TEST, every step
-# ---------------------------------------------------------------------------
 
 
 class TestInv04NoNegativeDepth:
@@ -244,7 +216,7 @@ class TestInv04NoNegativeDepth:
         chains = 0
         calls = 0
         cap_bound_cell_steps = 0
-        for seed in (*FIELD_SEEDS, 4137):  # 4137: fully structured adversarial field
+        for seed in (*FIELD_SEEDS, 4137):
             field = self._structured_field() if seed == 4137 else _seeded_depth_field(seed)
             for dt in DT_GRID:
                 chains += 1
@@ -256,7 +228,7 @@ class TestInv04NoNegativeDepth:
                     calls += 1
 
                     # THE observable, computed HERE (V2): realized f32 minimum
-                    # and an explicit count of negative cells.
+
                     step_min = float(cr.h_new.min().item())
                     neg = int((cr.h_new < 0).sum().item())
                     neg_total += neg
@@ -266,8 +238,7 @@ class TestInv04NoNegativeDepth:
                     assert bool(torch.isfinite(cr.h_new).all())
                     assert bool((cr.captured_depth_m >= 0).all())
                     assert bool((cr.returned_depth_m >= 0).all())
-                    # Algebraic PREMISE against the input field (independent
-                    # recompute of the #3 cap; tolerance = f32 field rounding):
+
                     hb64 = h_before.to(torch.float64)
                     cap_field = CAP_FRACTION_PINNED * torch.clamp(hb64 - HF, min=0.0)
                     got = cr.captured_depth_m.to(torch.float64)
@@ -275,14 +246,11 @@ class TestInv04NoNegativeDepth:
                         (got <= cap_field * (1 + 1e-6) + 1e-12).all()
                     ), f"cap premise broken at dt={dt}, seed={seed}"
                     # Sensitivity evidence (V7): count cell-steps where the cap
-                    # actually BINDS (captured at the cap value) — the sweep
-                    # must exercise the cap mechanism, or its non-negativity
-                    # verdict would be vacuous (trivially true while hyd < h).
+
                     cap_bound_cell_steps += int(
                         ((got >= cap_field * (1 - 1e-6)) & (cap_field > 0)).sum().item()
                     )
-                    # Sub-floor cells cannot capture at all (clamp(min=0) side
-                    # of the same mechanism feeding non-negativity).
+
                     subfloor = hb64 < HF
                     if bool(subfloor.any()):
                         assert bool(
@@ -291,10 +259,6 @@ class TestInv04NoNegativeDepth:
                     h = cr.h_new
                     state = cr.node_state_new
 
-        # Cap-binding chains: dry nodes, mid-band depths on WIDE-inlet
-        # allocated cells — engineered so the stability cap genuinely bounds
-        # capture every step (guards the sweep against a vacuous pass where
-        # non-negativity holds merely because hyd < h everywhere).
         for dt in DT_GRID:
             chains += 1
             h = self._binding_field().clone()
@@ -335,44 +299,29 @@ class TestInv04NoNegativeDepth:
 
     @staticmethod
     def _structured_field() -> torch.Tensor:
-        """Adversarial structured field: boundary values on ALLOCATED cells."""
         f = torch.full((6, 8), 0.35, dtype=torch.float32)
-        f[0, 0] = 0.0  # exact zero, node1
-        f[0, 1] = MIN_F32_SUBNORMAL  # min denormal, node1
-        f[1, 5] = 1.0e6  # extreme through node2's allocation
-        f[1, 6] = HF  # exactly the floor, node2
-        f[1, 7] = 2.0 * HF  # hair above the floor, node2
-        f[3, 2] = 0.1  # regime switch exactly, node3
+        f[0, 0] = 0.0
+        f[0, 1] = MIN_F32_SUBNORMAL
+        f[1, 5] = 1.0e6
+        f[1, 6] = HF
+        f[1, 7] = 2.0 * HF
+        f[3, 2] = 0.1
         return f
 
     @staticmethod
     def _binding_field() -> torch.Tensor:
-        """Mid-band depths on WIDE-inlet allocated cells: the hydraulic rate
-        dwarfs the 0.9 stability cap here, so capture runs AT the cap every
-        step (the regime where a fraction > 1.0 produces negative depths).
-        Hand-checked (V10, corrected after first draft): hydraulic depth
-        scales WITH dt, so binding is dt-dependent — node1 h=0.05 gives
-        0.609*dt vs cap 0.0441 (binds iff dt >= 0.073); h=0.25 orifice gives
-        4.606*dt vs cap 0.2241 (binds iff dt >= 0.049); node3's L=910 cells
-        bind from dt=0.48 up; at dt=0.01 NO configuration in this grid can
-        bind (max weir rate 0.0049 m < 0.089 cap floor) — the aggregate
-        binding requirement is therefore met by the dt={0.48, 5.0} chains,
-        and the counter excludes cap_field == 0 cells so sub-floor zeros
-        cannot masquerade as bindings (Phase-1 #15 vacuity class)."""
         f = torch.full((6, 8), 1.0e-9, dtype=torch.float32)
-        f[0, 0] = 0.05  # node1 allocation
-        f[0, 1] = 0.25  # node1 allocation
-        f[1, 5] = 0.08  # node2 allocation
-        f[1, 6] = 0.02  # node2 allocation
-        f[3, 2] = 0.06  # node3 allocation
-        f[3, 3] = 0.09  # node3 allocation
-        f[3, 4] = 0.04  # node3 allocation
+        f[0, 0] = 0.05
+        f[0, 1] = 0.25
+        f[1, 5] = 0.08
+        f[1, 6] = 0.02
+        f[3, 2] = 0.06
+        f[3, 3] = 0.09
+        f[3, 4] = 0.04
         return f
 
 
-# ---------------------------------------------------------------------------
 # Belt-and-suspenders exit guard + V5 red mutation (recorded here)
-# ---------------------------------------------------------------------------
 
 
 class TestInv04RedMutation:
@@ -397,36 +346,21 @@ class TestInv04RedMutation:
         h = torch.full((1, 1), 0.25, dtype=torch.float32)
 
         # Fixture sits in the negative-capable domain under the mutation:
-        # inflated cap alone exceeds h at this depth (h > 11*hf_floor).
+
         inflated_excess = float(h[0, 0]) - 1.1 * (float(h[0, 0]) - HF)
         assert inflated_excess < 0.0, "fixture cannot produce negativity under 1.1"
 
         cr_pristine = _step(h, graph, build_node_state(graph), 0.48)
         pristine_min = float(cr_pristine.h_new.min().item())
         assert pristine_min >= 0.0, f"pristine control went negative: {pristine_min!r}"
-        assert xchg.CAPTURE_CAP_FRACTION == CAP_FRACTION_PINNED  # control ran pinned
+        assert xchg.CAPTURE_CAP_FRACTION == CAP_FRACTION_PINNED
 
         monkeypatch.setattr(xchg, "CAPTURE_CAP_FRACTION", 1.1)  # THE mutation
         with pytest.raises(RuntimeError, match="negative surface depth") as excinfo:
             _step(h, graph, build_node_state(graph), 0.48)
-        # DEFECT FOUND WHILE WRITING THIS TEST — REPORTED, THEN FIXED upstream
-        # (exchange.py:465-477): the exit guard USED to compute
-        # ``flat_idx = (h_new < 0).nonzero(as_tuple=True)[0][0]`` — that is the
-        # ROW of the first negative cell — and then used it as a FLATTENED
-        # index for both the reported (r, c) and the quoted depth, so on any
-        # multi-row grid the message named the wrong cell and quoted an
-        # unrelated (usually positive) depth. The FIRING of the guard was never
-        # affected ((h_new < 0).any() is the correct trigger). Pre-fix, the
-        # parsed-value assertion below was trustworthy only because THIS
-        # fixture is 1x1 (row index == flat index == 0, so the quoted value WAS
-        # the realized negative depth). Post-fix the guard unpacks neg_rows and
-        # neg_cols directly, so the quoted cell/value are the realized first
-        # negative cell on ANY grid. Counterexample recorded against the
+
         # PRE-FIX bytes: on the 6x8 _inv_graph fixture under the same mutation
-        # the old guard fired reporting "at (0, 3)" quoting +6.932653e-01 while
-        # the true first negatives were (3, 2) = -1.076e-02 and (3, 3) =
-        # -1.245e-03 (measured via piecewise replication during the RedTest
-        # session, /tmp copy).
+
         m = re.search(
             r"negative surface depth after coupling at \(\d+, \d+\): (-?[0-9.eE+-]+) m",
             str(excinfo.value),
@@ -472,10 +406,10 @@ class TestInv04RedMutation:
         each regime against its own guarantee."""
         graph = _inv_graph()
         deep = torch.full((6, 8), 33.3, dtype=torch.float32)
-        deep[0, 0] = 1024.0  # node1 allocation, weir+orifice binding at dt=5
-        deep[0, 1] = 512.0  # node1 allocation
-        deep[1, 5] = 0.02  # node2 allocation, weir regime
-        deep[1, 6] = 0.0  # sub-floor cell: cap_depth clamps to 0
+        deep[0, 0] = 1024.0
+        deep[0, 1] = 512.0
+        deep[1, 5] = 0.02
+        deep[1, 6] = 0.0
 
         monkeypatch.setattr(xchg, "CAPTURE_CAP_FRACTION", 1.0)
         realized_min_eligible = float("inf")
@@ -494,7 +428,7 @@ class TestInv04RedMutation:
                         f"fraction 1.0 dipped below hf_floor beyond f32 slack: "
                         f"min={m_eligible!r}, slack={slack:.3e}, dt={dt}"
                     )
-                # Sub-floor cells: captured exactly 0, depth never decreases.
+
                 subfloor = ~eligible
                 if bool(subfloor.any()):
                     assert bool(
@@ -503,9 +437,7 @@ class TestInv04RedMutation:
                     assert bool((hn[subfloor] >= h.to(torch.float64)[subfloor] - 0.0).all())
                 assert float(hn.min()) >= 0.0
                 h, state = cr.h_new, cr.node_state_new
-        # Restored-state proof lives in test_committed_constant_is_pinned:
-        # monkeypatch teardown runs AFTER this body, so an in-body check would
-        # still see the mutated value.
+
         print(
             f"[inv04-boundary] fraction=1.0: realized global min over capture-eligible "
             f"cells={realized_min_eligible!r} m vs hf_floor={HF!r} m "
@@ -520,11 +452,6 @@ class TestInv04RedMutation:
         assert xchg.CAPTURE_CAP_FRACTION == CAP_FRACTION_PINNED
 
     def test_negative_input_refused_at_entry_not_exit(self):
-        """Contract separation: negative INPUT depths never enter the exchange
-        (host limiter guarantee; exchange.py ~306-314 raises ValueError at
-        ENTRY), so the exit RuntimeError under test above is reserved for
-        algebra violations the exchange itself caused. Distinct exception
-        types, distinct messages."""
         graph = _single_node_graph(width=4000.0)
         neg_h = torch.full((1, 1), -0.25, dtype=torch.float32)
         with pytest.raises(ValueError, match="negative depths"):
@@ -532,8 +459,6 @@ class TestInv04RedMutation:
 
 
 def _single_node_graph(width: float):
-    """One node owning one cell + the inert null padding edge (production
-    build_drain_graph rejects an empty edge set)."""
     edges = [(1, 2, None)]
     edge_from = torch.tensor([e[0] - 1 for e in edges], dtype=torch.int64)
     edge_to = torch.tensor([e[1] - 1 for e in edges], dtype=torch.int64)

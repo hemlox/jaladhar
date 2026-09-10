@@ -9,7 +9,6 @@ description = "Bengaluru urban flood digital twin — physics solver + neural su
 requires-python = ">=3.11"
 dependencies = [
     "affine",
-    "anuga",
     "boto3",
     "fiona",
     "geopandas",

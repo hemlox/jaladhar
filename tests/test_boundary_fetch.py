@@ -1,11 +1,7 @@
 """Boundary acquisition contract checks.
-
 V2 observable: a missing boundary is fetched to the configured path, while a
 different byte stream is rejected before grid construction. V5 red mutation:
-removing the SHA comparison lets the second test accept changed bytes.
-Scope: temporary byte fixtures; the realized 225-feature/area checks remain in
-the terrain grid tests and the production loader.
-"""
+Scope: temporary byte fixtures; the realized 225-feature/area checks remain in"""
 
 from __future__ import annotations
 

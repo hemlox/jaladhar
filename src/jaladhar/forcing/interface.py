@@ -1,20 +1,4 @@
-"""Core Interfaces and Data Models for Rainfall Forcing.
-
-Fixed interface per architectural design:
-    (timestamp, cell, mm_in_interval)
-
-A forcing adapter returns, for a given time window, an INCREMENTAL depth in mm
-for each grid cell over that interval. Cumulative sources convert to incremental
-inside their adapter, never at the call site.
-
-THREE MODES, AND THEY ARE NEVER BLENDED:
-  - historical -> GPM IMERG (Sept 2022 event)
-  - nowcast    -> live gauge telemetry (KSNDMC)
-  - forecast   -> Open-Meteo
-
-A single run uses exactly one mode. Blending or combining modes is structurally
-prohibited by design.
-"""
+"""for each grid cell over that interval. Cumulative sources convert to incremental"""
 
 from __future__ import annotations
 
@@ -50,11 +34,9 @@ class NowcastDistrictAbsentError(NowcastUnavailableError):
 
 
 class ForcingMode(StrEnum):
-    """Mutually exclusive forcing modes. Blending is strictly prohibited."""
 
     HISTORICAL = "historical"
     NOWCAST = "nowcast"
-    FORECAST = "forecast"
 
     @classmethod
     def from_str(cls, val: str) -> ForcingMode:
@@ -70,16 +52,7 @@ class ForcingMode(StrEnum):
 
 @dataclass(frozen=True)
 class RainfallInterval:
-    """Incremental rainfall depth across the 2D spatial grid for a specific time interval.
-
-    Attributes:
-        timestamp: Start time of the interval in UTC.
-        interval_minutes: Duration of the interval in minutes.
-        rainfall_grid_mm: 2D numpy array (height, width) with incremental depth in mm.
-        native_cell_ids: 2D numpy array (height, width) indicating native source cell ID.
-        distinct_native_cells: Number of distinct native cells covering the grid.
-        metadata: Additional diagnostic info.
-    """
+    """native_cell_ids: 2D numpy array (height, width) indicating native source cell ID."""
 
     timestamp: datetime
     interval_minutes: float
@@ -119,14 +92,11 @@ class RainfallInterval:
         return float(np.max(self.rainfall_grid_mm) / duration_hr) if duration_hr > 0 else 0.0
 
     def volume_m3(self, cell_area_m2: float) -> float:
-        """Volume of water deposited over the domain in this interval (m^3)."""
-        # mm * 1e-3 = meters depth
         return float(np.sum(self.rainfall_grid_mm) * 1e-3 * cell_area_m2)
 
 
 @dataclass
 class RainfallEvent:
-    """Full time-series of incremental rainfall intervals over an event duration."""
 
     mode: ForcingMode
     intervals: list[RainfallInterval]
@@ -158,12 +128,10 @@ class RainfallEvent:
 
     @property
     def total_volume_m3(self) -> float:
-        """Integral of the rainfall field over domain and duration (m^3)."""
         return sum(iv.volume_m3(self.cell_area_m2) for iv in self.intervals)
 
     @property
     def cumulative_depth_grid_mm(self) -> np.ndarray:
-        """Total accumulated depth per grid cell (mm)."""
         acc = np.zeros(self.intervals[0].shape, dtype=np.float64)
         for iv in self.intervals:
             acc += iv.rainfall_grid_mm
@@ -171,7 +139,6 @@ class RainfallEvent:
 
     @property
     def areal_mean_total_mm(self) -> float:
-        """Areal-mean accumulated depth over the domain (mm)."""
         return float(np.mean(self.cumulative_depth_grid_mm))
 
     @property
@@ -199,7 +166,6 @@ class RainfallEvent:
 
 
 def interval_depth_mm_to_rate_m_s(depth_mm: float, interval_minutes: float) -> float:
-    """Convert one incremental interval depth to a rate without a cadence hardcode."""
 
     duration = float(interval_minutes)
     if not np.isfinite(duration) or duration <= 0.0:
@@ -392,19 +358,14 @@ def assert_nowcast_metadata_contract(event: RainfallEvent) -> bool:
 
 
 class RainfallAdapter(ABC):
-    """Abstract Base Class for mode-specific rainfall adapters."""
 
     @property
     @abstractmethod
-    def mode(self) -> ForcingMode:
-        """Return the forcing mode handled by this adapter."""
-        ...
+    def mode(self) -> ForcingMode: ...
 
     @abstractmethod
     def get_forcing(
         self,
         start_time: datetime,
         end_time: datetime,
-    ) -> RainfallEvent:
-        """Generate the RainfallEvent with incremental rainfall on canonical grid."""
-        ...
+    ) -> RainfallEvent: ...

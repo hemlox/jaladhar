@@ -1,10 +1,4 @@
-"""Shared CPU-only lifecycle and contract checks for the demo packaging track.
-
-This module deliberately contains no solver or product-generation logic.  It only
-loads a realized run and starts already-built dashboard/API entry points.  A run
-without the frozen depth product is rejected instead of being adapted into a
-presentation artifact.
-"""
+"Shared CPU-only lifecycle and contract checks for the demo packaging track. This module deliberately contains no solver or product-generation logic. It only loads a realized run and starts already-built dashboard/API entry points. A run without the frozen depth product is rejected instead of being adapted into a presentation artifact."  # noqa: E501
 
 from __future__ import annotations
 
@@ -40,10 +34,6 @@ from jaladhar.validation.depth_product_contract import (  # noqa: E402
 )
 
 DEFAULT_DASHBOARD_COMMAND = (
-    # The products DIRECTORY, not a single twin: the dashboard discovers every
-    # segment_status* file pair in it and exposes each realized forecast lead
-    # as its own timeline frame (single-frame runs expose exactly one).  For a
-    # frame-series run the directory resolves through the run manifest instead.
     "{python} -m jaladhar.web.app serve --product {run_dir}/products "
     "--geometry {repo_root}/data/interim/terrain/roads_centrelines.gpkg "
     "--host {host} --port {port}"
@@ -83,21 +73,15 @@ _CPU_FORBIDDEN_TERMS = re.compile(r"(?i)(?<![a-z0-9])(cuda|gpu|nvidia|mps)(?![a-
 
 
 class DemoError(RuntimeError):
-    """A fail-closed demo preflight, lifecycle, or endpoint error."""
+    pass
 
 
 class CPUOnlyViolation(DemoError):
-    """A requested child command explicitly names a device-backed backend."""
+    pass
 
 
 @dataclass(frozen=True)
 class RunEvidence:
-    """Realized files that make a run eligible for presentation packaging.
-
-    ``kind`` distinguishes the two discovery shapes: ``event_maximum`` (one
-    flat products/segment_status twin pair) and ``frame_series`` (a manifest
-    declaring frames[], whose first frame's twins anchor product references).
-    """
 
     repo_root: Path
     run_dir: Path
@@ -115,16 +99,6 @@ class RunEvidence:
 
 
 def depth_product_file_for(evidence: RunEvidence) -> Path:
-    """Resolve the {depth_product_file} template placeholder per evidence kind.
-
-    Flat runs keep ``products/segment_status.csv``; frame-series runs anchor on
-    frame 0's realized CSV twin so every reference stays inside ONE run.  The
-    routing loader enforces the frozen flat-manifest guarantees
-    (``n_segments_expected`` et al.) which a series manifest does not carry, so
-    for a frame-series run it refuses the file and /health says exactly why --
-    that refusal is honest owner-gate-style state, surfaced by the launcher,
-    not something this package works around.
-    """
 
     if evidence.kind == "frame_series":
         return evidence.product_csv
@@ -132,12 +106,7 @@ def depth_product_file_for(evidence: RunEvidence) -> Path:
 
 
 def _find_product_bound_gate_report(product_csv: Path, *, repo_root: Path) -> Path | None:
-    """Select the newest completed report that binds these exact product bytes.
-
-    Only the corrected schema with signed G3 explicitly BLOCKED is eligible;
-    historical reports that mislabeled point diagnostics as the gate remain audit
-    evidence but are not presentation inputs.
-    """
+    "Select the newest completed report that binds these exact product bytes. Only the corrected schema with signed G3 explicitly BLOCKED is eligible; historical reports that mislabeled point diagnostics as the gate remain audit evidence but are not presentation inputs."  # noqa: E501
 
     expected_hash = sha256_file(product_csv)
     candidates: list[tuple[str, Path]] = []
@@ -161,7 +130,6 @@ def _find_product_bound_gate_report(product_csv: Path, *, repo_root: Path) -> Pa
 
 @dataclass
 class RunningService:
-    """A child process launched by this package, including its diagnostic log."""
 
     name: str
     command: list[str]
@@ -172,7 +140,6 @@ class RunningService:
 
 @dataclass(frozen=True)
 class HttpResult:
-    """The realized response from one rehearsal probe."""
 
     status: int
     headers: dict[str, str]
@@ -279,7 +246,7 @@ def _validate_product_rows(
                 f"selected directory {run_dir.name!r}"
             )
         segment_id = row["segment_id"]
-        if type(segment_id) is not int or segment_id < 0:  # bool is not an integer key here.
+        if type(segment_id) is not int or segment_id < 0:
             raise DemoError(f"product row {row_number} segment_id is not a non-negative integer")
         if segment_id in ids:
             raise DemoError(f"product contains duplicate segment_id={segment_id}")
@@ -424,7 +391,6 @@ def _validate_manifest_guarantees(
 def validate_run_dir(
     run_dir: Path, *, repo_root: Path = REPO_ROOT, require_product: bool = True
 ) -> RunEvidence | None:
-    """Validate a completed run and, when requested, its frozen depth product."""
     run_dir = run_dir.expanduser().resolve()
     repo_root = repo_root.resolve()
     try:
@@ -509,13 +475,6 @@ def validate_run_dir(
 def _frame_series_evidence(
     run_dir: Path, manifest: dict[str, Any], manifest_path: Path, repo_root: Path
 ) -> RunEvidence:
-    """Build launcher evidence for a declaring frame-series run.
-
-    Validation delegates to the SAME acceptance truth the dashboard uses
-    (``series.parse_frame_entries``); per-frame SHA verification stays where it
-    already runs, in the dashboard's warm-up.  Frame 0's twins anchor product
-    references so downstream consumers always name realized bytes.
-    """
 
     from jaladhar.web.series import SeriesError, parse_frame_entries
 
@@ -546,17 +505,11 @@ def _frame_series_evidence(
 
 
 def discover_fallback(*, repo_root: Path = REPO_ROOT) -> RunEvidence:
-    """Return the designated fallback; never create or transform one.
-
-    Selection order matches the dashboard exactly (SELECTION_ORDER in
-    ``jaladhar.web.app``): the newest VALID frame-series run wins over any flat
-    event-maximum run, because it realizes strictly more demonstrated state.
-    """
 
     from jaladhar.web.series import discover_series_runs
 
     valid_series, _skipped = discover_series_runs(repo_root)
-    for candidate in valid_series:  # newest first
+    for candidate in valid_series:
         try:
             evidence = validate_run_dir(candidate.run_dir, repo_root=repo_root)
         except DemoError:
@@ -586,9 +539,6 @@ def discover_fallback(*, repo_root: Path = REPO_ROOT) -> RunEvidence:
             "fallback unavailable: no designated UNCOUPLED BASELINE under runs/<run_id> "
             "passed the frozen manifest checks"
         )
-    # More than one auditable baseline may be retained because failed or
-    # superseded runs are evidence, not scratch files.  Prefer the most recent
-    # completed producer and use the run name only as a deterministic tie-break.
     return max(
         candidates,
         key=lambda evidence: (
@@ -608,13 +558,6 @@ def resolve_command(
     repo_root: Path,
     depth_product_file: Path | None = None,
 ) -> list[str]:
-    """Expand a command template and return argv without invoking a shell.
-
-    ``{depth_product_file}`` resolves per evidence kind: the flat run's
-    ``products/segment_status.csv`` or a frame-series run's frame-0 twin.
-    Older templates that hardcode ``{run_dir}/products/segment_status.csv``
-    keep working for flat runs unchanged.
-    """
     values = {
         "python": shlex.quote(python),
         "repo_root": shlex.quote(str(repo_root)),
@@ -646,7 +589,6 @@ def ensure_cpu_command(command: list[str]) -> None:
 
 
 def cpu_environment(repo_root: Path = REPO_ROOT) -> dict[str, str]:
-    """Return a child environment that makes the CPU-only boundary explicit."""
     environment = os.environ.copy()
     environment.update(
         {
@@ -850,15 +792,7 @@ def _numeric_provenance_walk(
 def verify_json_number_provenance(
     payload: Any, *, repo_root: Path, expected_manifests: tuple[Path, ...]
 ) -> int:
-    """Reject every numeric response leaf that cannot resolve to the selected manifest.
-
-    Scope of "numeric leaf": JSON numbers (``int``/``float``, booleans excluded) and
-    lists composed solely of them. Numeric strings and boolean leaves are outside this
-    instrument's domain by definition; callers needing those checked must do so
-    explicitly. ``geometry``-keyed subtrees are exempt BY DESIGN: GeoJSON coordinates
-    and dimensions are producer-artifact geometry whose provenance is the geometry
-    artifact itself (path + SHA in the state/segment payloads), not a run manifest.
-    """
+    'Reject every numeric response leaf that cannot resolve to the selected manifest. Scope of "numeric leaf": JSON numbers (``int``/``float``, booleans excluded) and lists composed solely of them. Numeric strings and boolean leaves are outside this instrument\'s domain by definition; callers needing those checked must do so explicitly. ``geometry``-keyed subtrees are exempt BY DESIGN: GeoJSON coordinates and dimensions are producer-artifact geometry whose provenance is the geometry artifact itself (path + SHA in the state/segment payloads), not a run manifest.'  # noqa: E501
     violations: list[str] = []
     numeric_count = [0]
     _numeric_provenance_walk(
@@ -917,7 +851,6 @@ def verify_route_response_provenance(
     expected_products: tuple[Path, ...],
     expected_rows: tuple[dict[str, Any], ...],
 ) -> int:
-    """Verify the route schema's distinct road, product, policy, and runtime derivations."""
 
     if not isinstance(payload, dict) or payload.get("status") not in {"ok", "disconnected"}:
         raise DemoError("route response is not an ok/disconnected JSON object")
@@ -1024,7 +957,6 @@ def verify_route_response_provenance(
 def verify_dashboard_state_provenance(
     payload: Any, *, repo_root: Path, expected_manifests: tuple[Path, ...]
 ) -> int:
-    """Verify state numbers, including the lead index shown by the dashboard."""
     if not isinstance(payload, dict):
         raise DemoError("dashboard state must be a JSON object")
     leads = payload.get("leads", [])

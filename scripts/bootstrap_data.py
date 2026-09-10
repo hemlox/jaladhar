@@ -1,12 +1,4 @@
-"""Unpack the seeded inputs and report what still has to be fetched.
-
-`data/` is gitignored (8.8 GB). Only `data/seed/` ships: the inputs that are
-irreplaceable or costly to re-source. This unpacks them into the paths the
-pipeline expects, verifies checksums, then prints the fetch checklist.
-
-    python scripts/bootstrap_data.py            # unpack + report
-    python scripts/bootstrap_data.py --check    # report only, touch nothing
-"""
+"Unpack the seeded inputs and report what still has to be fetched. `data/` is gitignored (8.8 GB). Only `data/seed/` ships: the inputs that are irreplaceable or costly to re-source. This unpacks them into the paths the pipeline expects, verifies checksums, then prints the fetch checklist. python scripts/bootstrap_data.py # unpack + report python scripts/bootstrap_data.py --check # report only, touch nothing"  # noqa: E501
 
 from __future__ import annotations
 
@@ -21,7 +13,6 @@ import typer
 REPO = Path(__file__).resolve().parents[1]
 SEED = REPO / "data" / "seed"
 
-# seed file -> destination the pipeline reads from
 PLAIN = {
     "sept2022_points.csv": "data/raw/groundtruth/sept2022_points.csv",
 }
@@ -45,13 +36,16 @@ FETCH = [
         "python -m jaladhar.terrain.water / .roads / .drains / .buildings",
         "no credentials",
     ),
-    ("GPM IMERG granules", "python -m jaladhar.forcing.fetch_imerg", "EARTHDATA_TOKEN + one-time GES DISC EULA click"),
     (
-        "Sentinel-1 GRD scenes",
-        "python -m jaladhar.validation.fetch_s1",
-        "CDSE_S3_ENDPOINT + CDSE_ACCESS_KEY + CDSE_SECRET_KEY",
+        "GPM IMERG granules",
+        "python -m jaladhar.forcing.fetch_imerg",
+        "EARTHDATA_TOKEN + one-time GES DISC EULA click",
     ),
-    ("Derived terrain rasters", "python -m jaladhar.terrain.build", "CPU-hours; depends on the DEM above"),
+    (
+        "Derived terrain rasters",
+        "python -m jaladhar.terrain.build",
+        "CPU-hours; depends on the DEM above",
+    ),
 ]
 
 app = typer.Typer(add_completion=False)

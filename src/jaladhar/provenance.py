@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import subprocess
 import tempfile
@@ -68,6 +69,25 @@ def git_sha_admitting_dirty(repo_root: Path, reason: str) -> dict[str, Any]:
 
 def _utc_now() -> str:
     return datetime.now(UTC).isoformat()
+
+
+def sha256_file(path: Path) -> str:
+    """Return the SHA-256 digest of a file without loading it all at once."""
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1 << 20), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def lookup_config(mapping: dict[str, Any], dotted_key: str) -> Any:
+    """Look up a dotted configuration key, returning ``None`` if absent."""
+    value: Any = mapping
+    for part in dotted_key.split("."):
+        if not isinstance(value, dict) or part not in value:
+            return None
+        value = value[part]
+    return value
 
 
 def _write_json_atomic(path: Path, payload: dict[str, Any]) -> None:

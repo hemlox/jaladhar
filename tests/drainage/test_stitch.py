@@ -1,26 +1,10 @@
-"""WF-1 stitcher tests: toy-fixture end-to-end + counter liveness + red demos.
-
-Toy fixture (built in-test, no repo data): 200x200 DEM with a retained flat basin
-(EAST edge, floods terminate fast on the un-retained rim), a hard pit outside the
-register (pointer-0 -> outfall(pit)), a west domain-edge slope, a plain with a
-reached_other micro-reach and a >max_steps run, a long/short component pair giving
-a mid-span junction entry with an overlength stub, a host/probe trio giving a
-successful stub AND a junction_entry_at_start with refused stub, a parallel pair,
-and a self-loop reach.
-
+"""successful stub AND a junction_entry_at_start with refused stub, a parallel pair,
 V5 RED DEMO (recorded mutation): DAG-break disabled via cfg flag
-`stitch.dag_break_enabled=false` on a cyclic candidate -> production
 `_enforce_dag` raises "cycles detected". Scope note (V7): the toy terrain is a
-strict-descent forest (walks, stubs and fallbacks all point downhill in pinned z),
-so the end-to-end pipeline cannot naturally close a cycle here; the cycle path is
 therefore exercised at unit level against the production enforcement function,
 and the end-to-end test asserts graph_is_dag independently. PARTIAL by design.
-
 Counter-liveness scope note (V7): zero_length_dropped_count cannot move end-to-end
-because snapping merges any two endpoints closer than snap_tolerance_m (a post-snap
-observed edge below 0.05 m between DISTINCT nodes is structurally impossible);
-its drop logic is demonstrated directly against `_apply_dedup_and_degenerate`.
-"""
+observed edge below 0.05 m between DISTINCT nodes is structurally impossible);"""
 
 from __future__ import annotations
 
@@ -50,7 +34,6 @@ TRANSFORM = [10.0, 0.0, 500000.0, 0.0, -10.0, 4000000.0]
 
 
 def P(col: float, row: float) -> tuple[float, float]:
-    """Cell-center coordinate of (possibly fractional) grid position."""
     return (TRANSFORM[2] + 10.0 * col + 5.0, TRANSFORM[5] + TRANSFORM[4] * row - 5.0)
 
 
@@ -59,16 +42,13 @@ def _toy_dem() -> np.ndarray:
     rows = np.arange(HEIGHT, dtype=np.float32)
     z = 20.0 - 0.01 * cols[None, :] + 0.002 * rows[:, None]
     z = np.broadcast_to(z, (HEIGHT, WIDTH)).copy()
-    # Retained flat basin hugging the EAST domain edge: flat floor + higher rim ring.
-    z[65:86, 165:196] = 10.0  # floor rows 65..85, cols 165..195
-    z[61:90, 161:165] = 11.0  # west ring
-    z[61:90, 196:200] = 11.0  # east ring (against domain edge)
-    z[61:65, 165:196] = 11.0  # north ring
-    z[86:90, 165:196] = 11.0  # south ring
-    # Hard pit, NOT retained: stays original bytes -> pointer 0 -> outfall(pit).
+    z[65:86, 165:196] = 10.0
+    z[61:90, 161:165] = 11.0
+    z[61:90, 196:200] = 11.0
+    z[61:65, 165:196] = 11.0
+    z[86:90, 165:196] = 11.0
     z[20:28, 150:160] = 9.0
     z[22:26, 152:158] = 8.0
-    # West domain-edge slope: descends toward col 0.
     z[98:109, 0:19] = 15.0 + 0.4 * cols[0:19][None, :]
     return z.astype(np.float32)
 
@@ -79,23 +59,19 @@ def _toy_reaches() -> list[Reach]:
         return Reach(reach_id=rid, drain_class=cls, geom=g, length_m=float(g.length))
 
     reaches = [
-        rc(1, "primary", (168, 75), (192, 75)),  # basin floor span
-        rc(2, "secondary", (192.5, 75.5), (185, 82)),  # snaps to reach 1 -> same comp
-        rc(3, "secondary", (151, 22), (144, 20)),  # pit rim: pit connector + self-hit
-        rc(4, "primary", (14, 103), (5, 104)),  # west slope: domain exit + self-hit
-        rc(5, "secondary", (32, 111), (36, 111)),  # stub probe -> SUCCESSFUL stub into 7
-        rc(6, "secondary", (43, 111), (50, 115)),  # at_start probe (start cell inside 7's fp)
-        rc(8, "primary", (95, 30), (95, 60)),  # long N-S line
-        rc(9, "secondary", (88, 40), (88, 44)),  # mid-span junction entry into 8 (stub>25m)
-        rc(10, "secondary", (120, 150), (121.3, 150)),  # reached_other + >max_steps run
-        rc(11, "secondary", (170, 57.5), (170, 67)),  # parallel pair, longer
-        rc(12, "secondary", (169.5, 58.2), (169.5, 66)),  # parallel pair, shorter -> deduped
-        rc(13, "secondary", (180, 180), (180.5, 180.2)),  # self-loop
+        rc(1, "primary", (168, 75), (192, 75)),
+        rc(2, "secondary", (192.5, 75.5), (185, 82)),
+        rc(3, "secondary", (151, 22), (144, 20)),
+        rc(4, "primary", (14, 103), (5, 104)),
+        rc(5, "secondary", (32, 111), (36, 111)),
+        rc(6, "secondary", (43, 111), (50, 115)),
+        rc(8, "primary", (95, 30), (95, 60)),
+        rc(9, "secondary", (88, 40), (88, 44)),
+        rc(10, "secondary", (120, 150), (121.3, 150)),
+        rc(11, "secondary", (170, 57.5), (170, 67)),
+        rc(12, "secondary", (169.5, 58.2), (169.5, 66)),
+        rc(13, "secondary", (180, 180), (180.5, 180.2)),
     ]
-    # Bent host for reach 7 (id ABOVE probe 6 so it overwrites the shared start cell):
-    # probe 5's eastward walk enters the leg at ~(111,41), ~14 m from the west node
-    # -> a REAL stub edge (not the coincident-node case); probe 6's start cell is
-    # inside 7's footprint -> junction_entry_at_start.
     g7 = LineString([P(40, 112), P(42, 111), P(46, 111)])
     reaches.append(Reach(reach_id=7, drain_class="primary", geom=g7, length_m=float(g7.length)))
     return reaches
@@ -208,7 +184,6 @@ def test_resolve_config_aggregates_all_problems(tmp_path: Path) -> None:
     with pytest.raises(ValueError) as ei:
         resolve_config(str(path))
     msg = str(ei.value)
-    # ONE aggregated error names EVERY problem, not just the first.
     for fragment in (
         "grid.width",
         "stitch.snap_tolerance_m",
@@ -246,23 +221,19 @@ def test_toy_end_to_end_liveness_and_invariants(toy: tuple) -> None:
         "max_steps_abort",
     ):
         assert h[outcome] >= 1, f"stop condition {outcome} never fired: {h}"
-    # Owner adjudication 2026-08-25 (D20): own-footprint re-entry is continuation,
-    # so the retired abort must never fire; re-entries are counted instead.
     assert h["self_hit_abort"] == 0
     assert c["self_hit_count"] == 0
     assert c["self_reentry_count"] >= 1, "toy self-hit geometry must record re-entries"
-    # Split-at-projection (D21) replaces stubs entirely.
     assert c["junction_split_count"] >= 1, "mid-piece junction entry must split a reach"
     assert c["dropped_connector_count"] >= 1
     assert c["dropped_edge_count"] >= 1, "parallel pair must produce a dedup drop"
     assert c["self_loop_dropped_count"] == 1
     # Structurally unreachable end-to-end (see module docstring); logic unit-tested below.
     assert c["zero_length_dropped_count"] == 0
-    assert c["cycle_break_count"] == 0  # strict-descent toy terrain cannot close a cycle
+    assert c["cycle_break_count"] == 0
     assert c["flat_flagged_edge_count"] >= 1, "basin-floor traversal must flag low confidence"
     assert isinstance(c["negative_slope_edge_count"], int)  # reported-not-asserted
     # Stubs retired by split-at-projection (D21): counters remain for manifest
-    # stability but must stay zero; the mid-span entry now SPLITS its reach.
     assert c["stub_count"] == 0 and c["stub_overlength_count"] == 0
     assert c["split_unresolved_count"] == 0, "toy junctions are all within projection range"
     assert c["unresolved_outfall_count"] == 0
@@ -271,7 +242,6 @@ def test_toy_end_to_end_liveness_and_invariants(toy: tuple) -> None:
     assert m["component_count_post_stitch"] > 1
     assert m["stranded_component_ids"], "disconnected components must be published"
 
-    # Deterministic contiguous ids.
     assert [n.node_id for n in result.nodes] == list(range(1, len(result.nodes) + 1))
     assert [e.edge_id for e in result.edges] == list(range(1, len(result.edges) + 1))
 
@@ -297,7 +267,6 @@ def test_toy_end_to_end_liveness_and_invariants(toy: tuple) -> None:
         else:
             assert n.outfall_reason is None
 
-    # Independent DAG re-check (not the producer's own claim).
     adj = {n.node_id: [] for n in result.nodes}
     indeg = {n.node_id: 0 for n in result.nodes}
     for e in result.edges:
@@ -314,7 +283,6 @@ def test_toy_end_to_end_liveness_and_invariants(toy: tuple) -> None:
                 queue.append(v)
     assert seen == len(result.nodes), "final graph must be a DAG"
 
-    # Fingerprint recomputes byte-exactly from returned edges (consumer-side check).
     payload = json.dumps(
         [
             [
@@ -340,15 +308,12 @@ def test_toy_end_to_end_liveness_and_invariants(toy: tuple) -> None:
 
     lost = [tuple(x) for x in m["lost_walk_audit"]["entries"]]
     assert m["lost_walk_audit"]["total_no_edge"] == len(lost)
-    # D21: stubs retired; the at-start probe now records a split or a skipped
     # zero-length connector, never a stub refusal.
     lost_kinds = {x[2] for x in lost}
     assert not any(k.endswith("stub_refused") for k in lost_kinds)
 
 
 def test_two_surface_rule_realized_bytes(toy: tuple) -> None:
-    """Hybrid must equal ORIGINAL pinned bytes outside the retained mask and differ
-    inside; elevations used by nodes come from the pinned surface either way."""
     reaches, cfg, tmp_path = toy
     stitch_components(reaches, cfg)
     dem_path = Path(cfg["inputs"]["elevation_surface"])
@@ -397,7 +362,6 @@ def test_degenerate_and_parallel_drop_logic() -> None:
     # Zero-length OBSERVED edge between distinct nodes -> zero_length_dropped_count.
     survivors, recs, loops, zeros = _apply_dedup_and_degenerate([e((0, 1), "observed", 0.01)])
     assert zeros == 1 and loops == 0 and survivors == []
-    # Self-loop -> self_loop_dropped_count.
     survivors, _r, loops, _z = _apply_dedup_and_degenerate([e((3, 3), "observed", 50.0)])
     assert loops == 1 and survivors == []
     # Parallel observed pair, same order: LONGER kept, shorter dropped.
@@ -414,11 +378,7 @@ def test_degenerate_and_parallel_drop_logic() -> None:
 
 def test_dag_break_red_demo_cfg_flag() -> None:
     """V5 RED DEMO. Mutation: disable DAG-break via cfg flag
-    (`stitch.dag_break_enabled=false`, threaded into _enforce_dag by
-    stitch_components) while the candidate contains a cycle -> the production
-    enforcement raises 'cycles detected' instead of emitting a cyclic graph.
-    With the flag on, the same candidate is broken at the lowest-slope synthetic
-    edge and rounds are recorded."""
+    With the flag on, the same candidate is broken at the lowest-slope synthetic"""
     fwd = _EdgeCand(
         src=(0, 1),
         order="synthetic_connector",
@@ -446,7 +406,7 @@ def test_dag_break_red_demo_cfg_flag() -> None:
     kept, rounds = _enforce_dag([fwd, rev], break_enabled=True)
     assert len(rounds) == 1
     assert rounds[0]["cycle_size"] == 2
-    assert rounds[0]["dropped_edge_id"] == fwd.prov_id  # lowest slope breaks first
+    assert rounds[0]["dropped_edge_id"] == fwd.prov_id
     assert rounds[0]["pool"] == "synthetic"
     assert rounds[0]["wcc_before"] == 1 and rounds[0]["wcc_after"] == 1
     assert len(kept) == 1 and kept[0].prov_id == rev.prov_id

@@ -1,41 +1,13 @@
-"""DEM acquisition for the JALADHAR terrain pipeline.
-
-FABDEM is the PRIMARY source, Copernicus GLO-30 is the FALLBACK. Source order
+'''FABDEM is the PRIMARY source, Copernicus GLO-30 is the FALLBACK. Source order
 is entirely config-driven (`dem.sources` in `configs/domain_bengaluru.yaml`)
 — this module never hardcodes which source is preferred; it tries each
-config entry in order and the first one whose tiles all download
-successfully wins.
-
-⚠ THE SINGLE MOST DANGEROUS BUG IN THIS PHASE, per the approved Phase 1 plan.
-GLO-30 is a Digital SURFACE model — its own filenames say
-`Copernicus_DSM_COG_...`. Buildings and tree canopy are baked INTO its
-elevation values. FABDEM is GLO-30 with those ML-removed, i.e. bare-earth.
-`conditioning.py` (not built this session) must branch on the `dem_is_dtm`
 flag this module writes into its manifest, never on a hardcoded assumption:
-burning building footprints up on top of a DSM double-counts every
-building's height. This module emits `dem_is_dtm: true|false` and the
 winning source's licence, copied verbatim from the config entry that won —
-never hardcoded here.
-
-Reuses the atomic-download pattern already established in this repo
-(`src/jaladhar/forcing/fetch_imerg.py`, `src/jaladhar/validation/fetch_s1.py`):
 stream to a `.part` file, rename on success (a partial file must never look
-complete), skip a re-download when the local file's size already matches
-the remote's. Tiles here are small (tens of MB, not hundreds), so unlike
-IMERG's hundreds of granules this needs no thread pool.
-
-Mosaicking and reprojection follow the same discipline CLAUDE.md asks for
-throughout: the destination array is sized from the (buffered) `Grid`
 FIRST, and the source mosaic is reprojected directly into it in one pass —
 never reproject the full source extent and then clip, which would waste a
-resampling pass over far more area than needed.
-
 Out of scope for this module (later, unbuilt modules): burning roads/
-buildings/drains into the elevation, breaching depressions, and computing
-slope/flow-accumulation/distance-to-drain. This module's job ends at "one
-clean, correctly-georeferenced elevation raster, buffered, with honestly
-reported provenance."
-"""
+reported provenance."'''
 
 from __future__ import annotations
 
@@ -58,12 +30,8 @@ REPO = Path(__file__).resolve().parents[3]
 
 class DEMSourceError(Exception):
     """A configured DEM source could not be fully fetched or is unusable.
-
     Raised per-source so the caller can fall through to the next entry in
-    `dem.sources`. If every source raises this, `fetch_dem` re-raises it and
-    the CLI stops — CLAUDE.md rule 1: report a genuinely unavailable data
-    source, never fabricate or interpolate elevation to keep going.
-    """
+    `dem.sources`. If every source raises this, `fetch_dem` re-raises it and"""
 
 
 def ensure_boundary(cfg: dict[str, Any], repo_root: Path) -> dict[str, Any]:
@@ -104,20 +72,12 @@ def ensure_boundary(cfg: dict[str, Any], repo_root: Path) -> dict[str, Any]:
 
 
 def download_file(url: str, dest: Path, timeout: int = 300) -> tuple[str, int]:
-    """Idempotent, atomic download. Returns (status, size_bytes).
-
-    status is "have" (cached, verified or trusted) or "ok" (freshly
-    downloaded). Never buffers the file in RAM — streamed straight to disk
-    in 1 MiB chunks, matching fetch_imerg.py / fetch_s1.py in this repo.
-    """
     if dest.exists() and dest.stat().st_size > 0:
         try:
             head = requests.head(url, timeout=30, allow_redirects=True)
             remote_size = int(head.headers.get("Content-Length", 0))
         except Exception:
             remote_size = 0
-        # A cached DEM is not evidence of completeness without an independent
-        # remote byte count. Re-fetch when verification is unavailable.
         if remote_size > 0 and dest.stat().st_size == remote_size:
             return "have", dest.stat().st_size
 
@@ -126,7 +86,7 @@ def download_file(url: str, dest: Path, timeout: int = 300) -> tuple[str, int]:
     try:
         with requests.get(url, stream=True, timeout=timeout) as r:
             r.raise_for_status()
-            with open(tmp, "wb") as fh:  # stream: never buffer a tile in host RAM
+            with open(tmp, "wb") as fh:
                 for chunk in r.iter_content(1 << 20):
                     if chunk:
                         fh.write(chunk)
@@ -143,12 +103,7 @@ def mosaic_and_reproject(
     resampling: str,
     dst_nodata: float,
 ) -> tuple[np.ndarray, dict[str, Any]]:
-    """Mosaic native-CRS tiles, then reproject directly into dst_grid's lattice.
-
-    One mosaic pass (rasterio.merge on the small set of native tiles) and
-    ONE reproject pass into a destination array already sized to dst_grid —
-    never reproject the full source extent and clip afterward.
-    """
+    """never reproject the full source extent and clip afterward."""
     datasets = [rasterio.open(p) for p in tile_paths]
     try:
         tile_meta = [
@@ -196,13 +151,8 @@ def fetch_source(
     dst_nodata: float,
 ) -> tuple[np.ndarray, dict[str, Any], list[dict[str, Any]]]:
     """Download every tile for one configured DEM source, then mosaic+reproject.
-
     A source only wins if ALL its tiles download successfully — raises
-    DEMSourceError otherwise so the caller falls through to the next
-    configured source. Per-tile caching is independent of which source
-    "wins" a given run: a tile already on disk from a prior attempt is kept
-    and reused on the next run even if that run's fallback chain differs.
-    """
+    DEMSourceError otherwise so the caller falls through to the next"""
     name = source_cfg["name"]
     tile_paths: list[Path] = []
     attempts: list[dict[str, Any]] = []
@@ -232,11 +182,8 @@ def fetch_source(
 
 def fetch_dem(cfg: dict[str, Any], repo_root: Path = REPO) -> dict[str, Any]:
     """Fetch the DEM per config: try each source in order, mosaic, reproject, write.
-
     Returns a manifest-ready dict (everything except git_sha/wall_clock,
-    which the CLI adds). Raises DEMSourceError if every configured source
-    fails — the caller must stop, not fabricate elevation (CLAUDE.md rule 1).
-    """
+    which the CLI adds). Raises DEMSourceError if every configured source"""
     boundary = ensure_boundary(cfg, repo_root)
     grid, grid_diag = build_grid(cfg, repo_root)
     buffer_m = float(cfg["dem"]["buffer_m"])
@@ -280,8 +227,6 @@ def fetch_dem(cfg: dict[str, Any], repo_root: Path = REPO) -> dict[str, Any]:
         dst.write(array, 1)
 
     # Smoke test (invariant 3's spirit): median elevation over the canonical
-    # BBOX interior (the buffered array's centre sub-window, NOT the true
-    # ward-polygon interior — a stricter polygon-masked check belongs to
     # build.py's QC step, out of this session's scope). Catches wrong tile,
     # wrong units, and failed reprojection without false-firing on real relief.
     buf_cells = round(buffer_m / grid.resolution)
@@ -344,7 +289,6 @@ def main(
         REPO / "runs" / "terrain_dem", help="Directory to write the manifest into"
     ),
 ) -> None:
-    """Fetch, mosaic, and reproject the DEM (FABDEM primary, GLO-30 fallback)."""
     cfg = load_config(config)
     try:
         result = run_stage("phase1_terrain_fetch_dem", fetch_dem, cfg, config, REPO, out)

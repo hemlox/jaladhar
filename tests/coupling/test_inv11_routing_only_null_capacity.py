@@ -88,10 +88,8 @@ frozen reader are BLOCKED by D-G; see the companion at the bottom of this file.
 from __future__ import annotations
 
 import hashlib
-import importlib.util
 import json
 import os
-import sys
 import uuid
 from dataclasses import replace as dc_replace
 from pathlib import Path
@@ -100,6 +98,7 @@ import geopandas as gpd
 import numpy as np
 import pytest
 import torch
+from conftest import load_mutated_source
 
 from jaladhar.coupling import router as router_mod
 from jaladhar.coupling.config import resolve_config
@@ -116,22 +115,10 @@ REPO = Path(__file__).resolve().parents[2]
 GPKG = REPO / "runs" / "drain_graph_build" / "drain_graph.gpkg"
 CFG = resolve_config(REPO / "configs" / "coupling.yaml", REPO)
 
-DT = 0.48  # house routing timestep [s]
+DT = 0.48
 CELL_AREA_M2 = 100.0  # contract units block — hand-typed here (V2: my arithmetic)
-ISOLATED_WIDTH_M = 2.285  # contract-pinned tertiary nominal (fixture relies on the rule)
+ISOLATED_WIDTH_M = 2.285
 
-# ---------------------------------------------------------------------------
-# Declared-synthetic mixed topology (rule 1: NOT Bengaluru data; the STRUCTURE
-# mirrors the three null roles on the real graph: an upstream-only null chain,
-# a pure null relay, and a null attachment onto a capacity-bearing node).
-# ---------------------------------------------------------------------------
-#   e0: 1 -> 2  CB 4.0        spine
-#   e1: 2 -> 3  CB 4.0        spine terminus (3 = outfall)
-#   e2: 4 -> 5  NULL          node 4: NO capacity-bearing outflow -> RETENTION subject
-#   e3: 5 -> 6  CB 2.5        node 5: BOTH in-edges are null (e2, e6), CB outflow only
-#   e4: 6 -> 7  CB 2.5        (7 = outfall)
-#   e5: 8 -> 9  NULL          node 8: retention; node 9: PURE null-relay subject
-#   e6: 9 -> 5  NULL          null attachment onto the capacity-bearing node 5
 EDGES: tuple[tuple[int, int, float | None], ...] = (
     (1, 2, 4.0),
     (2, 3, 4.0),
@@ -142,14 +129,11 @@ EDGES: tuple[tuple[int, int, float | None], ...] = (
     (9, 5, None),
 )
 NUM_NODES = 9
-E_NULL = (2, 5, 6)  # edge positions of the three null edges
+E_NULL = (2, 5, 6)
 NULL_IDX = torch.tensor(E_NULL, dtype=torch.int64)
 OUTFALLS = (3, 7)
 EDGE_WIDTH = {0: 3.0, 1: 3.0, 2: 0.8, 3: 2.0, 4: 2.0, 5: 0.7, 6: 0.9}
-# width_mean per the CONTRACT rule (mean width over CB-incident edges ONLY; isolated
-# fallback 2.285): baked into the fixture so a reclassification poison is measurable.
-# Outfalls get wide declared widths purely so THEY never surcharge — keeps the
-# "returned cells belong to the null-upstream node" assertion single-subject.
+
 WIDTH_MEAN = {
     1: 3.0,
     2: 3.0,
@@ -161,8 +145,7 @@ WIDTH_MEAN = {
     8: ISOLATED_WIDTH_M,
     9: ISOLATED_WIDTH_M,
 }
-# 4x3 grid; node 4 owns FOUR cells (multi-cell inlet cluster: drives its head past the
-# freeboard within the phase budget); every other node owns exactly one cell.
+
 NODE_CELLS: dict[int, tuple[tuple[int, int], ...]] = {
     1: ((0, 0),),
     2: ((0, 1),),
@@ -178,7 +161,6 @@ GRID_SHAPE = (4, 3)
 
 
 def _mixed_kwargs(q_cap: torch.Tensor, capacity_bearing: torch.Tensor) -> dict[str, object]:
-    """Raw assembly kwargs for the mixed topology (sentinel discipline left to CALLER)."""
     nmap = torch.full(GRID_SHAPE, -1, dtype=torch.int32)
     counts = torch.zeros(NUM_NODES, dtype=torch.int64)
     rows = torch.zeros(NUM_NODES, dtype=torch.int32)
@@ -211,7 +193,6 @@ def _mixed_kwargs(q_cap: torch.Tensor, capacity_bearing: torch.Tensor) -> dict[s
 
 
 def _pristine_kwargs() -> dict[str, object]:
-    """Sentinel-correct vectors: finite > 0 on CB edges, NaN on the three null edges."""
     raw = torch.tensor([0.0 if e[2] is None else float(e[2]) for e in EDGES], dtype=torch.float64)
     cb = torch.tensor([e[2] is not None for e in EDGES], dtype=torch.bool)
     q = torch.where(cb, raw, torch.full_like(raw, float("nan")))
@@ -219,9 +200,11 @@ def _pristine_kwargs() -> dict[str, object]:
 
 
 def _static_shell(shape: tuple[int, int]) -> StaticFields:
-    """Zeroed StaticFields shell (house pattern): guard (a) satisfied, solver untouched."""
     hh, ww = shape
-    z = lambda *s: torch.zeros(*s, dtype=torch.float32)  # noqa: E731
+
+    def z(*s):
+        return torch.zeros(*s, dtype=torch.float32)
+
     return StaticFields(
         dz_x=z(hh, ww - 1),
         dz_y=z(hh - 1, ww),
@@ -254,13 +237,7 @@ def _return_witness_m3(cr, nmap: torch.Tensor, node_id: int) -> float:
 
 
 def _node_vol_m3(state, g) -> torch.Tensor:
-    """Contract definition h_node = vol/plan_area run backwards (exchange's own rule)."""
     return state.h_node_m.to(torch.float64) * g.node_plan_area_m2
-
-
-# ---------------------------------------------------------------------------
-# G1 — coupled micro-run: null edges carry 0 ALWAYS, convey nothing, attribute nothing
-# ---------------------------------------------------------------------------
 
 
 def test_green_coupled_null_edges_zero_flow_retention_and_attribution() -> None:
@@ -281,15 +258,15 @@ def test_green_coupled_null_edges_zero_flow_retention_and_attribution() -> None:
     V7 scope: 20 steps x 12 cells x 9.6 simulated s (dt 0.48 s), 9 nodes / 7 edges
     (3 null); scope claimed: the coupled-tier null pin + retention + surcharge attribution
     on this topology; real-graph dynamics BLOCKED by D-G (see companion)."""
-    g = build_drain_graph(**_pristine_kwargs())  # type: ignore[arg-type]
+    g = build_drain_graph(**_pristine_kwargs())
     static = _static_shell(GRID_SHAPE)
     nmap = g.node_id_map
     state = build_node_state(g)
     vol0 = _node_vol_m3(state, g).sum()
 
     h = torch.full(GRID_SHAPE, 0.35, dtype=torch.float32)
-    conveyed_null = 0.0  # MY accumulation of q_edge*dt across the null edges
-    cum_net_m3 = 0.0  # MY accumulation of capture-return per step
+    conveyed_null = 0.0
+    cum_net_m3 = 0.0
     cap_witness = {nid: 0.0 for nid in (5, 8, 9)}
     book_in_prev = {nid: 0.0 for nid in (5, 8, 9)}
     vol_prev = _node_vol_m3(state, g)
@@ -305,7 +282,6 @@ def test_green_coupled_null_edges_zero_flow_retention_and_attribution() -> None:
             DT,
         )
 
-    # --- PHASE 1: wet enough to capture everywhere, far below freeboard ---------------
     for step in range(12):
         cr = step_coupled(h)
         state, h = cr.node_state_new, cr.h_new
@@ -314,16 +290,11 @@ def test_green_coupled_null_edges_zero_flow_retention_and_attribution() -> None:
         conveyed_null += float(qe[NULL_IDX].to(torch.float64).sum()) * DT
         cum_net_m3 += cr.capture_m3 - cr.return_m3
         assert cr.surcharging_nodes == 0, f"phase1 step {step}: unexpected surcharge"
-        # retention subjects: NOTHING leaves nodes 4/8/9 (no CB outflow, no return yet);
-        # the increment is structurally edge-out 0 + r_node 0 == 0.0 -> BITWISE bar.
+
         for nid in (4, 8, 9):
             moved = float(state.vol_out_m3_cum[nid - 1])
             assert moved == 0.0, f"phase1 step {step}: node {nid} outgoing books moved ({moved!r})"
-        # capture fires ON the null-connectivity nodes (they are real nodes) until each
-        # equilibrates to the ponded depth — at equilibrium head_diff <= 0 and the
-        # no-reverse-capture gate zeroes capture LEGITIMATELY, so the per-step bar is
-        # w >= 0 while the CUMULATIVE witness must be strictly positive (asserted after
-        # the loop). The increment-vs-witness accounting is exact for w == 0 too.
+
         for nid in (5, 8, 9):
             w = _capture_witness_m3(cr, nmap, nid)
             assert w >= 0.0, f"phase1 step {step}: node {nid} captured negative depth"
@@ -337,14 +308,13 @@ def test_green_coupled_null_edges_zero_flow_retention_and_attribution() -> None:
         vol_new = _node_vol_m3(state, g)
         assert bool(vol_new[3] >= vol_prev[3]), "retention node 4 lost volume in phase 1"
         vol_prev = vol_new
-    # each null-connectivity node really did capture before equilibrating to the pond
+
     for nid in (5, 8, 9):
         assert cap_witness[nid] > 0.0, (
             f"null-connectivity node {nid} captured NOTHING across phase 1 — not behaving "
             "as a real capture-bearing node"
         )
 
-    # --- PHASE 2: deep pond over node 4's cells -> it surcharges FROM OWN storage -----
     surcharged_steps = 0
     for step in range(8):
         h2 = torch.full(GRID_SHAPE, 0.35, dtype=torch.float32)
@@ -356,9 +326,7 @@ def test_green_coupled_null_edges_zero_flow_retention_and_attribution() -> None:
         assert bool((qe[NULL_IDX] == 0.0).all()), f"phase2 step {step}: null edge carried flow"
         conveyed_null += float(qe[NULL_IDX].to(torch.float64).sum()) * DT
         cum_net_m3 += cr.capture_m3 - cr.return_m3
-        # node 5 has capacity-bearing outflow, so it NEVER equilibrates — it keeps
-        # capturing through phase 2 as fast as routing drains it. The witness accounting
-        # must therefore cover the whole run, not just phase 1.
+
         for nid in (5, 8, 9):
             w = _capture_witness_m3(cr, nmap, nid)
             inc = float(state.vol_in_m3_cum[nid - 1]) - book_in_prev[nid]
@@ -379,7 +347,6 @@ def test_green_coupled_null_edges_zero_flow_retention_and_attribution() -> None:
         surcharged_steps >= 1
     ), "node 4 never surcharged on its own accumulated storage — fixture premise failed"
 
-    # --- whole-run closers ------------------------------------------------------------
     assert conveyed_null == 0.0, f"cumulative conveyance across null edges: {conveyed_null!r}"
     for nid in (5, 8, 9):
         book_total = float(state.vol_in_m3_cum[nid - 1])
@@ -387,7 +354,7 @@ def test_green_coupled_null_edges_zero_flow_retention_and_attribution() -> None:
             f"node {nid}: cumulative inflow {book_total!r} != cumulative own capture "
             f"{cap_witness[nid]!r} — phantom volume arrived via the null edges"
         )
-    # SANITY (soft, f32 head quantisation per exchange module docstring — NOT the invariant)
+
     d_nodes = float(_node_vol_m3(state, g).sum() - vol0)
     assert abs(d_nodes - cum_net_m3) <= 1e-3 * max(
         1.0, abs(d_nodes)
@@ -399,13 +366,7 @@ def test_green_coupled_null_edges_zero_flow_retention_and_attribution() -> None:
     )
 
 
-# ---------------------------------------------------------------------------
-# G2 — route tier: multi-step random DAGs, conservation vs MY injection, retention
-# ---------------------------------------------------------------------------
-
-
 def _random_dag(seed: int):
-    """Seeded random DAG with ~30% null edges through the PRODUCTION assembly."""
     gen = torch.Generator().manual_seed(seed)
     n = int(torch.randint(6, 26, (1,), generator=gen))
     edges: list[tuple[int, int, float | None]] = []
@@ -422,7 +383,7 @@ def _random_dag(seed: int):
         edges.append((1, 2, 3.0))
     if all(c is not None for _f, _t, c in edges):
         # V7: a trial with ZERO null edges would assert against an empty mask — vacuously
-        # green. Force at least one so every trial exercises the pin for real.
+
         j = int(torch.randint(0, len(edges), (1,), generator=gen))
         f0, t0, _c0 = edges[j]
         edges[j] = (f0, t0, None)
@@ -450,7 +411,7 @@ def _random_dag(seed: int):
     )
     sources = np.nonzero(np.bincount(et.numpy(), minlength=n) == 0)[0]
     retention = np.ones(n, dtype=bool)
-    retention[np.unique(ef[cb].numpy())] = False  # nodes WITH a capacity-bearing outgoing
+    retention[np.unique(ef[cb].numpy())] = False
     return g, sources, retention, n
 
 
@@ -487,11 +448,6 @@ def test_green_route_tier_multistep_null_zero_conservation_retention(seed: int) 
     print(f"[inv11-g2 seed={seed}] nodes={n} null_edges={int(null_mask.sum())} dt={dt:.2f} OK")
 
 
-# ---------------------------------------------------------------------------
-# G3 — sentinel integrity: assembly refuses coerced inputs (MY OWN fixture vectors)
-# ---------------------------------------------------------------------------
-
-
 def test_green_sentinel_integrity_assembly_refuses_coerced_inputs() -> None:
     """Every coercion shape is refused LOUDLY at build_drain_graph, exercised on my own
     vectors: a non-CB edge carrying 0.0 (THE invariant-#11 defect), any other finite value;
@@ -520,7 +476,6 @@ def test_green_sentinel_integrity_assembly_refuses_coerced_inputs() -> None:
         (coerced(mutate_q={5: 0.0}), r"non-capacity-bearing edges must carry NaN sentinels"),
         (coerced(mutate_q={6: 0.9}), r"non-capacity-bearing edges must carry NaN sentinels"),
         (coerced(mutate_q={0: float("nan")}), r"capacity-bearing q_cap must be finite > 0"),
-        # coerced AND reclassified: the 0.0-filled edge counted CB fails the OTHER branch
         (
             coerced(mutate_q={2: 0.0}, mutate_cb={2: True}),
             r"capacity-bearing q_cap must be finite > 0",
@@ -529,10 +484,10 @@ def test_green_sentinel_integrity_assembly_refuses_coerced_inputs() -> None:
     ]
     for i, (kw, pattern) in enumerate(cases):
         with pytest.raises(RefuseLoadError, match=pattern) as excinfo:
-            build_drain_graph(**kw)  # type: ignore[arg-type]
+            build_drain_graph(**kw)
         print(f"[inv11-g3 case {i}] refused verbatim: {excinfo.value}")
 
-    g = build_drain_graph(**_pristine_kwargs())  # type: ignore[arg-type]
+    g = build_drain_graph(**_pristine_kwargs())
     null_mask = ~g.capacity_bearing
     assert bool(torch.isnan(g.q_cap_nom_m3s[null_mask]).all())
     assert bool(torch.isfinite(g.q_cap_nom_m3s[g.capacity_bearing]).all())
@@ -542,12 +497,6 @@ def test_green_sentinel_integrity_assembly_refuses_coerced_inputs() -> None:
     assert bool(torch.isnan(g.q_cap_nom_m3s[null_mask]).all()), "route disturbed the sentinels"
     assert bool((qe[NULL_IDX] == 0.0).all())
 
-
-# ---------------------------------------------------------------------------
-# G4 — partition gate on REALIZED bytes (reader-seam bypass tier, house pattern).
-# ONLY the frozen reader's rejection is bypassed; every router-side V8 assertion
-# (counts, partition, sentinels, topo, grid geometry, falsifier gate, maps) runs.
-# ---------------------------------------------------------------------------
 
 _BYTES_CACHE: dict[str, tuple[gpd.GeoDataFrame, gpd.GeoDataFrame, dict, dict]] = {}
 
@@ -566,8 +515,6 @@ def _real_bytes():
 
 
 def _bypass_load(monkeypatch, edges_gdf: gpd.GeoDataFrame | None = None):
-    """load_drain_graph served the real bytes (optionally ONE mutated frame) past the
-    frozen reader seam."""
     nodes_gdf, edges, adj, man = _real_bytes()
     art = {
         "nodes_gdf": nodes_gdf,
@@ -580,7 +527,6 @@ def _bypass_load(monkeypatch, edges_gdf: gpd.GeoDataFrame | None = None):
 
 
 def _recount_partition(edges_gdf: gpd.GeoDataFrame) -> dict[str, int]:
-    """MY recount of the spec-pinned partition classes from the realized bytes."""
     src = edges_gdf["edge_source"].astype(str)
     basis = edges_gdf["capacity_basis"].astype(str)
     q_notna = edges_gdf["q_capacity_nom_m3s"].notna().to_numpy()
@@ -616,7 +562,6 @@ def test_green_partition_gate_real_bytes_reclassification_refused(monkeypatch) -
     remain BLOCKED by D-G (companion)."""
     _nodes, edges, _adj, _man = _real_bytes()
 
-    # --- pristine: the 379 split realizes exactly as claimed -------------------------
     rec = _recount_partition(edges)
     print(f"\n[inv11-g4 pristine recount] {rec}")
     assert rec == {
@@ -645,21 +590,18 @@ def test_green_partition_gate_real_bytes_reclassification_refused(monkeypatch) -
         em.loc[idx, "q_capacity_nom_m3s"] = value
         return em
 
-    # --- coerce ONE observed zero-slope null edge NaN -> 0.0: BOTH drifts named ------
     with pytest.raises(RefuseLoadError, match=r"edge partition mismatch") as exc_zero:
         _bypass_load(monkeypatch, _mutated(zero_idx, 0.0))
     msg = str(exc_zero.value)
     print(f"[inv11-g4 zero-slope coercion] refused verbatim: {msg}")
     assert "capacity_bearing 1209 != 1208" in msg and "zero_slope 60 != 61" in msg
 
-    # --- coerce ONE area-capped null edge NaN -> 0.0 ---------------------------------
     with pytest.raises(RefuseLoadError, match=r"edge partition mismatch") as exc_area:
         _bypass_load(monkeypatch, _mutated(area_idx, 0.0))
     msg_area = str(exc_area.value)
     print(f"[inv11-g4 area-capped coercion] refused verbatim: {msg_area}")
     assert "capacity_bearing 1209 != 1208" in msg_area and "area_capped 31 != 32" in msg_area
 
-    # --- NULL one capacity-bearing edge (the reverse reclassification) ----------------
     with pytest.raises(RefuseLoadError, match=r"edge partition mismatch") as exc_cb:
         _bypass_load(monkeypatch, _mutated(cb_idx, float("nan")))
     msg_cb = str(exc_cb.value)
@@ -667,8 +609,6 @@ def test_green_partition_gate_real_bytes_reclassification_refused(monkeypatch) -
     assert "capacity_bearing 1207 != 1208" in msg_cb
     assert "1 edges outside all four partition classes" in msg_cb
 
-    # --- coerce a SYNTHETIC-class null edge: partition blind BY CONSTRUCTION, --------
-    #     assembly sentinel gate catches it one layer deeper ---------------------------
     with pytest.raises(
         RefuseLoadError, match=r"non-capacity-bearing edges must carry NaN sentinels"
     ) as exc_syn:
@@ -676,9 +616,7 @@ def test_green_partition_gate_real_bytes_reclassification_refused(monkeypatch) -
     print(f"[inv11-g4 synthetic coercion] caught verbatim: {exc_syn.value}")
 
 
-# ---------------------------------------------------------------------------
 # R1 — V5 red demo: THE named mutation (NaN->0.0 in q_cap assembly) on a /tmp COPY
-# ---------------------------------------------------------------------------
 
 
 def test_v5_red_demo_nan_to_num_assembly_tmp_copy() -> None:
@@ -717,32 +655,22 @@ def test_v5_red_demo_nan_to_num_assembly_tmp_copy() -> None:
         + "    q_cap = torch.nan_to_num(q_cap, nan=0.0)"
         + "  # INV11 V5 MUTATION: sentinel coerced (spec §12 row #11)\n"
     )
-    mut_path = (
-        Path("/tmp/opencode") / f"inv11_router_mutated_{os.getpid()}_{uuid.uuid4().hex[:8]}.py"
+    mutated, _mut_path = load_mutated_source(
+        repo_router,
+        [(needle, mutation_line)],
+        tag=f"{os.getpid()}_{uuid.uuid4().hex[:8]}",
+        prefix="inv11_router",
     )
-    mut_path.parent.mkdir(parents=True, exist_ok=True)
-    mut_path.write_text(src.replace(needle, mutation_line))
-
-    mod_name = f"inv11_router_mutated_{uuid.uuid4().hex[:8]}"
-    spec = importlib.util.spec_from_file_location(mod_name, mut_path)
-    assert spec is not None and spec.loader is not None
-    mutated = importlib.util.module_from_spec(spec)
-    sys.modules[mod_name] = mutated
     try:
-        spec.loader.exec_module(mutated)
 
         kw_coerced = _pristine_kwargs()
         q_coerced = kw_coerced["q_cap_nom_m3s"].clone()
-        q_coerced[2] = 0.0  # THE defect: NaN -> 0.0 on a null edge
+        q_coerced[2] = 0.0
         kw_coerced["q_cap_nom_m3s"] = q_coerced
 
-        # --- arm A: pristine refuses the coerced input (gate armed) -------------------
         with pytest.raises(RefuseLoadError, match=r"NaN sentinels"):
-            build_drain_graph(**kw_coerced)  # type: ignore[arg-type]
+            build_drain_graph(**kw_coerced)
 
-        # --- arm B (MEASURED FINDING): so does the MUTATED module - the gate keys on --
-        #     the required end state ("non-CB entries ARE NaN"), not input provenance,
-        #     so the pinned coercion cannot disarm it. Premise falsified; recorded.
         with pytest.raises(RefuseLoadError, match=r"NaN sentinels") as exc_mut_coerced:
             mutated.build_drain_graph(**kw_coerced)
         print(
@@ -751,15 +679,11 @@ def test_v5_red_demo_nan_to_num_assembly_tmp_copy() -> None:
             exc_mut_coerced.value,
         )
 
-        # --- arm C (RED observable 1): the mutated module now ALSO refuses a ----------
-        #     WELL-FORMED mixed graph - legal assembly becomes impossible.
-        g_clean = build_drain_graph(**_pristine_kwargs())  # type: ignore[arg-type]
+        g_clean = build_drain_graph(**_pristine_kwargs())
         with pytest.raises(RefuseLoadError, match=r"NaN sentinels") as exc_mut_clean:
             mutated.build_drain_graph(**_pristine_kwargs())
         print(f"[inv11-r1 arm C] RED: mutated refused a WELL-FORMED graph: {exc_mut_clean.value}")
 
-        # --- arm D (RED observable 2 + finding): the window the gates cannot watch ---
-        #     post-assembly in-memory coercion via frozen-dataclass replace.
         gm_tampered = dc_replace(
             g_clean, q_cap_nom_m3s=torch.nan_to_num(g_clean.q_cap_nom_m3s, nan=0.0)
         )
@@ -781,27 +705,14 @@ def test_v5_red_demo_nan_to_num_assembly_tmp_copy() -> None:
             "edge_flow/volumes/diag BIT-identical - Q=0 is structural, not value-borne"
         )
     finally:
-        sys.modules.pop(mod_name, None)
-        mut_path.unlink(missing_ok=True)
+        pass
 
     assert (
         hashlib.sha256(repo_router.read_bytes()).hexdigest() == sha_before
     ), "repo router.py changed during the red demo - MUST never happen (copy-only mutation)"
 
 
-# ---------------------------------------------------------------------------
-# R2 — reconstructed defect world: positive nominal fill (the reclassification variant
-# that CAN pass assembly) — phantom capture/conveyance/surcharge shift, measured
-# ---------------------------------------------------------------------------
-
-
 def _two_path_world(cb_null_edge: bool):
-    """World: spine 1 -CB-> 2 (outfall) plus 3 --edge--> 2. With ``cb_null_edge=False`` the
-    3->2 edge is NULL (pristine); with True it is RECLASSIFIED with a positive nominal fill
-    (5 m3/s) and widths recomputed per the contract rule (mean over CB incidents, isolated
-    fallback 2.285): node 3 falls back to 2.285 pristine but gets the edge width 0.8 in the
-    reclassified world; node 2's mean shifts 3.0 -> mean(3.0, 0.8) = 1.9.
-    Grid 2x3: n1(0,0), n2(0,2), n3(1,1)."""
     if cb_null_edge:
         edges = [(1, 2, 3.0), (3, 2, 5.0)]
         widths = [3.0, 1.9, 0.8]
@@ -859,7 +770,7 @@ def test_red_world_positive_fill_phantom_capture_conveyance_surcharge() -> None:
     gh, _nmap_h = _two_path_world(cb_null_edge=True)
     static = _static_shell((2, 3))
     h0 = torch.full((2, 3), 3.0, dtype=torch.float32)
-    null_edge_idx = 1  # position of the 3->2 edge in BOTH worlds
+    null_edge_idx = 1
 
     def run_world(g):
         state = build_node_state(g)
@@ -898,17 +809,16 @@ def test_red_world_positive_fill_phantom_capture_conveyance_surcharge() -> None:
     print(f"\n[inv11-r2] pristine     : {pr}")
     print(f"[inv11-r2] reclassified: {ph}")
 
-    # pristine: the null edge NEVER conveys; the node still surcharges on its own storage
     assert pr["conveyed_m3"] == 0.0, f"pristine null edge conveyed {pr['conveyed_m3']!r} m3"
     assert pr["first_convey_step"] is None
     assert pr["returned_at_3_m3"] > 0.0, "pristine node 3 never surcharged — premise failed"
     assert pr["max_head_3_m"] > 1.5, "pristine node 3 never crossed freeboard — premise failed"
-    # reclassified world: phantom conveyance + phantom capture, head pinned low
+
     assert (
         ph["first_convey_step"] is not None and ph["first_convey_step"] <= 1
     ), "reclassified edge did not convey immediately — phantom-flow signature missing"
     assert ph["conveyed_m3"] > 0.5, f"conveyance dust: {ph['conveyed_m3']!r} m3"
-    # everything the phantom conduit swallows is EXPORTED, not stored (leaky-bucket id.)
+
     assert abs(ph["conveyed_m3"] - ph["capture_at_3_m3"]) <= 1e-5 * max(
         1.0, ph["capture_at_3_m3"]
     ), (
@@ -930,9 +840,7 @@ def test_red_world_positive_fill_phantom_capture_conveyance_surcharge() -> None:
     )
 
 
-# ---------------------------------------------------------------------------
 # BLOCKED companion (V7): the REAL-graph tier behind the UNMUTATED reader
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.slow

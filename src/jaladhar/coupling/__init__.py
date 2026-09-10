@@ -1,11 +1,3 @@
-"""WF-2 surface<->drain coupling (weir-orifice-exchange).
-
-Spec: ``runs/wf2_design_phase/spec.md``; frozen contract
-``configs/contracts/coupling_iface.json`` v1.1.0. Modules land unit by unit
-(config, router, exchange, ledger, solver_hook, diagnostics); each build unit
-extends these exports. Only the public API is re-exported here.
-"""
-
 from jaladhar.coupling.config import ConfigError, CouplingConfig, resolve_config
 from jaladhar.coupling.diagnostics import (
     DiagnosticsRefusal,

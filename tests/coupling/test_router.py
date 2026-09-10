@@ -73,11 +73,7 @@ GPKG = REPO / "runs" / "drain_graph_build" / "drain_graph.gpkg"
 ADJACENCY = REPO / "runs" / "drain_graph_build" / "drain_graph_adjacency.json"
 FALSIFIER = REPO / "runs" / "wf2_falsifier_preregistration" / "surcharge_prediction_set.json"
 
-
-# ---------------------------------------------------------------------------
-# Toy-graph factory: feeds synthetic arrays through the PRODUCTION assembly
 # (topo levels, component classes, route plan) — one code path, per V2.
-# ---------------------------------------------------------------------------
 
 
 def _toy_graph(
@@ -89,13 +85,6 @@ def _toy_graph(
     cap_multiplier: torch.Tensor | None = None,
     active_node: torch.Tensor | None = None,
 ):
-    """edges: (from_id, to_id, cap_m3s_or_None) with 1-based node ids.
-
-    ``cap_multiplier`` (requires_grad) scales the capacity-bearing caps so the
-    autograd test can differentiate route() w.r.t. capacity scaling.
-    ``active_node`` (optional bool (N,)) induces a subgraph at assembly — the
-    windowed-load path; default None keeps every node active.
-    """
     n_edges = len(edges)
     edge_from = torch.tensor([e[0] - 1 for e in edges], dtype=torch.int64)
     edge_to = torch.tensor([e[1] - 1 for e in edges], dtype=torch.int64)
@@ -154,11 +143,10 @@ def test_n_active_nodes_counts_the_mask_not_the_domain():
 
     assert g.n_active_nodes == int(mask.sum())
     assert g.n_active_nodes == 3 and g.n_active_nodes != g.num_nodes
-    # The sibling edge count was always mask-derived; both must agree now.
+
     assert g.active_edge.tolist() == [True, True, False]
     assert g.n_active_edges == int(g.active_edge.sum().item()) == 2
-    # And the induced subgraph is what routes: edge (3->4) leaves node 4
-    # inactive, so it carries exactly 0 even with volume upstream.
+
     vol = torch.full((4,), 100.0, dtype=torch.float64)
     _vn, qe, dg = route(vol, g, 0.5)
     assert float(qe[2].item()) == 0.0
@@ -166,8 +154,6 @@ def test_n_active_nodes_counts_the_mask_not_the_domain():
 
 
 def test_full_mask_still_counts_every_node():
-    """Backward-compatibility guard for the item B fix: the default (no mask)
-    assembly path must keep reporting n_active_nodes == num_nodes."""
     g = _toy_graph([(1, 2, 1.0)], 3)
     assert g.n_active_nodes == g.num_nodes == 3
     assert int(g.active_node.sum().item()) == 3
@@ -176,13 +162,6 @@ def test_full_mask_still_counts_every_node():
 def _naive_route(
     vol: np.ndarray, edges: list[tuple[int, int, float | None]], dt: float
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Reference implementation of the CONTRACT TEXT (shares no code with route()).
-
-    Sequential walk in strict topo order (Kahn layers, ascending id within a
-    layer); multi-inflow lands before outgoing capacity is applied; outgoing
-    split proportional to capacity over capacity-bearing edges only; null
-    edges carry zero; denominator 0 retains volume.
-    """
     num_nodes = vol.shape[0]
     indeg = np.zeros(num_nodes + 1, dtype=np.int64)
     for _f, t, _c in edges:
@@ -211,18 +190,11 @@ def _naive_route(
         rate = max(vol_new[u - 1], 0.0) / dt
         for i, c in outs:
             q[i] = min((c / s) * rate, c) if s > 0 else 0.0
-        # NOTE: iterate the (global_edge_index, cap) PAIRS -- iterating range(len(outs))
-        # here would positionally shadow the global edge ids (caught by this very
-        # equivalence test on first run; recorded per the repo's shadowing class).
+
         for i, _cap in outs:
             vol_new[u - 1] -= q[i] * dt
             vol_new[edges[i][1] - 1] += q[i] * dt
     return vol_new, q
-
-
-# ---------------------------------------------------------------------------
-# Toy-tier tests (fast)
-# ---------------------------------------------------------------------------
 
 
 def test_conservation_identity_random_dags():
@@ -239,7 +211,7 @@ def test_conservation_identity_random_dags():
     for trial in range(6):
         n = int(torch.randint(4, 40, (1,), generator=gen))
         edges: list[tuple[int, int, float | None]] = []
-        for j in range(2, n + 1):  # random spanning structure => acyclic by construction
+        for j in range(2, n + 1):
             parent = int(torch.randint(1, j, (1,), generator=gen))
             cap = (
                 None
@@ -254,7 +226,7 @@ def test_conservation_identity_random_dags():
         before = float(vol.sum().item())
         after = float(vol_new.sum().item())
         assert abs(after - before) <= 1e-9 * max(1.0, before), (trial, before, after)
-        # every null edge carried exactly zero
+
         null_mask = ~g.capacity_bearing
         assert bool((q_edge[null_mask] == 0.0).all())
         assert float(q_edge.sum().item()) >= 0.0
@@ -278,7 +250,7 @@ def test_v5_red_discharge_mutation_overdraft_and_reference_divergence(monkeypatc
     suite green after."""
     edges = [(1, 2, 5.0)]
     g = _toy_graph(edges, 2)
-    vol = torch.tensor([1.0, 0.0], dtype=torch.float64)  # availability 1.0 m3, dt 0.5
+    vol = torch.tensor([1.0, 0.0], dtype=torch.float64)
     dt = 0.5
 
     vol_clean, q_clean, _d = route(vol, g, dt)
@@ -297,7 +269,7 @@ def test_v5_red_discharge_mutation_overdraft_and_reference_divergence(monkeypatc
         float(vol_leaked[0].item()) < 0.0
     ), "mutation undetected: overdraft observable did not move"
     with np.testing.assert_raises(AssertionError):
-        # the discharge vector itself leaves the reference implementation behind
+
         np.testing.assert_allclose(q_leaked.numpy(), ref_q, rtol=1e-9, atol=1e-9)
 
 
@@ -320,12 +292,12 @@ def test_proportional_split_below_and_at_capacity():
     V2: ratio Q1/Q2 == cap1/cap2 below the bound; bitwise Q_e == cap_e above."""
     g = _toy_graph([(1, 2, 1.0), (1, 3, 3.0)], 3)
     dt = 0.5
-    # below capacity: available rate 0.8 < S=4 -> proportional 1:3
+
     vol_small = torch.tensor([0.4, 0.0, 0.0], dtype=torch.float64)
     _vn, q_small, _d = route(vol_small, g, dt)
     assert abs(float(q_small[0].item()) / float(q_small[1].item()) - 1.0 / 3.0) < 1e-12
-    assert abs(float(q_small.sum().item()) * dt - 0.4) < 1e-12  # everything leaves
-    # at capacity: available rate 100 >> S=4 -> Q_e == cap_e exactly
+    assert abs(float(q_small.sum().item()) * dt - 0.4) < 1e-12
+
     vol_big = torch.tensor([50.0, 0.0, 0.0], dtype=torch.float64)
     _vn2, q_big, diag_capped = route(vol_big, g, dt)
     assert float(q_big[0].item()) == 1.0 and float(q_big[1].item()) == 3.0
@@ -352,8 +324,8 @@ def test_zero_denominator_retains_volume():
     g = _toy_graph([(1, 2, None), (2, 3, 4.0)], 3)
     vol = torch.tensor([7.0, 5.0, 0.0], dtype=torch.float64)
     vol_new, q_edge, _diag = route(vol, g, 0.25)
-    assert float(q_edge[0].item()) == 0.0  # null edge: Q == 0 ALWAYS
-    assert float(vol_new[0].item()) == 7.0  # node 1 retains everything
+    assert float(q_edge[0].item()) == 0.0
+    assert float(vol_new[0].item()) == 7.0
     assert float(vol_new[2].item()) == min(5.0 / 0.25, 4.0) * 0.25
 
     # --- live mutation: NaN sentinel -> capacity, through the REAL builder ---
@@ -387,7 +359,7 @@ def test_null_sentinels_never_coerced_phantom_flow_red_demo():
     data boundary. Observable: per-null-edge transferred volume flips 0 -> >0."""
     edges = [(1, 2, None), (2, 3, 3.0)]
     g = _toy_graph(edges, 3)
-    # sentinel integrity after assembly
+
     assert bool(torch.isnan(g.q_cap_nom_m3s[0]))
     assert bool(torch.isfinite(g.q_cap_nom_m3s[1]))
     vol = torch.tensor([9.0, 0.0, 0.0], dtype=torch.float64)
@@ -395,7 +367,6 @@ def test_null_sentinels_never_coerced_phantom_flow_red_demo():
     assert float(q_edge[0].item()) == 0.0
     assert bool(torch.isnan(g.q_cap_nom_m3s[0])), "route coerced the NaN sentinel"
 
-    # --- the coerced world: null edge 'becomes' a 10 m3/s pipe --------------
     g_bad = _toy_graph([(1, 2, 10.0), (2, 3, 3.0)], 3)
     vol_bad, q_bad, _d = route(vol, g_bad, 0.5)
     assert float(q_bad[0].item()) > 0.0, "mutation undetected: coercion produced no phantom flow"
@@ -403,21 +374,15 @@ def test_null_sentinels_never_coerced_phantom_flow_red_demo():
 
 
 def test_multi_inflow_sums_before_outgoing_capacity():
-    """Two inflows land at the child BEFORE its outgoing capacity is applied.
-
-    Child with single outgoing cap C passes min((v1+v2)/dt, C)*dt — NOT two
-    independent capacity-limited transfers. Parent edges are capacity-bearing:
-    under the D-C pin NULL edges carry Q=0 ALWAYS (they convey NOTHING), so a
-    fixture routed through null edges would test the pin, not the sum rule."""
     g = _toy_graph([(1, 3, 10.0), (2, 3, 10.0), (3, 4, 2.0)], 4, outfalls=(4,))
     dt = 1.0
     vol = torch.tensor([5.0, 5.0, 0.0, 0.0], dtype=torch.float64)
     vol_new, q_edge, _diag = route(vol, g, dt)
     assert float(q_edge[0].item()) == 5.0 and float(q_edge[1].item()) == 5.0
-    assert float(q_edge[2].item()) == 2.0  # capped AFTER the sum: (5+5)/1 >> 2
+    assert float(q_edge[2].item()) == 2.0
     assert float(vol_new[3].item()) == 2.0
-    assert float(vol_new[2].item()) == 8.0  # summed inflow minus capped outflow
-    # below-capacity regime: the summed inflow flows through proportionally
+    assert float(vol_new[2].item()) == 8.0
+
     vol2 = torch.tensor([0.3, 0.1, 0.0, 0.0], dtype=torch.float64)
     vol2_new, q2, _d2 = route(vol2, g, dt)
     assert abs(float(q2[2].item()) - 0.4) < 1e-12
@@ -425,7 +390,6 @@ def test_multi_inflow_sums_before_outgoing_capacity():
 
 
 def test_multihop_traversal_within_one_call():
-    """Zero-delay pin: water crosses a 3-edge chain in ONE route() call."""
     g = _toy_graph([(1, 2, 50.0), (2, 3, 50.0), (3, 4, 50.0)], 4, outfalls=(4,))
     vol = torch.tensor([8.0, 0.0, 0.0, 0.0], dtype=torch.float64)
     vol_new, _q, _diag = route(vol, g, 0.48)
@@ -477,13 +441,10 @@ def test_level_sync_matches_naive_topo_walk():
 
 
 def _nan_aware_equal(a: torch.Tensor, b: torch.Tensor) -> bool:
-    """torch.equal is NaN-hostile; sentinel tensors need NaN==NaN to count equal."""
     return bool(((a == b) | (torch.isnan(a) & torch.isnan(b))).all())
 
 
 def test_route_is_pure_inputs_bitwise_unchanged():
-    """Out-of-place discipline: vol and graph tensors bitwise unchanged (NaN
-    sentinels included); outputs occupy fresh storage (no input aliasing)."""
     g = _toy_graph([(1, 2, 2.0), (2, 3, None)], 3)
     vol = torch.tensor([4.0, 1.0, 0.0], dtype=torch.float64)
     vol_before = vol.clone()
@@ -496,8 +457,6 @@ def test_route_is_pure_inputs_bitwise_unchanged():
 
 
 def test_autograd_flows_through_route_wrt_capacity_scaling():
-    """Contract autograd_rules: no detach in the hot path — gradients w.r.t. a
-    capacity scale factor are finite and NON-ZERO through both outputs."""
     scale = torch.tensor(2.0, dtype=torch.float64, requires_grad=True)
     g = _toy_graph([(1, 2, 3.0), (2, 3, 1.5)], 3, cap_multiplier=scale)
     vol = torch.tensor([6.0, 0.5, 0.0], dtype=torch.float64)
@@ -510,37 +469,29 @@ def test_autograd_flows_through_route_wrt_capacity_scaling():
 
 
 def test_route_input_validation():
-    """Loud seam failures: bad dt, wrong dtype, wrong shape, NaN volume."""
     g = _toy_graph([(1, 2, 1.0)], 2)
     good = torch.tensor([1.0, 0.0], dtype=torch.float64)
-    with pytest.raises(ValueError):  # dt == 0
+    with pytest.raises(ValueError):
         route(good, g, 0.0)
-    with pytest.raises(ValueError):  # negative dt
+    with pytest.raises(ValueError):
         route(good, g, -0.5)
-    with pytest.raises(ValueError):  # NaN dt
+    with pytest.raises(ValueError):
         route(good, g, float("nan"))
-    with pytest.raises(ValueError):  # float32 volume
+    with pytest.raises(ValueError):
         route(good.to(torch.float32), g, 0.5)
-    with pytest.raises(ValueError):  # wrong shape
+    with pytest.raises(ValueError):
         route(torch.zeros(3, dtype=torch.float64), g, 0.5)
-    with pytest.raises(ValueError):  # NaN volume
+    with pytest.raises(ValueError):
         route(torch.tensor([float("nan"), 0.0], dtype=torch.float64), g, 0.5)
 
 
 def test_component_classes_on_toy_graph():
-    """outfall reachability classes: every node ON a path to an outfall
-    terminates — including the outfall itself (path length 0); a node with no
-    directed path to any outfall is dead_end; deterministic across rebuilds.
-
-    (First draft expected the outfall node itself to be 'dead_end' — WRONG:
-    reachability includes the trivial path, matching the spec §0 split where
-    the 17 outfalls sit inside the 55. Test fixed, code unchanged — V6.)"""
     edges = [(1, 2, 1.0), (2, 5, None), (3, 5, 2.0), (4, 3, None)]
     g1 = _toy_graph(edges, 5, outfalls=(5,))
     g2 = _toy_graph(edges, 5, outfalls=(5,))
     assert g1.component_class == ["outfall_terminating"] * 5
     assert g1.component_class == g2.component_class
-    # a genuinely unreachable node stays dead_end
+
     g3 = _toy_graph([(1, 2, 1.0), (2, 3, None)], 4, outfalls=(3,))
     assert g3.component_class == ["outfall_terminating"] * 3 + ["dead_end"]
 
@@ -574,7 +525,7 @@ def test_active_mask_induces_subgraph_routing():
     assert g_win.plan.edges_routed == 1
     vol = torch.tensor([4.0, 0.0, 0.0], dtype=torch.float64)
     vol_new, q_edge, diag = route(vol, g_win, 0.5)
-    # edge 0: available rate 4/0.5 = 8 m3/s > cap 5 -> capacity-bound at Q=5.0
+
     assert float(q_edge[0].item()) == 5.0
     assert float(vol_new[0].item()) == 4.0 - 2.5 and float(vol_new[1].item()) == 2.5
     assert float(q_edge[1].item()) == 0.0, "inactive edge must carry exactly zero"
@@ -583,22 +534,12 @@ def test_active_mask_induces_subgraph_routing():
     assert diag["edges_routed"] == 1
 
 
-# ---------------------------------------------------------------------------
-# Window normalization (defect D): both documented forms + loud refusals
-# ---------------------------------------------------------------------------
-
-
 def test_normalize_window_slice_pair_matches_int_tuple():
-    """DEFECT D: the documented ``(rows_slice, cols_slice)`` form normalizes to
-    the IDENTICAL concrete bounds as the equivalent 4-int tuple. RED captured
-    pre-fix: the pair form died with ``TypeError: slice indices must be
-    integers`` inside ``slice(rows).indices(...)`` — the docstring promised a
-    form the code crashed on."""
-    height, width = 3521, 3615  # realized producer grid dims
+    height, width = 3521, 3615
     cases = [
         (slice(0, 5), slice(0, 7)),
-        (slice(None, 9), slice(3, None)),  # open edges: legal ONLY in pair form
-        (slice(1159, 2702), slice(221, 655)),  # the spec §14 smoke window bounds
+        (slice(None, 9), slice(3, None)),
+        (slice(1159, 2702), slice(221, 655)),
     ]
     for rows, cols in cases:
         got = _normalize_window((rows, cols), height, width)
@@ -612,41 +553,31 @@ def test_normalize_window_slice_pair_matches_int_tuple():
 
 
 def test_normalize_window_refuses_malformed_forms():
-    """Malformed windows refuse with RefuseLoadError — NEVER TypeError or a
-    silent misread (a bare 2-int tuple used to be misparsed as
-    ``slice(5)/slice(10)``, i.e. 'rows 5..height', before defect D's fix)."""
     malformed = [
-        (5, 10),  # 2-int pair: neither documented form -> refuse, not misparse
-        (slice(0, 10, 2), slice(0, 5)),  # row step != 1
-        (slice(0, 10), slice(0, 5, 3)),  # col step != 1
-        (slice(50, 40), slice(0, 5)),  # empty/inverted row range
-        (slice(0, 5), slice(90, 40)),  # empty/inverted col range
-        (0, 10, 20),  # wrong arity
-        (0, 100, 0, 10.5),  # non-int member in the 4-int form
-        (-5, 10, 0, 10),  # negative bound
-        (0, 99999, 0, 10),  # beyond grid height
-        (0, 10, 0, 99999),  # beyond grid width
-        "rows=0:10",  # not a tuple at all
+        (5, 10),
+        (slice(0, 10, 2), slice(0, 5)),
+        (slice(0, 10), slice(0, 5, 3)),
+        (slice(50, 40), slice(0, 5)),
+        (slice(0, 5), slice(90, 40)),
+        (0, 10, 20),
+        (0, 100, 0, 10.5),
+        (-5, 10, 0, 10),
+        (0, 99999, 0, 10),
+        (0, 10, 0, 99999),
+        "rows=0:10",
     ]
     for case in malformed:
         with pytest.raises(RefuseLoadError, match=r"\[window\]"):
-            _normalize_window(case, 100, 100)  # type: ignore[arg-type]
+            _normalize_window(case, 100, 100)
 
 
 def test_normalize_window_full_domain_and_bounds_checks():
-    """None covers the whole grid; valid int tuples pass through verbatim;
-    out-of-bounds/empty int tuples refuse loudly."""
     assert _normalize_window(None, 100, 200) == (0, 100, 0, 200)
     assert _normalize_window((10, 40, 20, 60), 100, 200) == (10, 40, 20, 60)
     with pytest.raises(RefuseLoadError, match=r"\[window\]"):
         _normalize_window((40, 10, 0, 60), 100, 200)
     with pytest.raises(RefuseLoadError, match=r"\[window\]"):
         _normalize_window((0, 101, 0, 60), 100, 200)
-
-
-# ---------------------------------------------------------------------------
-# Real-data integration tests (slow; skip with -m 'not slow')
-# ---------------------------------------------------------------------------
 
 
 @pytest.fixture(scope="session")
@@ -678,17 +609,6 @@ def real_graph(real_cfg):
         raise
 
 
-# ---------------------------------------------------------------------------
-# Reader-seam bypass tier (defects C/D/E demonstrable TODAY, not post-WF-1).
-# The frozen WF-1 reader rejects the only realized artefact upstream of every
-# consumer assertion; these tests assemble the exact dict read_artefact would
-# return from the REAL gpkg/manifest/adjacency bytes ONCE and hand it to
-# load_drain_graph verbatim. ONLY the reader's rejection is bypassed — every
-# router-side V8 assertion downstream (counts, partition, sentinels, topo,
-# component classes, grid geometry, window gate, node maps) runs for real.
-# ---------------------------------------------------------------------------
-
-
 @pytest.fixture(scope="session")
 def bypass_art() -> dict:
     man = json.loads((REPO / "runs/drain_graph_build/manifest.json").read_text())
@@ -703,7 +623,6 @@ def bypass_art() -> dict:
 
 @pytest.fixture()
 def bypass_load(bypass_art, monkeypatch):
-    """Serve the real-bytes artefact past the frozen reader seam."""
     from jaladhar.coupling import router as rmod
 
     monkeypatch.setattr(rmod, "read_artefact", lambda *a, **k: bypass_art)
@@ -711,10 +630,6 @@ def bypass_load(bypass_art, monkeypatch):
 
 
 def _section14_window(cfg, art) -> tuple[slice, slice]:
-    """Spec §14 toy window: bbox of the first 10 predicted nodes + cfg pad.
-
-    Returned in the (rows, cols) SLICE-PAIR form — which also exercises the
-    defect-D fix through the real loader on every call."""
     grid = art["manifest"]["config_snapshot"]["grid"]
     res = float(grid["transform"][0])
     x0, ytop = float(grid["transform"][2]), float(grid["transform"][5])
@@ -733,8 +648,6 @@ def _section14_window(cfg, art) -> tuple[slice, slice]:
 
 
 def _count_targets_in_window(art, win_rows: slice, win_cols: slice) -> int:
-    """INDEPENDENT recount of active predicted targets (gpkg coords + producer
-    grid manifest — shares nothing with the loader's gate bookkeeping)."""
     grid = art["manifest"]["config_snapshot"]["grid"]
     res = float(grid["transform"][0])
     x0, ytop = float(grid["transform"][2]), float(grid["transform"][5])
@@ -753,15 +666,11 @@ def _count_targets_in_window(art, win_rows: slice, win_cols: slice) -> int:
 
 @pytest.mark.slow
 def test_real_load_counts_partition_dag_topo_split(real_graph):
-    """V8 consumer assertions against the REALIZED artefact (spec §0 numbers):
-    1721/1587; partition 1208/61/32/286; 24 topo levels with 699 at level 0;
-    directed-reachability split under the terminal definition in effect;
-    fingerprint matches the spec-recorded prefix."""
     g = real_graph
     assert g.num_nodes == 1721 and g.num_edges == 1587
     n_cb = int(g.capacity_bearing.sum().item())
     assert n_cb == 1208
-    assert int((~g.capacity_bearing).sum().item()) == 379  # 286 synth + 61 zero + 32 capped
+    assert int((~g.capacity_bearing).sum().item()) == 379
     assert g.manifest.get("graph_is_dag") is True
     sizes = torch.bincount(g.topo_level)
     assert g.plan.n_levels == 24, f"expected 24 topo levels, got {g.plan.n_levels}"
@@ -771,13 +680,7 @@ def test_real_load_counts_partition_dag_topo_split(real_graph):
         "outfall_terminating": g.component_class.count("outfall_terminating"),
         "dead_end": g.component_class.count("dead_end"),
     }
-    # V6 record (which of {code, test, spec} moved): SPEC. WF-2 M1 owner
-    # directive extends the terminal/outfall definition to lakes + domain
-    # boundary (configs/terminal_definition.yaml, v2-lake-boundary): adjacency
-    # sinks 1183/1512 at 0.0 m inside Bellandur/Varthur seed lake_polygon, and
-    # the declared-only 55/1666 recorded here previously becomes 68/1653.
-    # The test FOLLOWS the new spec; the old figures stay in this comment as
-    # history, not as a second accepted truth.
+
     assert split == {"outfall_terminating": 68, "dead_end": 1653}
     echo = g.manifest.get("terminal_seed_resolution") or {}
     assert echo.get("definition_version") == "v2-lake-boundary"
@@ -787,19 +690,16 @@ def test_real_load_counts_partition_dag_topo_split(real_graph):
     assert set(g.component_class) == {"outfall_terminating", "dead_end"}
     assert g.graph_fingerprint.startswith("207907373348")
     assert len(g.topo_sha256) == 64
-    # topo_sha256 reproduces from the adjacency file through an INDEPENDENT path
+
     adj_order = [int(i) for i in json.loads(ADJACENCY.read_text())["topo_order"]]
     expect_sha = hashlib.sha256(json.dumps(adj_order, separators=(",", ":")).encode()).hexdigest()
     assert g.topo_sha256 == expect_sha
     assert g.topo_order == adj_order
-    assert g.n_active_nodes == 1721 and g.n_active_edges == 1587  # full-domain load
+    assert g.n_active_nodes == 1721 and g.n_active_edges == 1587
 
 
 @pytest.mark.slow
 def test_real_nan_sentinels_and_width_fallback(real_graph, real_cfg):
-    """Null stays null: q_cap NaN on exactly the 379 non-capacity-bearing edges,
-    finite>0 elsewhere; isolated nodes carry the pinned 2.285 m fallback; one
-    node's width_mean recomputed independently from gpkg bytes agrees."""
     g = real_graph
     null_mask = ~g.capacity_bearing
     assert int(null_mask.sum().item()) == 379
@@ -818,15 +718,15 @@ def test_real_nan_sentinels_and_width_fallback(real_graph, real_cfg):
     iso = incident_cb == 0
     expected_iso_width = real_cfg.storage.isolated_node_width_m
     assert np.allclose(g.width_mean_m.numpy()[iso], expected_iso_width, rtol=0, atol=0)
-    # and the isolated set really is the contract's (synthetic-only/zero-cb nodes)
+
     assert int(iso.sum()) > 0
-    # independent mean-width recompute for the first non-isolated node
+
     nid = int(np.nonzero(~iso)[0][0]) + 1
     sel = cb & ((from_arr == nid) | (to_arr == nid))
     ref_mean = float(edges.loc[sel, "width_m"].astype(float).mean())
     got = float(g.width_mean_m[nid - 1].item())
     assert abs(got - ref_mean) <= 1e-9 * max(1.0, abs(ref_mean)), (nid, got, ref_mean)
-    # plan area is the shaft proxy of width_mean (contract node_storage_pinned)
+
     np.testing.assert_allclose(
         g.node_plan_area_m2.numpy(),
         g.width_mean_m.numpy() * real_cfg.storage.shaft_length_proxy_m,
@@ -862,7 +762,7 @@ def _expected_node_id_map(
     limit = radius_m + 1e-9
     rows = np.floor((ytop - ys) / res).astype(int)
     cols = np.floor((xs - x0) / res).astype(int)
-    for i in range(n):  # ascending node_id => lowest id wins distance ties
+    for i in range(n):
         for rr in range(max(int(rows[i]) - k, 0), min(int(rows[i]) + k + 1, height)):
             cy = ytop - rr * res - res / 2.0
             for cc in range(max(int(cols[i]) - k, 0), min(int(cols[i]) + k + 1, width)):
@@ -873,7 +773,7 @@ def _expected_node_id_map(
                     owner[rr, cc] = i + 1
     counts = np.bincount(owner[owner >= 0] - 1, minlength=n).astype(np.int64)
     starved = np.nonzero(counts == 0)[0]
-    for i in starved:  # documented starve-fix deviation (reported, not silent)
+    for i in starved:
         owner[int(rows[i]), int(cols[i])] = int(i) + 1
     if starved.size:
         counts = np.bincount(owner[owner >= 0] - 1, minlength=n).astype(np.int64)
@@ -881,27 +781,16 @@ def _expected_node_id_map(
 
 
 def _assert_node_map_contract(g, cfg, xs: np.ndarray, ys: np.ndarray) -> None:
-    """The ACTUAL node->cell guarantees (defect E adjudication 2026-08-26):
-
-    (a) ``node_cell_count >= 1`` for every ACTIVE node — THE spec §4.2
-        guarantee (holds with min == 1 on the realized graph);
-    (b) ``node_id_map`` equals an independent nearest-wins + starve-fix
-        recompute from node coordinates — strictly-nearest-owner semantics
-        under the lowest-id tie-break, overrides included;
-    (c) allocated-cell bookkeeping closes: bincount(map) == node_cell_count
-        elementwise AND its sum == number of mapped (>= 0) cells;
-    (d) every mapped cell lies within capture_radius_m of its owner's
-        coordinates (full-vectorized, not a sample)."""
     radius = float(cfg.exchange.capture_radius_m)
     got_map = g.node_id_map.numpy()
     expected_owner, expected_counts = _expected_node_id_map(g.manifest, xs, ys, radius)
-    np.testing.assert_array_equal(got_map, expected_owner)  # (b)
-    np.testing.assert_array_equal(g.node_cell_count.numpy(), expected_counts)  # (c)
+    np.testing.assert_array_equal(got_map, expected_owner)
+    np.testing.assert_array_equal(g.node_cell_count.numpy(), expected_counts)
     assert (
         int(g.node_cell_count.numpy()[g.active_node.numpy()].min()) >= 1
-    ), "active node with zero allocated cells"  # (a)
+    ), "active node with zero allocated cells"
     n_mapped = int((got_map >= 0).sum())
-    assert int(expected_counts.sum()) == n_mapped  # (c)
+    assert int(expected_counts.sum()) == n_mapped
     grid = g.manifest["config_snapshot"]["grid"]
     res = float(grid["transform"][0])
     x0, ytop = float(grid["transform"][2]), float(grid["transform"][5])
@@ -910,40 +799,23 @@ def _assert_node_map_contract(g, cfg, xs: np.ndarray, ys: np.ndarray) -> None:
     cx = x0 + mc * res + res / 2.0
     cy = ytop - mr * res - res / 2.0
     d = np.hypot(cx - xs[owners], cy - ys[owners])
-    assert float(d.max()) <= radius + 1e-6, f"mapped cell beyond radius: {d.max():.3f} m"  # (d)
+    assert float(d.max()) <= radius + 1e-6, f"mapped cell beyond radius: {d.max():.3f} m"
 
 
 @pytest.mark.slow
 def test_real_node_maps(real_graph, real_cfg):
-    """Node->cell map contract asserted against an INDEPENDENT recompute.
-
-    V6 ADJUDICATION (defect E, 2026-08-26) — recorded here per the fix-cycle
-    rules: the TEST was wrong; neither the code nor the spec was. The previous
-    assertion ``node_id_map[node_cell_row, node_cell_col] == node_id``
-    ("every node owns its own cell") was an invariant NOBODY specified. Under
-    the pinned OQ1 nearest-node-wins allocation (lowest-id tie-break) plus the
-    documented starve-fix deviation, a node loses its own cell whenever a
-    strictly nearer neighbour claims it — RED evidence pre-rewrite, measured on
-    the realized map through a reader-seam-bypass load: 102/1721 nodes do NOT
-    own their own cell (ids [40, 51, 60, 85, ...]). The binding spec §4.2
-    guarantee is ``node_cell_count >= 1`` for every ACTIVE node, which HOLDS
-    (min == 1). This test now asserts the actual guarantees (a)-(d) in
-    ``_assert_node_map_contract``."""
     g = real_graph
     _assert_node_map_contract(g, real_cfg, nodes_x(g), nodes_y(g))
 
 
 @pytest.mark.slow
 def test_node_maps_contract_on_bypass_load(bypass_load, real_cfg):
-    """The SAME node-map contract as ``test_real_node_maps``, executed TODAY
-    against a reader-seam-bypass load — green now instead of only after WF-1
-    republishes. This is where defect E's green evidence lives."""
     g = bypass_load(real_cfg, REPO)
     xy = _node_xy_cache(g.manifest)
     _assert_node_map_contract(g, real_cfg, xy[0], xy[1])
 
 
-def nodes_x(g):  # helper kept tiny so the radius check above reads cleanly
+def nodes_x(g):
     man = g.manifest
     return _node_xy_cache(man)[0]
 
@@ -968,9 +840,6 @@ def _node_xy_cache(manifest: dict) -> tuple[np.ndarray, np.ndarray]:
 
 @pytest.mark.slow
 def test_real_route_end_to_end_conserves(real_graph, capsys):
-    """DELIVERABLE 3: one full route() pass over the REAL graph, uniform initial
-    volumes, dt=0.48 s. Total node volume conserved to float64 tolerance; all
-    379 null edges carry Q exactly 0; prints the evidence headline."""
     g = real_graph
     vol = torch.full((g.num_nodes,), 1000.0, dtype=torch.float64)
     dt = 0.48
@@ -1018,9 +887,6 @@ def test_real_window_refuses_inactive_falsifier_targets(real_cfg):
         load_drain_graph(real_cfg, REPO, window=(slice(0, 2), slice(0, 2)))
 
 
-# --- defect C (adjudicated 2026-08-26): subwindow falsifier-gate semantics --
-
-
 @pytest.mark.slow
 def test_smoke_window_loads_with_min_predicted_targets(bypass_load, real_cfg, bypass_art):
     """DEFECT C: the spec §14 smoke window — bbox of the first 10 predicted
@@ -1040,7 +906,7 @@ def test_smoke_window_loads_with_min_predicted_targets(bypass_load, real_cfg, by
     win_rows, win_cols = _section14_window(real_cfg, bypass_art)
     g = bypass_load(real_cfg, REPO, window=(win_rows, win_cols))
     expect_active = _count_targets_in_window(bypass_art, win_rows, win_cols)
-    assert expect_active == 14  # verifier's measured split, recounted here
+    assert expect_active == 14
     assert g.n_active_predicted_targets == expect_active
     assert g.n_inactive_predicted_targets == len(pred_all) - expect_active
     assert g.n_active_predicted_targets >= int(real_cfg.smoke.min_predicted_nodes_in_window)
@@ -1051,7 +917,7 @@ def test_smoke_window_loads_with_min_predicted_targets(bypass_load, real_cfg, by
         win_rows.stop - win_rows.start,
         win_cols.stop - win_cols.start,
     )
-    # induced-subgraph routing still conserves volume end to end
+
     vol = torch.full((g.num_nodes,), 500.0, dtype=torch.float64)
     vn, qe, dg = route(vol, g, 0.48)
     assert abs(float(vn.sum().item()) - 500.0 * g.num_nodes) <= 1e-6
@@ -1061,17 +927,12 @@ def test_smoke_window_loads_with_min_predicted_targets(bypass_load, real_cfg, by
 
 @pytest.mark.slow
 def test_subwindow_below_min_predicted_targets_still_refuses(bypass_load, real_cfg):
-    """The §4.2 refusal path SURVIVES the defect-C relaxation: a window with no
-    predicted-target activity is still refused (0 < floor 10)."""
     with pytest.raises(RefuseLoadError, match="falsifier"):
         bypass_load(real_cfg, REPO, window=(slice(0, 2), slice(0, 2)))
 
 
 @pytest.mark.slow
 def test_full_domain_requires_all_targets_and_records_counts(bypass_load, real_cfg):
-    """FULL-domain loads keep the strict ALL-targets-active requirement (every
-    node lies inside the buffered grid, so this passes iff the prediction set
-    is well-formed) and record 116/0 on the graph."""
     g = bypass_load(real_cfg, REPO)
     n_targets = len([int(i) for i in json.loads(FALSIFIER.read_text())["predicted_node_ids"]])
     assert g.n_active_predicted_targets == n_targets
@@ -1082,11 +943,6 @@ def test_full_domain_requires_all_targets_and_records_counts(bypass_load, real_c
 
 @pytest.mark.slow
 def test_real_window_loads_with_predicted_nodes_active(real_graph, real_cfg):
-    """Bounding-box window around the first 10 predicted nodes (+pad 50) loads
-    under the >= min_predicted_nodes_in_window gate (defect-C semantics — it
-    holds 14/116 targets, so require-ALL would refuse it forever); induced
-    subgraph recorded; every first-10 predicted node active; realized target
-    counts recorded on the graph; map cropped."""
     targets = [int(i) for i in json.loads(FALSIFIER.read_text())["predicted_node_ids"][:10]]
     rows = real_graph.node_cell_row[[t - 1 for t in targets]].long()
     cols = real_graph.node_cell_col[[t - 1 for t in targets]].long()
@@ -1097,10 +953,10 @@ def test_real_window_loads_with_predicted_nodes_active(real_graph, real_cfg):
     c0 = max(0, int(cols.min()) - pad)
     c1 = min(W, int(cols.max()) + pad + 1)
     gw = load_drain_graph(real_cfg, REPO, window=(slice(r0, r1), slice(c0, c1)))
-    assert gw.num_nodes == 1721 and gw.num_edges == 1587  # tensors stay full-size
+    assert gw.num_nodes == 1721 and gw.num_edges == 1587
     assert 0 < gw.n_active_nodes < 1721
     assert 0 < gw.n_active_edges < 1587
-    # defect-C bookkeeping: floor satisfied, split closes over all 116 targets
+
     n_targets = len([int(i) for i in json.loads(FALSIFIER.read_text())["predicted_node_ids"]])
     assert gw.n_active_predicted_targets >= int(real_cfg.smoke.min_predicted_nodes_in_window)
     assert gw.n_active_predicted_targets + gw.n_inactive_predicted_targets == n_targets
@@ -1108,7 +964,7 @@ def test_real_window_loads_with_predicted_nodes_active(real_graph, real_cfg):
         assert bool(gw.active_node[t - 1]), f"predicted node {t} inactive"
     assert tuple(gw.node_id_map.shape) == (r1 - r0, c1 - c0)
     assert int(gw.node_cell_count[gw.active_node].min().item()) >= 1
-    # induced-subgraph routing still conserves volume end to end
+
     vol = torch.full((gw.num_nodes,), 500.0, dtype=torch.float64)
     vn, qe, dg = route(vol, gw, 0.48)
     assert abs(float(vn.sum().item()) - 500.0 * gw.num_nodes) <= 1e-6

@@ -1,29 +1,5 @@
 #!/usr/bin/env python
-"""Windowed 3-hour uncoupled forecast driver (SIH-26085 presentation spine).
-
-Issues an UNCOUPLED forecast issued at T=2022-09-04T18:40Z, valid to T+3h
-(2022-09-04T21:40Z, the flooded-segment rise). It is driven by the
-KSNDMC-alert-anchored IMERG rainfall that ACTUALLY fell over that window --
-i.e. a PERFECT RAINFALL NOWCAST experiment. It isolates the flood model from
-rainfall-forecast error; rainfall nowcasting is IMD's job, not this model's.
-The claim being demonstrated is predicting WHERE water goes given rainfall,
-never predicting rainfall. That label is written into the manifest, and every
-consumer must carry it.
-
-WARM START: a nowcast at time T starts from the city's state at T, so when
---h0-raster is given the solver is initialized from that realized depth field
-(the replay's frame at the issue instant) instead of a dry start.
-
---tile "r0,r1,c0,c1" runs the same window on a 1/N canonical-coordinate
-subdomain tile: the subdomain throughput measurement that decides whether
-real-time (gate G4, <=10 min for 3 h) is claimable at all.
-
-This driver does NOT score anything against the satellite observation -- that
-is a separate job.
-
-Ownership: this driver owns its own run directory and this script only. It
-does not touch coupling/drainage/web/routing/demo/contracts paths.
-"""
+"Windowed 3-hour uncoupled forecast driver (SIH-26085 presentation spine). Issues an UNCOUPLED forecast issued at T=2022-09-04T18:40Z, valid to T+3h (2022-09-04T21:40Z, the flooded-segment rise). It is driven by the KSNDMC-alert-anchored IMERG rainfall that ACTUALLY fell over that window -- i.e. a PERFECT RAINFALL NOWCAST experiment. It isolates the flood model from rainfall-forecast error; rainfall nowcasting is IMD's job, not this model's. The claim being demonstrated is predicting WHERE water goes given rainfall, never predicting rainfall. That label is written into the manifest, and every consumer must carry it. WARM START: a nowcast at time T starts from the city's state at T, so when --h0-raster is given the solver is initialized from that realized depth field (the replay's frame at the issue instant) instead of a dry start. --tile \"r0,r1,c0,c1\" runs the same window on a 1/N canonical-coordinate subdomain tile: the subdomain throughput measurement that decides whether real-time (gate G4, <=10 min for 3 h) is claimable at all. This driver does NOT score anything against the satellite observation -- that is a separate job. Ownership: this driver owns its own run directory and this script only. It does not touch coupling/drainage/web/routing/demo/contracts paths."  # noqa: E501
 
 from __future__ import annotations
 
@@ -56,11 +32,9 @@ app = typer.Typer(add_completion=False)
 
 ISSUED_DEFAULT = "2022-09-04T18:40:00Z"
 VALID_DEFAULT = "2022-09-04T21:40:00Z"
-SAR_DEFAULT = "2022-09-04T21:40:00Z"
 
 
 def valid_state_slug(valid_time_iso: str) -> str:
-    """Filesystem-safe slug for a valid-time state raster, e.g. 20220904T2140Z."""
     parsed = datetime.fromisoformat(valid_time_iso.replace("Z", "+00:00"))
     return parsed.strftime("%Y%m%dT%H%MZ")
 
@@ -78,7 +52,6 @@ def parse_tile(value: str | None) -> tuple[int, int, int, int] | None:
 
 
 class GPUStatsSampler:
-    """Background sampler for realized GPU utilisation and torch VRAM peak."""
 
     def __init__(self, interval_s: float = 3.0) -> None:
         self.interval_s = interval_s
@@ -125,7 +98,6 @@ class GPUStatsSampler:
 
 
 def read_dt_schedule(path: Path) -> dict[str, float] | None:
-    """Realized dt schedule statistics from the sidecar written by the solver."""
     import gzip
 
     if not path.exists():
@@ -154,7 +126,6 @@ def main(
     out: Path = typer.Option(REPO / "runs/wf3_uncoupled_3h_forecast", help="Fresh run directory"),
     issue_time_iso: str = typer.Option(ISSUED_DEFAULT, help="Forecast issue time UTC"),
     valid_time_iso: str = typer.Option(VALID_DEFAULT, help="Forecast valid time UTC"),
-    sar_instant_iso: str = typer.Option(SAR_DEFAULT, help="In-loop state snapshot instant UTC"),
     dirty_tree_reason: str | None = typer.Option(
         None,
         help="Explicit reason admitting a dirty source tree (recorded, never laundered)",
@@ -167,7 +138,6 @@ def main(
         help="Subdomain tile 'r0,r1,c0,c1' in canonical coords (throughput measurement)",
     ),
 ) -> None:
-    """Run the 3-hour uncoupled windowed forecast and record the G4 latency."""
     out = out.resolve()
     if out.exists():
         typer.echo(f"FATAL: output directory already exists: {out}", err=True)
@@ -216,12 +186,6 @@ def main(
                 - datetime.fromisoformat(issue_time_iso.replace("Z", "+00:00"))
             ).total_seconds()
             // 60
-        ),
-        "snapshot_instant_utc": sar_instant_iso,
-        "snapshot_note": (
-            "the in-loop state snapshot fires at the valid time (21:40Z) and IS the "
-            "predicted final state for the v6 product; the Sentinel-1 observation is "
-            "at 2022-09-05T00:40:28Z, 3 h after valid, and is NOT scored here"
         ),
         "rainfall_source": (
             "KSNDMC-alert-anchored GPM IMERG v07 Final (historical), window "
@@ -275,7 +239,6 @@ def main(
             "window": {
                 "start": issue_time_iso,
                 "end": valid_time_iso,
-                "snapshot_instant": sar_instant_iso,
             },
         },
         dirty_tree_admission_reason=dirty_tree_reason,
@@ -300,7 +263,6 @@ def main(
             out_dir=out,
             event_start_iso=issue_time_iso,
             event_end_iso=valid_time_iso,
-            sar_instant_iso=sar_instant_iso,
             lifecycle=lifecycle,
             h0_raster=h0_raster,
             tile=tile_tuple,
@@ -349,9 +311,9 @@ def main(
                 "domain_config_realized": {
                     "mode": "subdomain_tile" if tile_tuple is not None else "full_buffered_domain",
                     "tile_canonical_coords": list(tile_tuple) if tile_tuple is not None else None,
-                    "tile_shape": list(sim_out.h_canonical_final.shape)
-                    if tile_tuple is not None
-                    else None,
+                    "tile_shape": (
+                        list(sim_out.h_canonical_final.shape) if tile_tuple is not None else None
+                    ),
                     "canonical_grid_shape": list(sim_out.h_canonical_final.shape),
                     "resolution_m": domain["resolution_m"],
                     "dem_buffer_m": domain["dem"]["buffer_m"],

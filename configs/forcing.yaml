@@ -1,13 +1,13 @@
 # JALADHAR — Rainfall Forcing Configuration
 #
-# Configuration for Phase 3 rainfall forcing adapters.
-# Modes: historical (GPM IMERG), nowcast (KSNDMC), forecast (Open-Meteo).
+# Configuration for rainfall forcing adapters.
+# Modes: historical (GPM IMERG) or nowcast (IMD WFS).
 # Rule: Modes are mutually exclusive and NEVER blended.
 
 # Reference to domain configuration for canonical grid lattice and boundary
 domain_config: "configs/domain_bengaluru.yaml"
 
-# Selected forcing mode: must be exactly one of "historical", "nowcast", "forecast"
+# Selected forcing mode: must be exactly one of "historical" or "nowcast"
 mode: "historical"
 
 # -----------------------------------------------------------------------------
@@ -25,33 +25,6 @@ historical:
   time_step_minutes: 30
   native_resolution_deg: 0.1
   units: "mm/hr"  # converted to incremental mm per 30-min interval in adapter
-
-# -----------------------------------------------------------------------------
-# Nowcast Mode: KSNDMC Live / Captured Gauge Telemetry
-# -----------------------------------------------------------------------------
-nowcast:
-  source: "ksndmc_live"
-  live_dir: "data/raw/ksndmc/live"
-  stations_kml: "data/raw/ksndmc/stations/rain_gauges.kml"
-  bengaluru_bbox: [77.0, 12.3, 78.0, 13.6]  # [min_lon, min_lat, max_lon, max_lat]
-  time_step_minutes: 15
-  accumulation_semantics: "cumulative"
-  interpolation: "nearest"  # spatial interpolation method: nearest / idw
-
-# -----------------------------------------------------------------------------
-# Forecast Mode: Open-Meteo Public NWP API
-# -----------------------------------------------------------------------------
-forecast:
-  source: "open_meteo"
-  endpoint: "https://api.open-meteo.com/v1/forecast"
-  latitude: 12.9716
-  longitude: 77.5946
-  forecast_days: 3
-  hourly_variables:
-    - "precipitation"
-    - "precipitation_probability"
-  timezone: "Asia/Kolkata"
-  time_step_minutes: 60
 
 # -----------------------------------------------------------------------------
 # Output & Manifest Settings

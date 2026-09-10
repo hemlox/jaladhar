@@ -84,12 +84,6 @@ __all__ = [
 
 
 class ConfigError(ValueError):
-    """Aggregated rule-7 configuration failure.
-
-    Carries EVERY problem found at pre-flight in ``.problems`` (and in the
-    message text). Never constructed with a single problem when several were
-    found — that is the failure mode rule 7 was written against.
-    """
 
     def __init__(self, problems: list[str], config_path: Path | None = None) -> None:
         self.problems = list(problems)
@@ -100,12 +94,6 @@ class ConfigError(ValueError):
         )
         body = "\n".join(f"  {i}. {p}" for i, p in enumerate(problems, start=1))
         super().__init__(f"{header}\n{body}")
-
-
-# ---------------------------------------------------------------------------
-# Frozen value objects (spec §4.1). All path-valued fields are ABSOLUTE,
-# resolved against repo_root at resolve time, so consumers never re-resolve.
-# ---------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
@@ -127,7 +115,7 @@ class GraphPaths:
     gpkg: Path
     adjacency: Path
     manifest: Path
-    # WF-2 M1: path to the terminal-definition YAML (v2-lake-boundary seeds).
+
     terminal_definition: Path
     require_dag: bool
     expected_counts: ExpectedCounts
@@ -180,14 +168,10 @@ class DiagParams:
     refuse_start_on_missing_falsifier: bool
     suspicious_deadend_share: float
     ground_truth_manifest: Path
-    # D-GT owner ruling 2026-08-26: GT attribution runs in 'edge' mode by default —
-    # nearest drain EDGE within radius_m (inclusive), responsible node = edge.to_node.
-    # 'node' is RETAINED but SUPERSEDED-BY-RULING-2026-08-26 (regression/A-B evidence only).
+
     attribution_mode: str
     attribution_radius_m: float
-    # C2/D2 (round 3): node mode's OWN radius leaf — its historical pinned value
-    # was 100.0 m since v1; sharing the edge-mode radius into node dispatch made
-    # every A/B against history silently confounded.
+
     attribution_radius_node_m: float
     attribution_radius_basis: str
     g2_min_returned_m3: float
@@ -215,12 +199,6 @@ class SmokeParams:
 
 @dataclass(frozen=True)
 class CouplingConfig:
-    """Resolved coupling configuration (spec §4.1).
-
-    ``legacy_sink_replacement`` is carried here although the §4.1 field sketch
-    omits it, because §5 declares the key and guard (b) reads it — omitting it
-    from the resolved object would leave a key only half-touched.
-    """
 
     enabled: bool
     coupling_version: str
@@ -238,25 +216,17 @@ class CouplingConfig:
     smoke: SmokeParams
 
 
-# ---------------------------------------------------------------------------
-# Schema: every leaf key in spec §5, its kind, and its range/pin predicate.
-# The table IS the rule-7 enumeration — LEAF_KEYS below is derived from it,
-# and tests assert its length against the §5 count so key drift fails loudly.
-# ---------------------------------------------------------------------------
-
-
 def _is_bool(v: Any) -> bool:
     return isinstance(v, bool)
 
 
 def _is_int(v: Any) -> bool:
-    # bool IS a subclass of int in Python; a YAML `true` must never satisfy
-    # an int key (and likewise not a float key).
+
     return isinstance(v, int) and not isinstance(v, bool)
 
 
 def _is_num(v: Any) -> bool:
-    # ints accepted where floats are declared (`50` vs `50.0`); bools refused.
+
     return isinstance(v, (int, float)) and not isinstance(v, bool)
 
 
@@ -305,11 +275,6 @@ def _unit_interval() -> Predicate:
 
 
 def _open_unit_interval() -> Predicate:
-    """(0, 1] — zero refused. BugHunt round-1 item E-minor-1: K1 divides by
-    ``dt.min_fraction_of_uncoupled`` (``solver_hook`` computes ``1/fraction``
-    to cap coupled steps), so a closed [0, 1] check admitted 0 and deferred a
-    ZeroDivisionError to mid-run with the manifest stuck at "running". A value
-    the run cannot survive must fail here, in the first second."""
 
     def chk(v: Any) -> str | None:
         if 0 < v <= 1:
@@ -323,7 +288,6 @@ def _open_unit_interval() -> Predicate:
 
 
 def _window_cells() -> Predicate:
-    """§5 comment constraint: toy window is bounded at 128x128 cells."""
 
     def chk(v: Any) -> str | None:
         if v <= 0:
@@ -368,9 +332,6 @@ _SCHEMA: list[tuple[str, str, Predicate]] = [
     ("graph.gpkg", "path", _no_check()),
     ("graph.adjacency", "path", _no_check()),
     ("graph.manifest", "path", _no_check()),
-    # WF-2 M1 (owner directive): visible v2-lake-boundary terminal definition.
-    # Consumed by router.load_drain_graph via jaladhar.drainage.terminal;
-    # existence enforced at resolve time like every other run-start read.
     ("graph.terminal_definition", "path", _no_check()),
     ("graph.require_dag", "bool", _no_check()),
     ("graph.expected_counts.nodes", "int", _positive()),
@@ -383,9 +344,7 @@ _SCHEMA: list[tuple[str, str, Predicate]] = [
     ("exchange.regime_switch_m", "num", _positive()),
     ("exchange.cw", "num", _positive()),
     ("exchange.cd", "num", _positive()),
-    # Cap fractions: > 0 only, deliberately NOT capped at <= 1 -- invariant
     # #4's red mutation sets capture_cap_fraction=1.1 and expects the cap
-    # violation to appear at runtime (negative depths), not a resolve refusal.
     ("exchange.capture_cap_fraction", "num", _positive()),
     ("exchange.return_cap_fraction", "num", _positive()),
     ("exchange.capture_radius_m", "num", _nonneg()),
@@ -418,24 +377,15 @@ _SCHEMA: list[tuple[str, str, Predicate]] = [
     ("diagnostics.refuse_start_on_missing_falsifier", "bool", _no_check()),
     ("diagnostics.suspicious_deadend_share", "num", _unit_interval()),
     ("diagnostics.ground_truth_manifest", "path", _no_check()),
-    # WF-2 M2 (owner ruling D-GT 2026-08-26): nearest-EDGE attribution with the
-    # responsible node = edge.to_node; the radius is the pre-registered,
-    # geometry-anchored r* from runs/wf2_gt_edges/ (never tuned upward).
     (
         "diagnostics.attribution_mode",
         "str",
         _one_of(("node", "edge")),
     ),
     ("diagnostics.attribution_radius_m", "num", _positive()),
-    # C2/D2 (round 3): per-mode radius dispatch — node mode keeps its HISTORICAL
-    # v1 pin (100.0 m) under its own leaf so A/B vs history is never confounded
-    # by the edge-mode radius.
     ("diagnostics.attribution_radius_node_m", "num", _positive()),
     ("diagnostics.attribution_radius_basis", "str", _nonempty()),
     ("diagnostics.g2_min_returned_m3", "num", _nonneg()),
-    # outputs.* are RESOLVED but never existence-checked: they are written by
-    # the run (post-simulation reporting included) and legitimately may not
-    # exist yet. Rule 7 requires them touched here, not pre-created.
     ("outputs.run_dir", "path", _no_check()),
     ("outputs.manifest", "path", _no_check()),
     ("outputs.surcharge_events_csv", "path", _no_check()),
@@ -452,23 +402,11 @@ _SCHEMA: list[tuple[str, str, Predicate]] = [
 
 LEAF_KEYS: tuple[str, ...] = tuple(name for name, _, _ in _SCHEMA)
 
-# §5 declares exactly these 57 leaves (53 at spec §5 + graph.terminal_definition
-# added by WF-2 M1, owner directive: the terminal/outfall definition must be a
-# config-declared artefact, not an implicit constant + diagnostics.attribution_mode
-# and diagnostics.attribution_radius_basis added by WF-2 M2, owner ruling D-GT
-# 2026-08-26: nearest-EDGE attribution is config-declared with its radius provenance;
-# + diagnostics.attribution_radius_node_m added by the round-3 fix C2/D2: node mode's
-# historical 100 m pin becomes its own leaf so per-mode dispatch is explicit).
-# Asserted in tests/test_config.py so key drift fails loudly in EITHER direction.
-EXPECTED_LEAF_COUNT = 57
-
 _NESTED_SECTIONS: dict[str, tuple[str, ...]] = {
     "graph.expected_counts": ("nodes", "edges"),
     "graph.expected_partition": ("capacity_bearing", "zero_slope", "area_capped", "synthetic"),
 }
 
-# Input paths read at run start — existence required. (diagnostics.falsifier_set
-# is gated separately by refuse_start_on_missing_falsifier; outputs.* excluded.)
 _REQUIRED_INPUT_PATHS: tuple[str, ...] = (
     "solver_ref.config",
     "graph.gpkg",
@@ -493,7 +431,6 @@ def _kind_check(kind: str, v: Any) -> str | None:
 
 
 def _walk(raw: Mapping[str, Any], dotted: str) -> tuple[bool, Any]:
-    """Fetch a dotted key; returns (found, value)."""
     node: Any = raw
     for part in dotted.split("."):
         if not isinstance(node, Mapping) or part not in node:
@@ -543,13 +480,12 @@ def resolve_config(path: Path, repo_root: Path) -> CouplingConfig:
     problems: list[str] = []
 
     def problem(msg: str) -> None:
-        # Single collection point. Raising here instead would be the exact
-        # fail-fast defect invariant #8 demonstrates red against.
+
         problems.append(msg)
 
     raw = _load_yaml(path, problems, "coupling config")
     if raw is None:
-        # Cannot touch any key without the file; report and stop.
+
         raise ConfigError(problems, config_path=path)
     if not isinstance(raw, Mapping):
         problem(f"top-level document must be a mapping, got {type(raw).__name__}")
@@ -558,7 +494,6 @@ def resolve_config(path: Path, repo_root: Path) -> CouplingConfig:
     values: dict[str, Any] = {}
     bad_parents: set[str] = set()
 
-    # --- pass 1: unknown keys (typos must not silently become mid-run KeyErrors)
     known_tops = {name.split(".")[0] for name in LEAF_KEYS}
     for sect, sect_val in raw.items():
         if sect not in known_tops:
@@ -587,10 +522,9 @@ def resolve_config(path: Path, repo_root: Path) -> CouplingConfig:
             else:
                 problem(f"unknown key '{full}' — typo? refusing")
 
-    # --- pass 2: presence + type + range, per leaf, collecting ALL defects
     for name, kind, pred in _SCHEMA:
         if any(name == bp or name.startswith(bp + ".") for bp in bad_parents):
-            continue  # parent already reported broken; do not double-report
+            continue
         found, v = _walk(raw, name)
         if not found:
             problem(f"missing key '{name}'")
@@ -605,15 +539,12 @@ def resolve_config(path: Path, repo_root: Path) -> CouplingConfig:
             continue
         values[name] = v
 
-    # --- pass 3: input-path existence (run-start reads; outputs excluded)
     for name in _REQUIRED_INPUT_PATHS:
         if name in values:
             p = _abspath(values[name], repo_root)
             if not p.exists():
                 problem(f"'{name}': file not found: {p}")
 
-    # --- pass 4: cross-keys -------------------------------------------------
-    # (a) falsifier gate: refuse_start_on_missing_falsifier=true => must exist.
     refuse = values.get("diagnostics.refuse_start_on_missing_falsifier")
     fs_val = values.get("diagnostics.falsifier_set")
     if refuse is True and fs_val is not None:
@@ -625,7 +556,6 @@ def resolve_config(path: Path, repo_root: Path) -> CouplingConfig:
                 "to start (invariant #12)"
             )
 
-    # (b) guard b: enabled=true requires legacy_sink_replacement=true.
     enabled = values.get("coupling.enabled")
     legacy = values.get("coupling.legacy_sink_replacement")
     if enabled is True and legacy is not True:
@@ -634,7 +564,6 @@ def resolve_config(path: Path, repo_root: Path) -> CouplingConfig:
             "(guard b declaration: the run manifest must declare legacy sink replacement)"
         )
 
-    # (c) solver chain cross-keys: hf_floor equality + D-F infiltration zero.
     sc_val = values.get("solver_ref.config")
     solver_raw: Any = None
     if sc_val is not None:
@@ -670,19 +599,6 @@ def resolve_config(path: Path, repo_root: Path) -> CouplingConfig:
                     "owner adjudication of deviation D-F, not a config edit)"
                 )
 
-    # (d) provenance parity — coupling YAML vs the constants exchange.py EXECUTES
-    #     (BugHunt round-1 item D). Before this pass the resolver accepted e.g.
-    #     assumed_freeboard_m=15.0 / cw=9.9: _node_geometry_assumption then wrote
-    #     those YAML values into every run manifest AS the producing physics while
-    #     couple_step executed the pinned module constants — declared/executed
-    #     divergence invisible to any single-side reader. The ‡ declared-assumption
-    #     keys stay declared-assumption but must EQUAL the pinned constants;
-    #     changing one means editing the exchange.py constant AND bumping
-    #     coupling_version together.
-    #
-    #     Lazy import: exchange sits ABOVE this module in the package graph
-    #     (config <- router <- exchange), so a module-level import would be
-    #     circular; at resolve time everything is initialised and this is safe.
     from jaladhar.coupling.exchange import (
         A_OPEN_WIDTH_FRACTION,
         ASSUMED_FREEBOARD_M,
@@ -715,12 +631,7 @@ def resolve_config(path: Path, repo_root: Path) -> CouplingConfig:
                 "item D); changing it requires editing the constant AND bumping "
                 "coupling_version together"
             )
-    # hf_floor_m backstop: its primary seam check is against solver
-    # physics.hf_floor_m above; when that check already reported the key, the
-    # defect is named once (rule-7 aggregation reports each defect once, and
-    # consumers assert exact problem counts at this seam). When the two YAML
-    # sides AGREE but both drifted off the executed constant, nothing above can
-    # see it — this parity names it.
+
     c_hf = values.get("exchange.hf_floor_m")
     hf_solver_reported = any("exchange.hf_floor_m" in p for p in problems)
     if not hf_solver_reported and c_hf is not None and c_hf != HF_FLOOR_M:
@@ -732,15 +643,6 @@ def resolve_config(path: Path, repo_root: Path) -> CouplingConfig:
             "coupling_version together"
         )
 
-    # (e) dx parity — solver_ref domain resolution vs the exchange cell-area
-    #     contract (BugHunt round-1 item E-minor-2). The loader pins the graph
-    #     manifest's cell_area_m2 == 100.0 (exchange.CELL_AREA_M2) but nothing
-    #     pinned the SOLVER grid spacing: a domain resolution_m that is not
-    #     sqrt(CELL_AREA_M2) puts the drain overlay on a different lattice than
-    #     the cells every exchange/ledger m2<->depth conversion assumes. Skipped
-    #     silently when THIS solver chain declares no domain_config — the
-    #     solver's own rule-7 preflight owns that refusal; here we assert the
-    #     seam whenever the chain exposes it.
     if isinstance(solver_raw, Mapping):
         dom_val = solver_raw.get("domain_config")
         if isinstance(dom_val, str):
@@ -765,7 +667,6 @@ def resolve_config(path: Path, repo_root: Path) -> CouplingConfig:
     if problems:
         raise ConfigError(problems, config_path=path)
 
-    # --- construction (all keys present by construction above) --------------
     cfg = CouplingConfig(
         enabled=values["coupling.enabled"],
         coupling_version=values["coupling.coupling_version"],

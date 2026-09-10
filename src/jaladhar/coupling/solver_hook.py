@@ -1,70 +1,3 @@
-"""WF-2 solver integration — coupled driver, guard transformations, typer CLI (spec §9).
-
-NO SOLVER FILE IS MODIFIED. :func:`simulate_coupled` MIRRORS
-:func:`jaladhar.solver.run.simulate`'s loop discipline — record-then-replay dt selection,
-Courant rejection (``run.py:133-141``), the host mass-check cadence, snapshotting — and adds
-the exchange step per the v1 call-site realization of deviation D-F:
-
-    dt = controller.dt_for(h); h_acc,... = acc_step(h, qx, qy, static_zeroed, dt, p, r)
-    cr   = couple_step(h_acc, qx_new, qy_new, static_zeroed, node_state, graph, dt)
-    h    = cr.h_new;  node_state = cr.node_state_new          # commit ONLY on acceptance
-
-The pinned INTERIOR call site ("after mass update, before sink stage") is unreachable inside
-monolithic ``acc_step``, so couple_step runs immediately AFTER ``acc_step`` returns. The drain
-stage inside acc_step is exactly zero because the legacy field is zeroed — no double count;
-infiltration is asserted 0.0 by the rule-7 resolver (D-F refusal), making the ordering
-discrepancy exactly nil.
-
-Guards (owner decision, spec §2), all four realized here:
-- (a) OUT-OF-PLACE zeroing via ``zero_drain_cap_out_of_place`` (``dataclasses.replace`` +
-  ``torch.zeros_like``; the input instance is never mutated — proven bitwise each run) with
-  ``couple_step`` re-asserting ``(static.drain_cap_m_s == 0).all()`` at entry.
-- (b) the run manifest DECLARES the transformation incl. ``legacy_drain_disabled: true``.
-- (c) anti-double-count: coupling ON => legacy ``drain_out_m3 == 0.0`` exactly AND
-  ``captured_to_drains_m3 > 0``; the ledger's mirror assert gives it runtime teeth.
-- (d) ``coupled_parameter_set`` removes ``drain_cap_m_s`` from the ``StaticFields.parameters()``
-  VIEW (a filtered view OF that method, ``state.py`` untouched) so calibration cannot tune a
-  dead knob.
-
-K1 kill threshold (§10.6, HALT): coupled steps must stay <= 2x the uncoupled-equivalent step
-count over the same simulated window. The uncoupled equivalent is MEASURED, not estimated: an
-uncoupled twin (same static-zeroed fields, same forcing, same bounds — coupling off) runs first
-through the host's own :func:`jaladhar.solver.run.simulate`, and its realized dt schedule's
-prefix cumulative times give N_unc(tau) exactly. A schedule that fails to contain the truth is
-worse than a point estimate (run.py's own 2.6x under-prediction precedent), so no analytic
-proxy is used. Cost is one extra forward pass, reported in the manifest. On breach the run
-HALTS: manifest status "halted_K1", never tuned to keep a run alive.
-
-K2/K3 are recorded every run (cap-binding fraction; returned/captured with the
-STORAGE-ABSORPTION tell). K4 (OVERSHOOT tell) is computed by the diagnostics unit later — the
-manifest carries a named placeholder.
-
-Manifest lifecycle is CLAUDE.md rule 6 verbatim: written AT RUN START (status "running",
-git_sha, git_dirty, config snapshot of BOTH YAMLs, device cpu, coupled_mode_transformation
-block, compute_budget_estimate) and UPDATED IN PLACE at completion/refusal/halt/failure — a
-run whose manifest only exists if nothing went wrong is not provenance.
-
-The D-G seam reality is propagated, never worked around: when the frozen WF-1 reader
-(:func:`~jaladhar.drainage.graph_io.read_artefact`, called inside ``router.load_drain_graph``)
-refuses the only realized artefact, the manifest is updated IN PLACE to status
-"refused_with_D_G" carrying the reader's verbatim refusal and the exception propagates (CLI
-exits non-zero). No assertion is bypassed; no load is fabricated. EVERY OTHER loader refusal —
-the router-side gates (window falsifier gate, malformed window, partition/count mismatch,
-sentinel integrity, starved map, topo...) — is a DIFFERENT source: the read_artefact call is
-runtime-wrapped AT THIS CALL SITE so its refusals carry ``.source = 'frozen_reader'``; anything
-untagged lands at terminal status "refused_load_gate" with the refusal verbatim plus a
-``refusal_source`` naming the gate. Conflating the two misattributes router-side gate refusals
-to the D-G artefact seam. A refusal of the PRE-REGISTERED FALSIFIER SET (absent path or
-unreadable/lacking counts, §11.2) is a third source — it never touches the graph reader — and
-gets its own terminal status "refused_falsifier_missing" (verbatim message preserved). The G2
-anti-vacuity verdict (§11.1 contract) is computed by the driver via
-:func:`jaladhar.coupling.diagnostics.g2_verdict` into the result/manifest alongside the
-top-level ``gt_attribution`` block; the CLI exits non-zero on anti-vacuity failure only, the
-library does not raise.
-
-CPU-only everywhere (V12); device comes from cfg.device which the resolver pins to "cpu".
-"""
-
 from __future__ import annotations
 
 import csv
@@ -118,10 +51,8 @@ app = typer.Typer(add_completion=False)
 REPO = Path(__file__).resolve().parents[3]
 STAGE = "wf2_coupled_run"
 
-# K1 evaluation starts once both schedules have >= this many steps' worth of signal; the twin
-# shares the coupled run's FIRST selection by construction, so fewer steps is pure noise.
 K1_MIN_EVAL_STEPS = 4
-# §14 probe cadence: measured <=5-step projection vs smoke.cpu_budget_wall_clock_min.
+
 COMPUTE_PROBE_STEP = 5
 
 __all__ = [
@@ -155,19 +86,10 @@ def _assert_zeroed(static_zeroed: StaticFields) -> None:
 
 
 def coupled_parameter_set(static: StaticFields) -> dict[str, torch.Tensor]:
-    """Guard (d): the COUPLED-mode calibration parameter view.
-
-    A filtered view OF ``StaticFields.parameters()`` — defined here so ``state.py`` stays
-    untouched — with the dead knob removed. The legacy sink is zeroed in coupled mode, so a
-    later calibration silently tuning ``drain_cap_m_s`` must be impossible, not discouraged.
-    """
     return {k: v for k, v in static.parameters().items() if k != "drain_cap_m_s"}
 
 
 def _git_info(repo_root: Path) -> dict[str, Any]:
-    """Rule-6 provenance: HEAD sha + dirty flag + porcelain paths (dirty tree ALLOWED and
-    recorded — this workflow develops on a live tree; refusing would block every run, hiding
-    dirtiness is the worse failure)."""
     try:
         sha = subprocess.check_output(
             ["git", "rev-parse", "HEAD"],
@@ -190,8 +112,6 @@ def _git_info(repo_root: Path) -> dict[str, Any]:
 
 
 def _require_solver_keys(solver_cfg: dict[str, Any]) -> None:
-    """Rule 7 for the keys THIS driver reads from the host solver config: aggregated error
-    naming every missing key in the first second, mirroring ``run._resolve_config``."""
     missing: list[str] = []
 
     def check(d: Any, *keys: str) -> None:
@@ -229,7 +149,6 @@ def _require_solver_keys(solver_cfg: dict[str, Any]) -> None:
 
 
 def _resolved_coupling_snapshot(cfg: CouplingConfig) -> dict[str, Any]:
-    """JSON-safe snapshot of the RESOLVED coupling config (paths absolutized at resolve time)."""
 
     def _jsonable(v: Any) -> Any:
         if isinstance(v, Path):
@@ -274,7 +193,6 @@ COUPLED_MODE_TRANSFORMATION: dict[str, Any] = {
 
 
 def _node_geometry_assumption(cfg: CouplingConfig) -> dict[str, Any]:
-    """Spec §9.3/§9.4 declared-assumption block; WIDTH_DOWNGRADE tag propagates visibly."""
     return {
         "node_plan_area_rule": (
             "width_mean_m over CAPACITY-BEARING incident edges (isolated fallback "
@@ -288,7 +206,6 @@ def _node_geometry_assumption(cfg: CouplingConfig) -> dict[str, Any]:
         "a_open_width_fraction": cfg.exchange.a_open_width_fraction,
         "return_distribution": "uniform across the node's allocated cells (declared-choice v1)",
         # §9.4 graft: width provenance is BELOW CPHEEO confidence; every manifest line where
-        # width feeds a number carries this grade visibly.
         "width_grade": "BELOW_CPHEEO_CONFIDENCE",
     }
 
@@ -319,14 +236,10 @@ DEVIATIONS_NOTICE: dict[str, str] = {
     ),
 }
 
-
 FROZEN_READER_SOURCE = "frozen_reader"
 """``.source`` tag carried by a RefuseLoadError that escaped the frozen WF-1
 ``read_artefact`` call — the ONLY refusals entitled to terminal status "refused_with_D_G"."""
 
-# C2/D2 (round 3): node mode keeps its HISTORICAL v1 radius pin under its own config
-# leaf; this basis string records that provenance in every node-mode manifest block
-# (D9: both modes carry attribution_mode + effective radius + basis).
 NODE_MODE_RADIUS_BASIS = (
     "historical node-mode attribution radius, pinned at 100.0 m since v1 "
     "(declared assumption ‡, unsourced, never tuned); read from config leaf "
@@ -338,15 +251,6 @@ NODE_MODE_RADIUS_BASIS = (
 
 @contextmanager
 def _tag_frozen_reader_refusals():
-    """Tag RefuseLoadError escaping ``router.read_artefact`` with ``.source``.
-
-    Item C discrimination mechanism: the frozen reader's refusal IS the D-G seam; every
-    other gate inside ``router.load_drain_graph`` ([window] / [consumer] / [maps] /
-    [grid] / [topo] / [assemble]...) is a router-side load gate and must land at
-    "refused_load_gate". router.py is another unit's file, so the wrap happens at THIS
-    call site: while it is held, ``read_artefact`` refusals are re-raised tagged, and
-    everything else propagates untagged.
-    """
     import jaladhar.coupling.router as _router
 
     original = _router.read_artefact
@@ -366,7 +270,6 @@ def _tag_frozen_reader_refusals():
 
 
 def _refusal_gate_name(exc: BaseException) -> str:
-    """Best-effort gate name from a refusal's leading ``[tag]`` token (e.g. '[window]')."""
     msg = str(exc)
     if msg.startswith("[") and "]" in msg:
         return msg[1 : msg.index("]")]
@@ -374,15 +277,13 @@ def _refusal_gate_name(exc: BaseException) -> str:
 
 
 def _load_falsifier_header(path: Path, refuse_if_missing: bool) -> dict[str, Any]:
-    """Read ONLY the pre-registered set's header counts at run START (§11.2: loaded or refused;
-    comparison itself is the diagnostics unit's job and lands as its placeholder here)."""
     if not path.exists():
         if refuse_if_missing:
             exc = RefuseLoadError(
                 f"[{STAGE}] falsifier prediction set missing at {path} "
                 "(diagnostics.refuse_start_on_missing_falsifier=true) — refusing to start"
             )
-            exc.source = "diagnostics.falsifier_set"  # NOT the D-G seam (item C)
+            exc.source = "diagnostics.falsifier_set"
             raise exc
         return {"loaded_at_start": False, "path": str(path)}
     try:
@@ -399,13 +300,12 @@ def _load_falsifier_header(path: Path, refuse_if_missing: bool) -> dict[str, Any
         gate_exc = RefuseLoadError(
             f"[{STAGE}] falsifier prediction set at {path} unreadable/lacking counts: {exc}"
         )
-        gate_exc.source = "diagnostics.falsifier_set"  # NOT the D-G seam (item C)
+        gate_exc.source = "diagnostics.falsifier_set"
         raise gate_exc from exc
 
 
 @dataclass
 class CoupledRunResult:
-    """Realized coupled-run state + every ledger object the report needs."""
 
     h: torch.Tensor
     qx: torch.Tensor
@@ -437,10 +337,6 @@ class CoupledRunResult:
 
 
 def _uncoupled_steps_covered(twin_cumtime: list[float], tau: float) -> int:
-    """Number of twin (uncoupled-equivalent) steps fully within simulated time tau.
-
-    Pure function of the twin's realized prefix cumulative times — the K1 denominator.
-    """
     return bisect_right(twin_cumtime, tau)
 
 
@@ -449,10 +345,6 @@ def _write_products(
     ledger: CouplingMassLedger,
     snapshots: list[tuple[float, torch.Tensor]],
 ) -> dict[str, Any]:
-    """Serialize run products. The surcharge CSV uses the EXACT §11.1 G2 per-node schema
-    (`node_id,total_returned_m3,first_step,last_step,max_head_m`); a zero-row file is allowed.
-    Depth snapshots are stored as float32 .npy sidecars (GeoTIFF-on-canonical-grid writing
-    stays with the full-domain path; window/toy grids carry no canonical profile)."""
     products: dict[str, Any] = {}
     events = ledger.flush_open_events()
     csv_path = cfg.outputs.surcharge_events_csv
@@ -495,34 +387,6 @@ def simulate_coupled(
     snapshot_every_s: float | None = None,
     smoke: bool = False,
 ) -> CoupledRunResult:
-    """One coupled forward run under ``run.simulate()``'s discipline; NO solver file touched.
-
-    Mirrors record-then-replay selection, Courant rejection (with the exchange INSIDE the
-    rejection retry — rejected attempts are discarded whole, so the f64 node books only ever
-    see accepted steps), host mass-check cadence, and snapshotting. Manifest lifecycle is
-    rule-6 verbatim: start-write before any simulation work, in-place terminal update on
-    completed / halted_K1 / refused_with_D_G / refused_load_gate / refused_falsifier_missing /
-    refused_compute_budget / failed.
-
-    Raises:
-        RefuseLoadError: three distinct sources with distinct manifest statuses — the D-G
-            seam (frozen ``read_artefact`` refused the artefact; status "refused_with_D_G"
-            with the verbatim refusal), a router-side load gate (window falsifier gate,
-            malformed window, partition/count mismatch, sentinel integrity, starved map,
-            topo...; status "refused_load_gate" with ``refusal_source`` naming the gate),
-            and the §11.2 falsifier gate (status "refused_falsifier_missing"). All
-            propagate, never bypassed.
-        KillThresholdHalt: K1 fired; manifest at "halted_K1".
-        ComputeBudgetExceeded: measured projection exceeded the configured wall-clock cap.
-        CouplingMassBreach: judged residual or reconciliation identity breached mid-run.
-        KeyError: aggregated rule-7 pre-flight on this driver's solver-config keys.
-
-    Returns:
-        CoupledRunResult with ``g2_anti_vacuity_fail`` set (mirrored into the final
-        manifest's ``g2`` block): True iff NO node ever surcharged or the window returned
-        less than ``diagnostics.g2_min_returned_m3`` (§11.1 anti-vacuity). Reported, not
-        raised — the CLI turns it into a non-zero exit.
-    """
     repo_root = Path(repo_root)
     t_start = time.perf_counter()
     if cfg.device != "cpu":
@@ -565,7 +429,6 @@ def simulate_coupled(
         else float(cfg.outputs.write_every_s)
     )
 
-    # --- rule 6: MANIFEST AT RUN START ---------------------------------------
     cfg.outputs.run_dir.mkdir(parents=True, exist_ok=True)
     git = _git_info(repo_root)
     band = tuple(solver_cfg.get("compute_estimate", {}).get("h_max_band_m", (1.0, 30.0)))
@@ -603,13 +466,6 @@ def simulate_coupled(
     write_json_atomic(cfg.outputs.manifest, start_manifest)
 
     def update_manifest(status: str, extra: dict[str, Any]) -> dict[str, Any]:
-        """Rule-6 IN-PLACE update, CUMULATIVE: merges ``extra`` onto the manifest's CURRENT
-        on-disk bytes (falling back to ``start_manifest`` only if the read fails) instead of
-        onto the stale in-memory start copy, so mid-run payloads ACCUMULATE into the
-        terminal manifest instead of being reset by it (cells / grid_shape / duration_s are
-        written at input assembly and must survive to completed/halted/refused bytes).
-        Status transitions stay authoritative — last write wins on ``status`` and on any key
-        an update explicitly re-states."""
         current: dict[str, Any] = {}
         try:
             loaded = json.loads(cfg.outputs.manifest.read_text())
@@ -621,13 +477,6 @@ def simulate_coupled(
         write_json_atomic(cfg.outputs.manifest, payload)
         return payload
 
-    # --- input assembly (graph FIRST so a D-G refusal lands before heavy reads) ---
-    # Each RefuseLoadError source gets its OWN terminal status: the frozen graph reader's
-    # refusal is the D-G seam ("refused_with_D_G", identified by the .source tag applied
-    # at the read_artefact call site); every OTHER loader gate is "refused_load_gate";
-    # the falsifier gate is NOT either and refuses as "refused_falsifier_missing".
-    # load_domain raises ValueError, never RefuseLoadError, so it needs no refusal
-    # branch (inspected 2026-08-26).
     try:
         with _tag_frozen_reader_refusals():
             graph_loaded = (
@@ -635,7 +484,7 @@ def simulate_coupled(
             )
     except RefuseLoadError as exc:
         if getattr(exc, "source", None) == FROZEN_READER_SOURCE:
-            # D-G seam reality: propagate cleanly, manifest records the refusal VERBATIM.
+
             update_manifest(
                 "refused_with_D_G",
                 {
@@ -650,10 +499,7 @@ def simulate_coupled(
                 },
             )
         else:
-            # Router-side LOAD GATE refusal (window falsifier gate, malformed window,
-            # partition/count mismatch, sentinel integrity, starved map, topo...):
-            # read_artefact did not refuse, so this is NOT the D-G artefact seam and
-            # must not wear D-G's status or notice (item C).
+
             update_manifest(
                 "refused_load_gate",
                 {
@@ -669,9 +515,7 @@ def simulate_coupled(
             cfg.diagnostics.falsifier_set, cfg.diagnostics.refuse_start_on_missing_falsifier
         )
     except RefuseLoadError as exc:
-        # §11.2 falsifier gate: absent path or unreadable/lacking-counts header. A missing
-        # pre-registered prediction set says nothing about the drain-graph artefact, so it
-        # must not wear D-G's status; verbatim message preserved either way.
+
         update_manifest(
             "refused_falsifier_missing",
             {
@@ -694,7 +538,6 @@ def simulate_coupled(
         {"cells": n_cells, "grid_shape": list(static_original.shape), "duration_s": duration},
     )
 
-    # --- guards (a)/(d): out-of-place zeroing + dead-knob-free parameter view ---
     live_before = static_original.drain_cap_m_s.clone()
     static_zeroed = zero_drain_cap_out_of_place(static_original)
     if not torch.equal(static_original.drain_cap_m_s, live_before):
@@ -704,7 +547,6 @@ def simulate_coupled(
     if "drain_cap_m_s" in params_coupled:
         raise RuntimeError(f"[{STAGE}] guard (d): dead knob present in the coupled parameter view")
 
-    # --- state -----------------------------------------------------------------
     h, qx, qy = initial_state(static_zeroed, device=cfg.device)
     if h0 is not None:
         h = h0.clone()
@@ -730,7 +572,6 @@ def simulate_coupled(
     monitor = IndirectCflMonitor(alarm_factor=cfg.dt_policy.indirect_cfl_alarm_factor)
     budget.start(h)
 
-    # --- uncoupled twin: the MEASURED K1 denominator ----------------------------
     twin_ctrl = TimestepController(
         dx=dx,
         alpha=float(solver_cfg["timestep"]["cfl_alpha"]),
@@ -767,7 +608,6 @@ def simulate_coupled(
         "role": "K1 denominator: measured uncoupled-equivalent schedule (same forcing/bounds)",
     }
 
-    # --- coupled loop (mirrors run.py:119-166; exchange added; nothing modified) ---
     t, steps = 0.0, 0
     max_courant = max_selected = 0.0
     steps_with_rejection = 0
@@ -790,9 +630,6 @@ def simulate_coupled(
                 c_sel = controller.courant(h, dt)
                 max_selected = max(max_selected, c_sel)
 
-                # Courant rejection WITH the exchange inside: a rejected attempt is
-                # discarded WHOLE (out-of-place couple_step), so the f64 node books only
-                # ever see accepted steps.
                 had_rejection = False
                 while True:
                     h_acc, qx_new, qy_new, diag = acc_step(
@@ -812,7 +649,6 @@ def simulate_coupled(
                 if had_rejection:
                     steps_with_rejection += 1
 
-                # commit the ACCEPTED step
                 h, qx, qy = cr_try.h_new, qx_new, qy_new
                 node_state_run = cr_try.node_state_new
                 controller.schedule.append(dt)
@@ -820,11 +656,9 @@ def simulate_coupled(
                 min_depth = min(min_depth, float(h.min()))
                 neg_cells_peak = max(neg_cells_peak, int(diag["negative_depth_cells"]))
 
-                # legacy host path, driven exactly as run.py:158-159 — sees drained==0.0
                 budget.accumulate(h, diag, r, dt, n_cells)
                 ledger.accumulate(cr_try, dt)
 
-                # indirect-CFL observation (§10.5): dH = max(max captured, max returned)
                 d_h_couple = float(
                     torch.maximum(
                         cr_try.captured_depth_m.max(), cr_try.returned_depth_m.max()
@@ -835,7 +669,6 @@ def simulate_coupled(
                 t += dt
                 steps += 1
 
-                # K1 HALT check against the MEASURED uncoupled-equivalent schedule
                 n_unc = _uncoupled_steps_covered(twin_cum, t)
                 if steps >= K1_MIN_EVAL_STEPS and n_unc >= 1:
                     allowed = math.floor(1.0 / cfg.dt_policy.min_fraction_of_uncoupled * n_unc)
@@ -852,16 +685,9 @@ def simulate_coupled(
                         )
 
                 if steps % check_every == 0:
-                    # The JUDGED check at the host mass-check cadence (§10.3) is the
-                    # ledger's, NOT host MassBudget.check(): the host residual is the
-                    # surface-only form whose derivation assumes empty node storage, so
-                    # while water sits in the graph it shows ~-V_nodes as apparent loss
-                    # and would false-trip the 1e-3 tolerance on a CORRECT run. The host
-                    # budget's own runtime guards (accumulate, mass.py:82-97) still ran
-                    # unmodified above; its residual is reported verbatim in the manifest.
+
                     ledger.mass_check(steps)
 
-                # §14 measured probe: project wall clock after COMPUTE_PROBE_STEP steps
                 if steps == COMPUTE_PROBE_STEP:
                     elapsed = time.perf_counter() - loop_t0
                     projected_total = elapsed * (duration / max(t, 1e-9))
@@ -987,20 +813,10 @@ def simulate_coupled(
 
 
 def _g2_anti_vacuity_fail(ledger: CouplingMassLedger, min_returned_m3: float) -> bool:
-    """§11.1 G2 anti-vacuity (contract ``g2_anti_vacuity.aggregated_condition``): the run
-    FAILS if NO node ever surcharged OR the window returned less than the configured floor —
-    regardless of all other scores. Computed once here so the result object, the manifest
-    and the CLI exit code cannot disagree."""
     return ledger.total_surcharging_steps == 0 or ledger.surcharge_returned_m3 < min_returned_m3
 
 
 def _gt_not_assessed_block(exc: BaseException) -> dict[str, Any]:
-    """Honest-degrade ``gt_attribution`` block carrying the verbatim error.
-
-    The block's ENTIRE purpose is honest degradation (round-2 fix): an unavailable GT
-    bundle is recorded, never fabricated and never propagated — a bare escape here used to
-    kill the terminal-manifest write and strand status 'running' forever.
-    """
     return {
         "suspicious": False,
         "suspicious_state": "NOT_ASSESSED",
@@ -1019,34 +835,6 @@ def _gt_not_assessed_block(exc: BaseException) -> dict[str, Any]:
 def _gt_attribution_block(
     cfg: CouplingConfig, graph: DrainGraph, events: list[dict[str, Any]]
 ) -> dict[str, Any]:
-    """Top-level ``gt_attribution`` manifest block, computed at terminal time.
-
-    MODE DISPATCH (owner ruling D-GT 2026-08-26; per-mode radii per round-3 C2/D2):
-    - ``diagnostics.attribution_mode == "edge"`` (the DEFAULT): each GT point
-      joins its NEAREST drain EDGE — true multi-vertex polylines loaded ONCE
-      from ``cfg.graph.gpkg`` layer ``drain_edges`` at terminal time (no
-      straight-segment approximation) — and that edge's DOWNSTREAM node
-      (``to_node``) is the responsible node: water surcharges at a node and
-      runs along the reach. Radius = ``cfg.diagnostics.attribution_radius_m``
-      with provenance from ``attribution_radius_basis``; classes from the
-      loaded graph's ``component_class``.
-    - ``"node"``: RETAINED but SUPERSEDED-BY-RULING-2026-08-26 — kept for
-      regression/A-B evidence only. Radius =
-      ``cfg.diagnostics.attribution_radius_node_m`` (the HISTORICAL 100.0 m v1
-      pin, its own leaf since the round-3 C2/D2 fix: dispatching the shared
-      edge radius here would silently confound every A/B against history),
-      basis NODE_MODE_RADIUS_BASIS.
-
-    Owner directive (workflows/wf2-coupling.js:145-152): G2 MUST split outfall vs dead-end
-    and dead-end-dominated GT reproduction is flagged SUSPICIOUS IN THE HEADLINE — so the
-    DRIVER emits the attribution block (diagnostics library, GT points through
-    ``cfg.diagnostics.ground_truth_manifest``) instead of leaving it to a post-hoc scorer.
-    An unavailable GT bundle is recorded honestly as NOT_ASSESSED with the verbatim error —
-    never fabricated, never dropped, NEVER propagated (round-2 widening: csv.Error escapes
-    the DiagnosticsRefusal/OSError/ValueError family, so the specific tuple names it
-    explicitly and a last-resort bare-Exception clause keeps every other failure mode on
-    the same honest-degrade path).
-    """
     try:
         if cfg.diagnostics.attribution_mode == "edge":
             geom_by_id, _from_by_id, to_by_id, edge_crs = load_drain_edges_geoms(
@@ -1064,10 +852,7 @@ def _gt_attribution_block(
                 radius_basis=str(cfg.diagnostics.attribution_radius_basis),
                 edge_crs=edge_crs or None,
             )
-        # SUPERSEDED-BY-RULING-2026-08-26 (node mode): nearest SURCHARGING NODE within
-        # radius. Retained verbatim for regression/A-B evidence against edge mode;
-        # production runs dispatch to the branch above by default. Radius is the
-        # node mode's OWN leaf (C2/D2), NOT the shared edge-mode radius.
+
         return attribute_ground_truth(
             events,
             Path(cfg.diagnostics.ground_truth_manifest),
@@ -1078,7 +863,7 @@ def _gt_attribution_block(
         )
     except (DiagnosticsRefusal, OSError, ValueError, csv.Error) as exc:
         return _gt_not_assessed_block(exc)
-    except Exception as exc:  # last resort: degrade honestly, never propagate
+    except Exception as exc:
         return _gt_not_assessed_block(exc)
 
 
@@ -1103,7 +888,6 @@ def _terminal_fields(
     halt_reason: str | None,
     extra: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Every spec §9.3 `manifest_guarantees_producer_writes` field, one place."""
     ledger_dict = ledger.as_dict()
     rain_in = budget.rain_in
     captured = ledger.captured_to_drains_m3
@@ -1116,9 +900,7 @@ def _terminal_fields(
         "outfall_terminating": graph.component_class.count("outfall_terminating"),
         "dead_end": graph.component_class.count("dead_end"),
     }
-    # Owner directive (wf2-coupling.js:145-152): the driver EMITS gt_attribution at
-    # terminal time and computes g2.verdict through the diagnostics library — never
-    # 'not_computed_here'. Events flushed first (idempotent) so halted runs attribute too.
+
     events = ledger.flush_open_events()
     gt_block = _gt_attribution_block(cfg, graph, events)
     g2_verdict_text, g2_reason = g2_verdict(
@@ -1171,10 +953,6 @@ def _terminal_fields(
         "node_geometry_assumption": _node_geometry_assumption(cfg),
         "falsifier_comparison": falsifier_header,
         "component_class_split": class_split,
-        # F2 (round 3): the terminal_seed_resolution echo previously lived only on the
-        # in-memory graph.manifest — run manifests carried bare class counts, so the
-        # definition_version + per-rule seed counts actually in effect were not
-        # PERSISTED. Included whenever the loaded graph carries it.
         **(
             {"terminal_seed_resolution": graph.manifest.get("terminal_seed_resolution")}
             if graph.manifest.get("terminal_seed_resolution") is not None
@@ -1242,11 +1020,6 @@ def _terminal_fields(
     return fields
 
 
-# ---------------------------------------------------------------------------
-# CLI (AGENTS.md style rule: every stage runnable standalone)
-# ---------------------------------------------------------------------------
-
-
 @app.command()
 def run(
     config: Path = typer.Option(
@@ -1256,8 +1029,6 @@ def run(
         False, "--smoke", help="Smoke envelope from the config's smoke block"
     ),
 ) -> None:
-    """Run the coupled simulation (CPU-only). Exits non-zero on D-G refusal, K1 halt,
-    compute-budget refusal, mass breach, or G2-vacuous windows (headline, never buried)."""
     repo_root = REPO
     try:
         cfg = resolve_config(config, repo_root)
@@ -1290,9 +1061,7 @@ def run(
             smoke=smoke,
         )
     except RefuseLoadError as exc:
-        # Item C: only the frozen reader's refusal IS the D-G seam. Echoing every
-        # RefuseLoadError with '(D-G seam)' contradicted the manifest, which correctly
-        # recorded refused_falsifier_missing / refused_load_gate for the other sources.
+
         if getattr(exc, "source", None) == FROZEN_READER_SOURCE:
             typer.echo(f"REFUSED (D-G seam): {exc}")
         else:
@@ -1309,8 +1078,7 @@ def run(
         raise typer.Exit(code=1) from exc
 
     led = res.ledger
-    # §11.1: the verdict comes from the LIBRARY (result + manifest g2 block), recomputed
-    # nowhere here, so the exit code cannot disagree with the recorded state.
+
     vacuous = res.g2_anti_vacuity_fail
     if vacuous:
         typer.echo("G2 FAIL: NO NODE EVER SURCHARGED (anti-vacuity; verdict owned by diagnostics)")
@@ -1331,7 +1099,7 @@ def run(
         raise typer.Exit(code=1)
 
 
-def main() -> None:  # pragma: no cover
+def main() -> None:
     app()
 
 

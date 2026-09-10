@@ -65,13 +65,7 @@ GT_MANIFEST_PATH = REPO / "runs" / "groundtruth" / "manifest.json"
 RUNNER = CliRunner()
 
 
-# ---------------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------------
-
-
 def _ev(node_id: int, total: float = 1.0, first: int = 1, last: int = 2, head: float = 2.0):
-    """One surcharge-event row in the EXACT G2 schema."""
     return {
         "node_id": node_id,
         "total_returned_m3": total,
@@ -82,12 +76,6 @@ def _ev(node_id: int, total: float = 1.0, first: int = 1, last: int = 2, head: f
 
 
 def _toy_graph(manifest: dict | None = None):
-    """4-node toy graph: chain 1->2->3 with node 3 an OUTFALL, node 4 isolated.
-
-    Directed reachability => nodes 1..3 'outfall_terminating', node 4 'dead_end'
-    (a fill-and-surcharge-by-construction component, D-A). Grid transform places
-    cell centres near x=500000/y=4500000 (EPSG:32643-like magnitudes).
-    """
     n = 4
     edge_from = torch.tensor([0, 1], dtype=torch.int64)
     edge_to = torch.tensor([1, 2], dtype=torch.int64)
@@ -128,10 +116,6 @@ def _toy_graph(manifest: dict | None = None):
 
 
 def _big_deadend_graph(n: int = 1700):
-    """N-node toy stand-in where EVERY predicted-range node is dead_end — matching the
-    realized fact that all 116 predicted nodes are dead_end [F]. Node 1 is the sole
-    outfall and one edge 2->1 exists (build_drain_graph requires >=1 edge); only ids
-    1-2 are outfall_terminating."""
     outfall = torch.zeros(n, dtype=torch.bool)
     outfall[0] = True
     return build_drain_graph(
@@ -159,7 +143,6 @@ def _gt_bundle(
     points_count: int | None = None,
     extra_cols: bool = False,
 ) -> Path:
-    """Write a synthetic GT manifest+CSV bundle; returns the manifest path."""
     cols = (
         ["id", "lat", "lon", "x_m", "y_m"] if extra_cols else ["id", "location_name", "lat", "lon"]
     )
@@ -179,11 +162,6 @@ def _gt_bundle(
     return man_path
 
 
-# ---------------------------------------------------------------------------
-# load_falsifier_set: real set + refuse-to-start paths
-# ---------------------------------------------------------------------------
-
-
 class TestLoadFalsifierSet:
     def test_real_preregistered_set_loads_with_declared_counts(self):
         fs = load_falsifier_set(FALSIFIER_PATH)
@@ -201,8 +179,6 @@ class TestLoadFalsifierSet:
         assert all(e["to_node"] in id_set for e in fs.edges)
 
     def test_recorded_sha_matches_the_real_gpkg_bytes(self):
-        """V8/V1: the sha recorded IN the set must equal sha256 of the realized
-        gpkg bytes on disk — the set was genuinely recorded from these bytes."""
         fs = load_falsifier_set(FALSIFIER_PATH)
         assert sha256_file(REPO / "runs" / "drain_graph_build" / "drain_graph.gpkg") == (
             fs.source_gpkg_sha256
@@ -227,7 +203,7 @@ class TestLoadFalsifierSet:
 
     def test_inconsistent_edge_count_refuses(self, tmp_path):
         data = json.loads(FALSIFIER_PATH.read_text())
-        data["n_predicted_edges"] = 69  # lie vs the realized 70-row list
+        data["n_predicted_edges"] = 69
         p = tmp_path / "mutated.json"
         p.write_text(json.dumps(data))
         with pytest.raises(DiagnosticsRefusal, match="disagrees"):
@@ -236,16 +212,11 @@ class TestLoadFalsifierSet:
     def test_unsorted_ids_refuse_a_mutated_set(self, tmp_path):
         data = json.loads(FALSIFIER_PATH.read_text())
         ids = data["predicted_node_ids"]
-        ids[0], ids[1] = ids[1], ids[0]  # break canonical ascending order
+        ids[0], ids[1] = ids[1], ids[0]
         p = tmp_path / "mutated.json"
         p.write_text(json.dumps(data))
         with pytest.raises(DiagnosticsRefusal, match="ascending"):
             load_falsifier_set(p)
-
-
-# ---------------------------------------------------------------------------
-# write/read surcharge events CSV: EXACT G2 schema
-# ---------------------------------------------------------------------------
 
 
 class TestSurchargeEventsCsv:
@@ -288,7 +259,7 @@ class TestSurchargeEventsCsv:
 
     def test_row_missing_required_field_refuses_aggregated(self, tmp_path):
         bad_rows = [
-            {"node_id": 1, "total_returned_m3": 1.0},  # three fields missing
+            {"node_id": 1, "total_returned_m3": 1.0},
             {
                 "node_id": "x",
                 "total_returned_m3": "y",
@@ -304,11 +275,6 @@ class TestSurchargeEventsCsv:
         assert not (tmp_path / "never.csv").exists(), "refusal precedes any write"
 
 
-# ---------------------------------------------------------------------------
-# compare_falsifier: hand-built overlaps with known counts
-# ---------------------------------------------------------------------------
-
-
 class TestCompareFalsifier:
     def _hand_fs(self) -> FalsifierSet:
         return FalsifierSet(
@@ -322,13 +288,13 @@ class TestCompareFalsifier:
         )
 
     def test_hand_built_overlap_counts(self):
-        events = [_ev(20, 5.0), _ev(30, 1.0), _ev(50, 2.0)]  # 50 unflagged
+        events = [_ev(20, 5.0), _ev(30, 1.0), _ev(50, 2.0)]
         got = compare_falsifier(events, self._hand_fs())
         assert got["n_predicted_edges"] == 2
         assert got["n_predicted_nodes"] == 3
         assert got["predicted_nodes_surcharged"] == 2
         assert got["predicted_nodes_surcharged_ids"] == [20, 30]
-        # only edge 900's downstream (20) surged; edge 901's (40) did not
+
         assert got["flagged_edges_whose_downstream_node_surcharged"] == 1
         assert got["flagged_edges_not_surcharged"] == [901]
         assert got["unflagged_surcharging_nodes"] == [50]
@@ -354,15 +320,10 @@ class TestCompareFalsifier:
         assert bad["source_gpkg_sha256_crosscheck"]["status"] == "MISMATCH"
 
 
-# ---------------------------------------------------------------------------
-# component_split: arithmetic + both labelled headline fractions
-# ---------------------------------------------------------------------------
-
-
 class TestComponentSplit:
     def test_arithmetic_on_toy_graph(self):
         g = _toy_graph()
-        events = [_ev(2, 2.5), _ev(4, 4.0)]  # node2 chain->outfall; node4 isolated
+        events = [_ev(2, 2.5), _ev(4, 4.0)]
         got = component_split(events, g)
         assert got["per_class"]["outfall_terminating"] == {"n_events": 1, "returned_m3": 2.5}
         assert got["per_class"]["dead_end"] == {"n_events": 1, "returned_m3": 4.0}
@@ -397,7 +358,7 @@ class TestComponentSplit:
                     "cell_area_m2": 100.0,
                 }
             }
-        }  # NO component_policy block
+        }
         got = component_split([], _toy_graph(man))["headline_fractions"]
         assert got["length_weighted_weak_connectivity_outfall_fraction"] is None
         assert "ABSENT" in got["length_weighted_source"]
@@ -407,17 +368,12 @@ class TestComponentSplit:
             component_split([_ev(999)], _toy_graph())
 
 
-# ---------------------------------------------------------------------------
-# attribute_ground_truth: radius boundary + SUSPICIOUS both sides
-# ---------------------------------------------------------------------------
-
-
 class TestAttributeGroundTruthRadius:
     def test_radius_boundary_is_inclusive_at_exactly_radius_m(self, tmp_path):
         pts = [
-            {"id": "AT_100", "x_m": 5100.0, "y_m": 5000.0},  # exactly 100.0 m from node
-            {"id": "OUT_100P2", "x_m": 5100.2, "y_m": 5000.0},  # 100.2 m
-            {"id": "IN_90", "x_m": 5090.0, "y_m": 5000.0},  # 90.0 m
+            {"id": "AT_100", "x_m": 5100.0, "y_m": 5000.0},
+            {"id": "OUT_100P2", "x_m": 5100.2, "y_m": 5000.0},
+            {"id": "IN_90", "x_m": 5090.0, "y_m": 5000.0},
         ]
         man = _gt_bundle(tmp_path, pts, extra_cols=True)
         got = attribute_ground_truth(
@@ -436,7 +392,7 @@ class TestAttributeGroundTruthRadius:
         assert got["gt_matched_nodes"] == [1]
 
     def test_nearest_node_wins_among_two_candidates(self, tmp_path):
-        pts = [{"id": "MID", "x_m": 5040.0, "y_m": 5000.0}]  # 40 m from A, 60 from B
+        pts = [{"id": "MID", "x_m": 5040.0, "y_m": 5000.0}]
         man = _gt_bundle(tmp_path, pts, extra_cols=True)
         got = attribute_ground_truth(
             [_ev(1, 3.0), _ev(2, 9.0)],
@@ -458,18 +414,17 @@ class TestSuspiciousFlag:
             [_ev(1, 15.0), _ev(2, 5.0)],
             man,
             radius_m=100.0,
-            node_xy_m=[(5000.0, 5000.0), (10000.0, 10000.0)],  # only node1 within radius
+            node_xy_m=[(5000.0, 5000.0), (10000.0, 10000.0)],
             node_class=["dead_end", "outfall_terminating"],
         )
         assert got["dead_end_share_of_gt_matched_returned_volume"] == 1.0
         assert got["suspicious"] is True and got["suspicious_state"] == "TRUE"
 
     def test_share_exactly_at_threshold_is_NOT_suspicious_strictly_greater_rule(self, tmp_path):
-        # point matches BOTH nodes? No: nearest-wins means one node per point. Use TWO
-        # points, each nearest to a different node, equal volumes => share 0.5.
+
         pts = [
-            {"id": "PA", "x_m": 5000.0, "y_m": 5000.0},  # nearest node1 (dead_end)
-            {"id": "PB", "x_m": 6000.0, "y_m": 5000.0},  # nearest node2 (outfall_term)
+            {"id": "PA", "x_m": 5000.0, "y_m": 5000.0},
+            {"id": "PB", "x_m": 6000.0, "y_m": 5000.0},
         ]
         man = _gt_bundle(tmp_path, pts, extra_cols=True)
         got = attribute_ground_truth(
@@ -489,7 +444,7 @@ class TestSuspiciousFlag:
             {"id": "PB", "x_m": 6000.0, "y_m": 5000.0},
         ]
         man = _gt_bundle(tmp_path, pts, extra_cols=True)
-        events = [_ev(1, 55.0), _ev(2, 45.0)]  # share 0.55
+        events = [_ev(1, 55.0), _ev(2, 45.0)]
         kw = dict(
             radius_m=100.0,
             node_xy_m=[(5000.0, 5000.0), (6000.0, 5000.0)],
@@ -505,7 +460,7 @@ class TestSuspiciousFlag:
         )
 
     def test_shared_node_volume_counted_once_across_points(self, tmp_path):
-        # THREE points all nearest to the same dead_end node; its volume counted ONCE.
+
         pts = [
             {"id": "A", "x_m": 5010.0, "y_m": 5000.0},
             {"id": "B", "x_m": 5000.0, "y_m": 5010.0},
@@ -549,20 +504,16 @@ class TestSuspiciousFlag:
 
 class TestGroundTruthJoinReality:
     def test_real_gt_manifest_yields_24_points_via_declared_pointer(self):
-        """The REAL manifest declares csv_path (no inline points) [F]; the join reads
-        through that pointer and asserts the DECLARED points_count against parsed rows."""
         pts, prov = _load_gt_points(GT_MANIFEST_PATH)
         assert len(pts) == 24
         assert prov["manifest_status"] == "completed"
 
     def test_reprojection_lands_in_the_utm43n_bengaluru_band_absolute_anchor(self, tmp_path):
-        """Absolute anchor, not a mirror: Bengaluru WGS84 MUST land near x~762km,
-        y~1430km in EPSG:32643 regardless of how the module builds its transformer."""
         got = attribute_ground_truth(
             [_ev(1)],
             GT_MANIFEST_PATH,
             radius_m=1.0,
-            node_xy_m=[(-1.0e9, -1.0e9)],  # impossible position: nothing can match
+            node_xy_m=[(-1.0e9, -1.0e9)],
             node_class=["dead_end"],
         )
         assert got["n_gt_points"] == 24 and got["n_gt_matched"] == 0
@@ -573,16 +524,9 @@ class TestGroundTruthJoinReality:
         assert got["radius_m_declared_assumption"] == 1.0
 
     def test_declared_points_count_disagreeing_with_csv_refuses(self, tmp_path):
-        man = _gt_bundle(
-            tmp_path, [{"id": "A", "lat": 12.9, "lon": 77.6}], points_count=24
-        )  # declares 24, CSV has 1 — moved-baseline refusal
+        man = _gt_bundle(tmp_path, [{"id": "A", "lat": 12.9, "lon": 77.6}], points_count=24)
         with pytest.raises(DiagnosticsRefusal, match="points_count"):
             attribute_ground_truth([_ev(1)], man, node_xy_m=[(0.0, 0.0)], node_class=["dead_end"])
-
-
-# ---------------------------------------------------------------------------
-# g2_verdict: anti-vacuity + unsplit refusal (invariant #13 red target)
-# ---------------------------------------------------------------------------
 
 
 def _g2_inputs(steps: int, returned: float, *, split=True, sus=None) -> dict:
@@ -604,7 +548,7 @@ class TestG2Verdict:
         assert verdict == "fail"
         assert "NO NODE EVER SURCHARGED" in reason
         assert "SUSPICIOUS=NOT_ASSESSED" in reason
-        assert "1666" in reason  # split numbers always carried
+        assert "1666" in reason
 
     def test_fail_on_low_volume_below_contract_floor(self):
         verdict, reason = g2_verdict(_g2_inputs(12, 0.999))
@@ -623,8 +567,6 @@ class TestG2Verdict:
         assert "BY CONSTRUCTION" in r_true, "D-A context rides along with the flag"
 
     def test_refuses_unsplit_input_invariant13_red_target(self):
-        """RED TARGET: delete ONLY the split key from an otherwise-passing input and
-        scoring must REFUSE (raise), never report an unsplit pass."""
         passing = _g2_inputs(5, 50.0, sus=False)
         assert g2_verdict(passing)[0] == "pass"
         with pytest.raises(DiagnosticsRefusal, match="split"):
@@ -648,20 +590,12 @@ class TestG2Verdict:
         assert "total_surcharging_steps" in msg and "total_returned_m3" in msg
 
 
-# ---------------------------------------------------------------------------
-# End-to-end mini pipeline over REAL falsifier-set ids (subset)
-# ---------------------------------------------------------------------------
-
-
 class TestEndToEndMiniPipeline:
     def test_pipeline_over_real_predicted_subset(self, tmp_path):
-        """Synthetic events over REAL predicted node ids: CSV written -> read back ->
-        compared -> split -> attributed -> G2-scored. Hand-computed overlap counts
-        throughout; nothing tuned."""
         fs = load_falsifier_set(FALSIFIER_PATH)
         subset_edges = fs.edges[:6]
         sub_ids = sorted({e["to_node"] for e in subset_edges})
-        hit = sub_ids[:2]  # first two surge, the rest of the subset stays quiet
+        hit = sub_ids[:2]
         unflagged = [max(fs.predicted_node_ids) + 1, max(fs.predicted_node_ids) + 2]
         events = [
             _ev(n, 4.0 + i, first=1, last=5, head=2.0 + 0.1 * i)
@@ -683,7 +617,7 @@ class TestEndToEndMiniPipeline:
         assert cmp_block["flagged_edges_whose_downstream_node_surcharged"] >= flagged_down
         assert cmp_block["flagged_edges_whose_downstream_node_surcharged"] <= 6
         assert cmp_block["source_gpkg_sha256_crosscheck"]["status"] == "match"
-        # of ALL 70 flagged edges, most did NOT surge in this window — recorded, not hidden
+
         assert len(cmp_block["flagged_edges_not_surcharged"]) >= 64
 
         g = _big_deadend_graph()
@@ -695,9 +629,6 @@ class TestEndToEndMiniPipeline:
             == g.num_nodes - 2
         ), "only toy nodes 1-2 reach the outfall; every predicted-range node is dead_end"
 
-        # attribution via SPARSE maps keyed by REAL node ids (no 1700-entry list):
-        # hit[0] sits right under a synthetic GT point; every other surged node is
-        # placed ~14000 km away so only hit[0] can match.
         man = _gt_bundle(
             tmp_path,
             [{"id": "SYN1", "x_m": 5000.0, "y_m": 5000.0}],
@@ -739,7 +670,6 @@ class TestEndToEndMiniPipeline:
         assert "SUSPICIOUS=TRUE" in reason
 
     def test_same_pipeline_with_zero_events_fails_G2_loudly(self, tmp_path):
-        """The anti-vacuity path END TO END: zero rows -> allowed CSV -> G2 fail."""
         csv_path = tmp_path / "products" / "surcharge_events.csv"
         write_surcharge_events_csv([], csv_path)
         rows = read_surcharge_events_csv(csv_path)
@@ -755,11 +685,6 @@ class TestEndToEndMiniPipeline:
         }
         verdict, reason = g2_verdict(inputs)
         assert verdict == "fail" and "NO NODE EVER SURCHARGED" in reason
-
-
-# ---------------------------------------------------------------------------
-# CLI: score_g2 headline + exit codes
-# ---------------------------------------------------------------------------
 
 
 def _manifest_fixture(path: Path, **fields) -> Path:
@@ -825,18 +750,8 @@ class TestScoreG2Cli:
         assert "REFUSED" in r.output
 
 
-# ---------------------------------------------------------------------------
-# SUSPICIOUS state surfaces (BugHunt round-1 item E): both block locations read,
-# headline always carries the flag, NOT_ASSESSED warned loudly on surcharging runs
-# ---------------------------------------------------------------------------
-
-
 class TestSuspiciousStateSurfaces:
     def test_unit_state_reader_accepts_both_block_locations(self):
-        """Item E-iii: the driver writes gt_attribution TOP-LEVEL; the smoke pipeline
-        saves it nested under diagnostics.gt_attribution_and_suspicious. The state
-        reader must accept BOTH — a smoke-produced manifest re-scores to the state it
-        actually carries instead of degrading to NOT_ASSESSED."""
         from jaladhar.coupling.diagnostics import _suspicious_state_of
 
         assert _suspicious_state_of({"gt_attribution": {"suspicious_state": "FALSE"}}) == "FALSE"
@@ -847,7 +762,7 @@ class TestSuspiciousStateSurfaces:
             == "TRUE"
         )
         assert _suspicious_state_of({}) == "NOT_ASSESSED"
-        # top-level wins when both are present (driver block is authoritative)
+
         both = {
             "gt_attribution": {"suspicious_state": "FALSE"},
             "diagnostics": {"gt_attribution_and_suspicious": {"suspicious_state": "TRUE"}},
@@ -855,10 +770,6 @@ class TestSuspiciousStateSurfaces:
         assert _suspicious_state_of(both) == "FALSE"
 
     def test_smoke_shaped_nested_block_scores_true_in_headline(self, tmp_path):
-        """RED->GREEN (item E-iii realized through the CLI): a manifest carrying ONLY the
-        smoke-shaped nested block with suspicious_state=TRUE previously re-scored as
-        SUSPICIOUS=NOT_ASSESSED. GREEN: headline carries SUSPICIOUS=TRUE; exit stays per
-        anti-vacuity rules only (flag flags, it does not fail — owner mandate)."""
         m = _manifest_fixture(
             tmp_path / "m.json",
             total_surcharging_steps=120,
@@ -873,9 +784,6 @@ class TestSuspiciousStateSurfaces:
         assert "SUSPICIOUS=TRUE" in first
 
     def test_not_assessed_on_surcharging_run_prints_explicit_warning(self, tmp_path):
-        """Item E-ii: PASS + SUSPICIOUS=NOT_ASSESSED used to exit 0 silently looking
-        clean. GREEN: exit still follows anti-vacuity rules only (pass -> 0), but the
-        output carries the explicit UNASSESSED warning line beside the headline."""
         m = _manifest_fixture(
             tmp_path / "m.json",
             total_surcharging_steps=120,
@@ -892,8 +800,6 @@ class TestSuspiciousStateSurfaces:
         ), f"UNASSESSED warning missing from:\n{r.output}"
 
     def test_zero_step_run_getters_no_contamination_warning(self, tmp_path):
-        """Control: the warning is scoped to runs WITH surcharging steps — a vacuous
-        window fails anti-vacuity anyway and must keep its exact headline first."""
         m = _manifest_fixture(
             tmp_path / "m.json",
             total_surcharging_steps=0,
@@ -906,9 +812,6 @@ class TestSuspiciousStateSurfaces:
         assert "UNASSESSED" not in r.output
 
     def test_dead_end_dominant_true_flag_carried_in_pass_headline(self, tmp_path):
-        """The owner directive's exact shape (wf2-coupling.js:145-152): GT reproduction
-        dominated by dead-end surcharge is flagged SUSPICIOUS IN THE HEADLINE while the
-        verdict stays 'pass' — flagging, never a new failing gate."""
         m = _manifest_fixture(
             tmp_path / "m.json",
             total_surcharging_steps=64,
@@ -927,51 +830,33 @@ class TestSuspiciousStateSurfaces:
         assert "SUSPICIOUS=TRUE" in first
 
 
-# ---------------------------------------------------------------------------
-# EDGE attribution (owner ruling D-GT 2026-08-26) — nearest-edge join, responsible
-# node = edge.to_node, SUSPICIOUS rule byte-identical to node mode
-#
 # V7 SCOPE — PARTIAL BY CONSTRUCTION: the toy graph below has 4 edges; the
-# realized 24-point x 1587-polyline claim closes ONLY via
-# scripts/wf2_gt_edge_attribution_eval.py against runs/wf2_gt_edges/ + the real
-# coupled events. Nothing here exercises reprojection or gpkg loading.
-#
+
 # V5 MUTATION PROBE (recorded): swapping to_node -> from_node in
 # ``responsible_node_of_edge`` MUST redden the near-dead-end-reach test. The
-# fixture is built so the wrong-end node is OUTFALL-TERMINATING *and*
-# UNSURCHARGED: edge e3 runs from node 2 (outfall_terminating, no event) down
-# into a dead-end pocket at node 3 (dead_end, sole surcharging event). Under
-# the swap the matched point's responsible node becomes 2, which appears in NO
-# event => n_gt_matched moves 1 -> 0, the dead-end share moves 1.0 -> None and
-# suspicious_state moves TRUE -> NOT_ASSESSED. All three observables move;
-# none can move under a correct implementation.
-# ---------------------------------------------------------------------------
 
 _EDGE_GEOMS = {
-    11: LineString([(2000.0, 5000.0), (3000.0, 5000.0)]),  # e1: main stem toward outfall
-    12: LineString([(3000.0, 5000.0), (3000.0, 6000.0)]),  # e2: reaches the OUTFALL (node 4)
-    13: LineString([(4000.0, 5000.0), (5000.0, 5000.0)]),  # e3: dead-END pocket reach (to node 3)
-    14: LineString([(4500.0, 5500.0), (5000.0, 5000.0)]),  # e4: second inflow into the pocket
+    11: LineString([(2000.0, 5000.0), (3000.0, 5000.0)]),
+    12: LineString([(3000.0, 5000.0), (3000.0, 6000.0)]),
+    13: LineString([(4000.0, 5000.0), (5000.0, 5000.0)]),
+    14: LineString([(4500.0, 5500.0), (5000.0, 5000.0)]),
 }
-_RESP_TO_NODE = {11: 2, 12: 4, 13: 3, 14: 3}  # responsible = DOWNSTREAM endpoint
+_RESP_TO_NODE = {11: 2, 12: 4, 13: 3, 14: 3}
 _NODE_CLASS = {
     1: "outfall_terminating",
     2: "outfall_terminating",
-    3: "dead_end",  # pocket sink: surcharges by construction (D-A)
-    4: "outfall_terminating",  # declared outfall: never surcharges here
+    3: "dead_end",
+    4: "outfall_terminating",
 }
 _EDGE_CRS = "EPSG:32643"
 
 
 def _edge_events() -> list[dict]:
-    return [_ev(3, 30.0)]  # ONLY the pocket sink surges
+    return [_ev(3, 30.0)]
 
 
 class TestAttributeGroundTruthEdges:
     def test_near_dead_end_edge_matches_with_responsible_to_node_share_one(self, tmp_path):
-        """(a) The core ruling behaviour: point 50 m off the dead-end pocket reach
-        matches with responsible == edge.to_node == the surcharged dead_end node =>
-        share 1.0 => suspicious TRUE."""
         man = _gt_bundle(tmp_path, [{"id": "P1", "x_m": 4950.0, "y_m": 4950.0}], extra_cols=True)
         got = attribute_ground_truth_edges(
             _edge_events(),
@@ -998,8 +883,6 @@ class TestAttributeGroundTruthEdges:
         assert got["suspicious"] is True and got["suspicious_state"] == "TRUE"
 
     def test_inclusive_boundary_at_exactly_radius_m(self, tmp_path):
-        """(b) A point exactly radius_m past the reach's downstream end MATCHES
-        (inclusive boundary, same convention as node mode)."""
         man = _gt_bundle(
             tmp_path, [{"id": "AT_100", "x_m": 5100.0, "y_m": 5000.0}], extra_cols=True
         )
@@ -1027,7 +910,7 @@ class TestAttributeGroundTruthEdges:
             for eid, (from_n, _t) in {
                 11: (2, 4),
                 12: (3, 4),
-                13: (2, 3),  # wrong end: node 2, outfall-class AND unsurcharged
+                13: (2, 3),
                 14: (6, 3),
             }.items()
         }
@@ -1047,8 +930,6 @@ class TestAttributeGroundTruthEdges:
         assert got["suspicious"] is False and got["suspicious_state"] == "NOT_ASSESSED"
 
     def test_ties_break_to_lowest_edge_id(self, tmp_path):
-        """Point on the shared endpoint of edges 13 and 14 is 0 m from both — the
-        lowest edge id wins (OQ1 convention carried over from node mode)."""
         man = _gt_bundle(tmp_path, [{"id": "TIE", "x_m": 5000.0, "y_m": 5000.0}], extra_cols=True)
         got = attribute_ground_truth_edges(
             _edge_events(),
@@ -1082,7 +963,6 @@ class TestAttributeGroundTruthEdges:
     def test_refusals_aggregate_expected_count_crs_geometry_and_absent_event_nodes(self, tmp_path):
         man = _gt_bundle(tmp_path, [{"id": "P1", "x_m": 4950.0, "y_m": 5000.0}], extra_cols=True)
 
-        # expected-count mismatch
         with pytest.raises(DiagnosticsRefusal, match="expected_counts.edges"):
             attribute_ground_truth_edges(
                 _edge_events(),
@@ -1093,7 +973,7 @@ class TestAttributeGroundTruthEdges:
                 expected_edge_count=len(_EDGE_GEOMS) + 1,
                 node_class=_NODE_CLASS,
             )
-        # unprojected CRS
+
         with pytest.raises(DiagnosticsRefusal, match="metre-projected"):
             attribute_ground_truth_edges(
                 _edge_events(),
@@ -1104,7 +984,7 @@ class TestAttributeGroundTruthEdges:
                 node_class=_NODE_CLASS,
                 edge_crs="EPSG:4326",
             )
-        # missing geometry
+
         with pytest.raises(DiagnosticsRefusal, match="geometry"):
             attribute_ground_truth_edges(
                 _edge_events(),
@@ -1114,7 +994,7 @@ class TestAttributeGroundTruthEdges:
                 responsible_node_of_edge={**_RESP_TO_NODE, 15: 3},
                 node_class=_NODE_CLASS,
             )
-        # event node absent from the class source
+
         with pytest.raises(DiagnosticsRefusal, match="absent from"):
             attribute_ground_truth_edges(
                 [_ev(99, 5.0)],
@@ -1124,7 +1004,7 @@ class TestAttributeGroundTruthEdges:
                 responsible_node_of_edge=_RESP_TO_NODE,
                 node_class=_NODE_CLASS,
             )
-        # no class source at all
+
         with pytest.raises(DiagnosticsRefusal, match="class source"):
             attribute_ground_truth_edges(
                 _edge_events(),
@@ -1136,8 +1016,8 @@ class TestAttributeGroundTruthEdges:
 
     def test_shared_responsible_node_volume_counted_once_across_points(self, tmp_path):
         pts = [
-            {"id": "A", "x_m": 4950.0, "y_m": 4950.0},  # 50 m off e3
-            {"id": "B", "x_m": 5000.0, "y_m": 5050.0},  # 50 m off the pocket endpoint
+            {"id": "A", "x_m": 4950.0, "y_m": 4950.0},
+            {"id": "B", "x_m": 5000.0, "y_m": 5050.0},
         ]
         man = _gt_bundle(tmp_path, pts, extra_cols=True)
         got = attribute_ground_truth_edges(
@@ -1156,13 +1036,6 @@ class TestAttributeGroundTruthEdges:
         assert got["suspicious_state"] == "TRUE"
 
 
-# ---------------------------------------------------------------------------
-# D3 (round 3): load_drain_edges_geoms had ZERO unit coverage — the edge-mode
-# attribution seam's geometry producer went to the driver untested. Realized
-# gpkg + a synthetic geographic-CRS layer close the gap.
-# ---------------------------------------------------------------------------
-
-
 class TestLoadDrainEdgesGeoms:
     def test_real_gpkg_loads_full_id_keyed_maps(self):
         """The REAL WF-1 artefact loads all 1587 edges into id-keyed maps.
@@ -1179,9 +1052,9 @@ class TestLoadDrainEdgesGeoms:
         assert n_declared == 1587
         assert len(geom_by_id) == len(from_by_id) == len(to_by_id) == n_declared
         assert set(geom_by_id) == set(from_by_id) == set(to_by_id)
-        assert all(g.geom_type == "LineString" for g in geom_by_id.values()), (
-            "ruling D-GT: TRUE multi-vertex polylines only — no straight-segment proxy"
-        )
+        assert all(
+            g.geom_type == "LineString" for g in geom_by_id.values()
+        ), "ruling D-GT: TRUE multi-vertex polylines only — no straight-segment proxy"
         assert from_by_id[601] == 649 and to_by_id[601] == 1721
         assert str(crs).startswith("EPSG:"), f"realized CRS {crs!r} unexpected"
 

@@ -1,30 +1,3 @@
-"""DEM conditioning for the JALADHAR terrain pipeline — depression-aware D4 conditioning.
-
-A 30 m-native DEM cannot resolve a 10 m street or rajakaluve. We fix this with
-VECTOR-DRIVEN STRUCTURE, not interpolation: burn known road centrelines,
-building footprints, and drain channels from OSM/Microsoft vectors into the
-elevation surface.
-
-Step order:
-  1. Read the buffered DEM `fetch.py` wrote (already resampled to 10 m).
-  2. Burn OSM road centrelines DOWN (shallow channels).
-  3. Burn OSM waterway=drain|ditch|stream DOWN (deeper than roads — rajakaluves).
-  4. Burn buildings UP as blockages (if dem_is_dtm) outside conveyance channels.
-  5. Write `dem_conditioned_prebreach.tif`.
-  6. Extract candidate depressions (>= 4 cells = 400 m2) and classify on external
-     evidence (STORAGE, QUARRY, LANDFILL, UNCERTAIN) via `depressions.py`.
-  7. Apply D4 Priority-Flood and Capped Hybrid Breach & Fill OUTSIDE retained basins:
-     - Retained basin interiors are NEVER modified.
-     - Carve along cost surface (waterway -> road -> bare ground -> BUILDING: FORBIDDEN)
-       up to cut_max = 0.50 m.
-     - Fill pits minimally up to fill_max = 0.25 m (buildings forbidden).
-     - Residuals outside bounds are enumerated in the register.
-  8. Write `dem_conditioned_postbreach.tif`.
-
-CONNECTIVITY:
-Declared as D4 (cardinal 4-connected 5-point stencil matching ACC solver).
-"""
-
 from __future__ import annotations
 
 import heapq
@@ -36,8 +9,8 @@ from typing import Any
 import geopandas as gpd
 import numpy as np
 import pandas as pd
-import rasterio
 import pyproj
+import rasterio
 import typer
 from rasterio.features import rasterize
 
@@ -63,11 +36,6 @@ FILL_MAX_M = 3.25
 
 
 def residual_bound_components(domain_cells: int, pre_conditioning_d4_pits: int) -> dict[str, int]:
-    """Return both AF residual limits and their binding intersection.
-
-    The accepted residual count must satisfy both criteria, so the effective
-    bound is the smaller component rather than either component in isolation.
-    """
     if domain_cells < 0 or pre_conditioning_d4_pits < 0:
         raise ValueError("residual-bound inputs must be non-negative")
 
@@ -102,7 +70,6 @@ def _require(path: Path, produced_by: str) -> Path:
 
 
 def rasterize_burn_mask(vector_path: Path, buffered_grid: Grid) -> np.ndarray:
-    """Rasterize a vector file's geometry onto the buffered grid. 1 = burn here."""
     gdf = gpd.read_file(vector_path)
     if gdf.empty:
         raise ConditioningError(f"{vector_path} contains zero features")
@@ -118,7 +85,6 @@ def rasterize_burn_mask(vector_path: Path, buffered_grid: Grid) -> np.ndarray:
 
 
 def count_pits(elevation: np.ndarray, valid_mask: np.ndarray) -> int:
-    """Count 8-connected local minima strictly inside the valid interior."""
     h, w = elevation.shape
     is_pit = np.ones((h, w), dtype=bool)
     is_pit[0, :] = is_pit[-1, :] = is_pit[:, 0] = is_pit[:, -1] = False
@@ -135,7 +101,6 @@ def count_pits(elevation: np.ndarray, valid_mask: np.ndarray) -> int:
 
 
 def count_pits_d4(elevation: np.ndarray, valid_mask: np.ndarray) -> int:
-    """Count 4-connected (cardinal-only) local minima strictly inside the valid interior."""
     h, w = elevation.shape
     is_pit = np.ones((h, w), dtype=bool)
     is_pit[0, :] = is_pit[-1, :] = is_pit[:, 0] = is_pit[:, -1] = False
@@ -149,7 +114,6 @@ def count_pits_d4(elevation: np.ndarray, valid_mask: np.ndarray) -> int:
 
 
 def _find_d4_pits(elevation: np.ndarray, valid_mask: np.ndarray) -> np.ndarray:
-    """Return a boolean mask of D4 pits (cardinal-only local minima)."""
     h, w = elevation.shape
     is_pit = np.ones((h, w), dtype=bool)
     is_pit[0, :] = is_pit[-1, :] = is_pit[:, 0] = is_pit[:, -1] = False
@@ -173,25 +137,16 @@ def d4_capped_hybrid_conditioning(
     cut_max: float = CUT_MAX_M,
     fill_max: float = FILL_MAX_M,
 ) -> tuple[np.ndarray, dict[str, Any]]:
-    """D4 Priority Flood and Capped Hybrid resolution outside retained basins.
-
-    Properties guaranteed:
-    1. Retained basin interiors are NEVER modified.
-    2. Building cells are FORBIDDEN from being lowered or modified.
-    3. Maximum cut <= cut_max (0.50 m) along cost surface.
-    4. Maximum fill <= fill_max (0.25 m) on bare ground (no road/waterway/building fill).
-    5. Monotone cardinal spillway routing from domain boundary & retained basins.
-    """
+    """5. Monotone cardinal spillway routing from domain boundary & retained basins."""
     working_dem = dem.copy()
     original_dem = dem.copy()
     h, w = dem.shape
 
-    # Step 1: Diagonal staircase conversion along cost surface (carve <= cut_max)
     DIAGONALS = [
-        ((-1, -1), [(-1, 0), (0, -1)]),  # NW -> North, West
-        ((-1, 1), [(-1, 0), (0, 1)]),   # NE -> North, East
-        ((1, -1), [(1, 0), (0, -1)]),   # SW -> South, West
-        ((1, 1), [(1, 0), (0, 1)]),     # SE -> South, East
+        ((-1, -1), [(-1, 0), (0, -1)]),
+        ((-1, 1), [(-1, 0), (0, 1)]),
+        ((1, -1), [(1, 0), (0, -1)]),
+        ((1, 1), [(1, 0), (0, 1)]),
     ]
     CARDINAL = [(-1, 0), (1, 0), (0, -1), (0, 1)]
 
@@ -199,7 +154,7 @@ def d4_capped_hybrid_conditioning(
     pit_rows, pit_cols = np.where(pits_pre)
     n_staircase = 0
 
-    for r, c in zip(pit_rows, pit_cols):
+    for r, c in zip(pit_rows, pit_cols, strict=False):
         p_elev = working_dem[r, c]
         best_d_elev = p_elev
         best_m = None
@@ -213,13 +168,17 @@ def d4_capped_hybrid_conditioning(
                     for mdy, mdx in intermediates:
                         mr, mc = r + mdy, c + mdx
                         if 0 <= mr < h and 0 <= mc < w and valid_mask[mr, mc]:
-                            if cost_surface[mr, mc] < 999:  # not building
+                            if cost_surface[mr, mc] < 999:
                                 m_cost = cost_surface[mr, mc]
                                 target_z = 0.5 * (p_elev + d_elev)
                                 cur_z = working_dem[mr, mc]
                                 req_cut = cur_z - target_z
-                                if 0 < req_cut <= cut_max and (original_dem[mr, mc] - target_z <= cut_max):
-                                    if m_cost < best_cost or (m_cost == best_cost and d_elev < best_d_elev):
+                                if 0 < req_cut <= cut_max and (
+                                    original_dem[mr, mc] - target_z <= cut_max
+                                ):
+                                    if m_cost < best_cost or (
+                                        m_cost == best_cost and d_elev < best_d_elev
+                                    ):
                                         best_cost = m_cost
                                         best_d_elev = d_elev
                                         best_m = (mr, mc, target_z)
@@ -233,7 +192,6 @@ def d4_capped_hybrid_conditioning(
     visited = np.zeros((h, w), dtype=bool)
     pq: list[tuple[float, int, int]] = []
 
-    # Outer border cells
     for r in (0, h - 1):
         for c in range(w):
             if valid_mask[r, c] and not visited[r, c]:
@@ -246,9 +204,8 @@ def d4_capped_hybrid_conditioning(
                 visited[r, c] = True
                 heapq.heappush(pq, (float(working_dem[r, c]), r, c))
 
-    # Retained basins (treated as established sinks)
     r_rows, r_cols = np.where(retained_basin_mask & valid_mask)
-    for r, c in zip(r_rows, r_cols):
+    for r, c in zip(r_rows, r_cols, strict=False):
         if not visited[r, c]:
             visited[r, c] = True
             heapq.heappush(pq, (float(working_dem[r, c]), r, c))
@@ -273,25 +230,23 @@ def d4_capped_hybrid_conditioning(
                     z_orig = float(working_dem[nr, nc])
 
                     if z_orig >= z_spill:
-                        # Naturally drains
                         heapq.heappush(pq, (z_orig, nr, nc))
                     else:
                         if no_fill_mask[nr, nc]:
-                            # Building cells and conveyance channels are forbidden to fill
                             n_priority_unfilled += 1
                             heapq.heappush(pq, (z_orig, nr, nc))
                         else:
                             delta = z_spill - z_orig
-                            if delta <= fill_max and (working_dem[nr, nc] + delta - original_dem[nr, nc] <= fill_max):
+                            if delta <= fill_max and (
+                                working_dem[nr, nc] + delta - original_dem[nr, nc] <= fill_max
+                            ):
                                 working_dem[nr, nc] = np.float32(z_spill)
                                 n_filled += 1
                                 heapq.heappush(pq, (z_spill, nr, nc))
                             else:
-                                # Residual pit encountered during priority flood
                                 n_priority_unfilled += 1
                                 heapq.heappush(pq, (z_orig, nr, nc))
 
-    # Compute diagnostics
     diff = working_dem - original_dem
     cuts = -diff[diff < -1e-4]
     fills = diff[diff > 1e-4]
@@ -306,7 +261,9 @@ def d4_capped_hybrid_conditioning(
     building_modified = int((modified_mask & building_mask).sum())
     basin_modified = int((modified_mask & retained_basin_mask).sum())
     road_filled = int(((diff > 1e-4) & (road_mask == 1)).sum()) if road_mask is not None else 0
-    waterway_filled = int(((diff > 1e-4) & (waterway_mask == 1)).sum()) if waterway_mask is not None else 0
+    waterway_filled = (
+        int(((diff > 1e-4) & (waterway_mask == 1)).sum()) if waterway_mask is not None else 0
+    )
 
     assert building_modified == 0, f"Building cells were modified: {building_modified}"
     assert basin_modified == 0, f"Retained basin interiors were modified: {basin_modified}"
@@ -336,7 +293,6 @@ def d4_capped_hybrid_conditioning(
 
 
 def build_conditioning(cfg: dict[str, Any], repo_root: Path = REPO) -> dict[str, Any]:
-    """Burn roads/buildings/waterways into DEM, apply depression-aware D4 conditioning."""
     grid, grid_diag = build_grid(cfg, repo_root)
     buffer_m = float(cfg["dem"]["buffer_m"])
     buffered_grid = grid.buffered(buffer_m)
@@ -358,7 +314,9 @@ def build_conditioning(cfg: dict[str, Any], repo_root: Path = REPO) -> dict[str,
     roads_path = _require(interim_terrain / "roads_centrelines.gpkg", "roads.py")
     waterways_path = _require(interim_terrain / "waterways.gpkg", "drains.py")
     building_mask_path = _require(interim_terrain / "building_mask_buffered.tif", "buildings.py")
-    building_delta_path = _require(interim_terrain / "building_height_delta_buffered.tif", "buildings.py")
+    building_delta_path = _require(
+        interim_terrain / "building_height_delta_buffered.tif", "buildings.py"
+    )
 
     with rasterio.open(dem_path) as src:
         buffered_grid.assert_aligned(src)
@@ -373,7 +331,6 @@ def build_conditioning(cfg: dict[str, Any], repo_root: Path = REPO) -> dict[str,
     road_mask = rasterize_burn_mask(roads_path, buffered_grid)
     waterway_mask = rasterize_burn_mask(waterways_path, buffered_grid)
 
-    # Precedence: waterway > road > building
     lowering = np.zeros_like(original)
     lowering = np.where(road_mask == 1, road_depth, lowering)
     lowering = np.where(waterway_mask == 1, drain_depth, lowering)
@@ -425,8 +382,6 @@ def build_conditioning(cfg: dict[str, Any], repo_root: Path = REPO) -> dict[str,
         with rasterio.open(tmp, "w", **profile) as dst:
             dst.write(conveyance_factor.astype(np.float32), 1)
 
-    # ── Depression-Aware D4 Conditioning ──────────────────────────────
-    # 1. Run / load depression classification and register
     register_csv_path = interim_terrain / "retained_basins.csv"
     class_raster_buf_path = interim_terrain / "basin_class_buffered.tif"
     if not register_csv_path.exists() or not class_raster_buf_path.exists():
@@ -436,23 +391,18 @@ def build_conditioning(cfg: dict[str, Any], repo_root: Path = REPO) -> dict[str,
         buffered_grid.assert_aligned(src)
         basin_class_buf = src.read(1)
 
-    # Retained basins mask (all registered candidates: Storage, Quarry, Landfill, Uncertain)
-    # Exclude previous CLASS_RESIDUAL (5) so re-runs start from pure candidate register
     retained_basin_mask = (basin_class_buf > 0) & (basin_class_buf != CLASS_RESIDUAL) & valid_mask
     basin_class_buf[basin_class_buf == CLASS_RESIDUAL] = 0
 
-    # Full building mask (ALL building cells, regardless of conveyance override)
     with rasterio.open(building_mask_path) as src:
         buffered_grid.assert_aligned(src)
         raw_b_mask = src.read(1)
     full_building_mask = (raw_b_mask == 1) & valid_mask
 
-    # Cost surface for carving outside retained basins:
-    # waterway (1) -> road (2) -> bare ground (3) -> building (999, strictly forbidden)
     cost_surface = np.full_like(conditioned, 3, dtype=np.int32)
     cost_surface[road_mask == 1] = 2
     cost_surface[waterway_mask == 1] = 1
-    cost_surface[full_building_mask] = 999  # STRICTLY FORBIDDEN
+    cost_surface[full_building_mask] = 999
 
     post_breach, d4_diag = d4_capped_hybrid_conditioning(
         dem=conditioned,
@@ -466,7 +416,6 @@ def build_conditioning(cfg: dict[str, Any], repo_root: Path = REPO) -> dict[str,
         fill_max=FILL_MAX_M,
     )
 
-    # 2. Enumerate remaining residuals into register and class raster
     d4_pits_mask = _find_d4_pits(post_breach, valid_mask)
     residual_pits = d4_pits_mask & ~retained_basin_mask
     n_residuals = int(residual_pits.sum())
@@ -475,13 +424,11 @@ def build_conditioning(cfg: dict[str, Any], repo_root: Path = REPO) -> dict[str,
         basin_class_buf[residual_pits] = CLASS_RESIDUAL
         retained_basin_mask = (basin_class_buf > 0) & valid_mask
 
-        # Re-save updated basin_class_buffered.tif
         profile_class_buf = buffered_grid.profile(dtype="uint8", nodata=0)
         with atomic_output_path(class_raster_buf_path) as tmp:
             with rasterio.open(tmp, "w", **profile_class_buf) as dst:
                 dst.write(basin_class_buf.astype(np.uint8), 1)
 
-        # Re-save updated canonical basin_class.tif
         class_raster_canon = basin_class_buf[
             buf_cells : buf_cells + grid.height, buf_cells : buf_cells + grid.width
         ]
@@ -497,7 +444,6 @@ def build_conditioning(cfg: dict[str, Any], repo_root: Path = REPO) -> dict[str,
     n_residuals_buffered = int((basin_class_buf == CLASS_RESIDUAL).sum())
     n_residuals_canonical = int((class_raster_canon == CLASS_RESIDUAL).sum())
 
-    # AF requires the buffered residual count to satisfy both stated limits.
     # Keep each derivation in the manifest so the binding criterion is inspectable.
     n_d4_pits_pre = count_pits_d4(conditioned, valid_mask)
     residual_bounds = residual_bound_components(
@@ -508,17 +454,20 @@ def build_conditioning(cfg: dict[str, Any], repo_root: Path = REPO) -> dict[str,
     residual_canonical_max_bound = int(0.0075 * grid.height * grid.width)
     enforce_residual_bound(n_residuals_buffered, residual_bounds)
 
-    # Detailed residuals enumeration into register
     res_r, res_c = np.where(residual_pits)
     trans_to_wgs = pyproj.Transformer.from_crs(buffered_grid.crs, "EPSG:4326", always_xy=True)
 
     residual_records = []
-    for idx, (r, c) in enumerate(zip(res_r, res_c)):
+    for idx, (r, c) in enumerate(zip(res_r, res_c, strict=False)):
         z_cell = float(post_breach[r, c])
         card_elevs = []
         for dy, dx in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
             nr, nc = r + dy, c + dx
-            if 0 <= nr < buffered_grid.height and 0 <= nc < buffered_grid.width and valid_mask[nr, nc]:
+            if (
+                0 <= nr < buffered_grid.height
+                and 0 <= nc < buffered_grid.width
+                and valid_mask[nr, nc]
+            ):
                 card_elevs.append(float(post_breach[nr, nc]))
         min_card_z = min(card_elevs) if card_elevs else z_cell
         depth_m = max(min_card_z - z_cell, 0.0)
@@ -527,7 +476,6 @@ def build_conditioning(cfg: dict[str, Any], repo_root: Path = REPO) -> dict[str,
         is_rd = bool(road_mask[r, c] == 1)
         is_ww = bool(waterway_mask[r, c] == 1)
 
-        # Check carve feasibility
         has_diag_drop = False
         all_routes_b = True
         cut_exceeded = False
@@ -539,13 +487,21 @@ def build_conditioning(cfg: dict[str, Any], repo_root: Path = REPO) -> dict[str,
             ((1, 1), [(1, 0), (0, 1)]),
         ]:
             dr, dc = r + ddy, c + ddx
-            if 0 <= dr < buffered_grid.height and 0 <= dc < buffered_grid.width and valid_mask[dr, dc]:
+            if (
+                0 <= dr < buffered_grid.height
+                and 0 <= dc < buffered_grid.width
+                and valid_mask[dr, dc]
+            ):
                 d_z = float(conditioned[dr, dc])
                 if d_z < p_z:
                     has_diag_drop = True
                     for mdy, mdx in intermediates:
                         mr, mc = r + mdy, c + mdx
-                        if 0 <= mr < buffered_grid.height and 0 <= mc < buffered_grid.width and valid_mask[mr, mc]:
+                        if (
+                            0 <= mr < buffered_grid.height
+                            and 0 <= mc < buffered_grid.width
+                            and valid_mask[mr, mc]
+                        ):
                             if cost_surface[mr, mc] < 999:
                                 all_routes_b = False
                                 req_c = float(conditioned[mr, mc]) - 0.5 * (p_z + d_z)
@@ -565,8 +521,16 @@ def build_conditioning(cfg: dict[str, Any], repo_root: Path = REPO) -> dict[str,
         else:
             reason = "fill would exceed fill_max"
 
-        x_coord = c * buffered_grid.transform.a + buffered_grid.transform.c + buffered_grid.transform.a / 2.0
-        y_coord = r * buffered_grid.transform.e + buffered_grid.transform.f + buffered_grid.transform.e / 2.0
+        x_coord = (
+            c * buffered_grid.transform.a
+            + buffered_grid.transform.c
+            + buffered_grid.transform.a / 2.0
+        )
+        y_coord = (
+            r * buffered_grid.transform.e
+            + buffered_grid.transform.f
+            + buffered_grid.transform.e / 2.0
+        )
         lon, lat = trans_to_wgs.transform(x_coord, y_coord)
 
         residual_records.append(
@@ -607,7 +571,6 @@ def build_conditioning(cfg: dict[str, Any], repo_root: Path = REPO) -> dict[str,
         with rasterio.open(tmp, "w", **profile) as dst:
             dst.write(post_breach.astype(np.float32), 1)
 
-    # Pits inventory
     n_pits_pre = count_pits(conditioned, valid_mask)
     n_pits_post = count_pits(post_breach, valid_mask)
     n_d4_pits_post = count_pits_d4(post_breach, valid_mask)
@@ -666,11 +629,11 @@ def build_conditioning(cfg: dict[str, Any], repo_root: Path = REPO) -> dict[str,
         "prebreach_path": str(prebreach_path.relative_to(repo_root)),
         "postbreach_path": str(postbreach_path.relative_to(repo_root)),
         "deviations": [
-            "Bounded Priority-Flood filling up to fill_max = 3.25 m (realized mean fill 0.6537 m, max 3.2064 m, "
-            "total deposition 6.7346 M m3 across 103,024 cells) on unclassified bare-ground micro-depressions "
-            "(< 400 m2 or noise pits) deviates from PROMPT.md §6.1's carve-only preference. This bounded deposition "
-            "eliminates the need to carve destructive 22 m drainage canyons across the city, while strictly prohibiting "
-            "any fill on road conveyance (0 cells filled), waterway conveyance (0 cells filled), building footprints "
+            "Bounded Priority-Flood filling up to fill_max = 3.25 m (realized mean fill 0.6537 m, max 3.2064 m, "  # noqa: E501
+            "total deposition 6.7346 M m3 across 103,024 cells) on unclassified bare-ground micro-depressions "  # noqa: E501
+            "(< 400 m2 or noise pits) deviates from PROMPT.md §6.1's carve-only preference. This bounded deposition "  # noqa: E501
+            "eliminates the need to carve destructive 22 m drainage canyons across the city, while strictly prohibiting "  # noqa: E501
+            "any fill on road conveyance (0 cells filled), waterway conveyance (0 cells filled), building footprints "  # noqa: E501
             "(0 cells filled), or retained basin interiors (0 cells filled)."
         ],
     }
@@ -685,7 +648,6 @@ def main(
         REPO / "runs" / "terrain_conditioning", help="Directory to write the manifest into"
     ),
 ) -> None:
-    """Burn roads/buildings/waterways into DEM, apply depression-aware D4 conditioning."""
     cfg = load_config(config)
     try:
         result = run_stage(
@@ -710,7 +672,7 @@ def main(
         f"filled: {d4['n_cells_filled']:,} cells, max fill {d4['max_fill_m']:.3f}m)"
     )
     typer.echo(
-        f"D4 pits: {result['n_d4_pits_pre_conditioning']:,} -> {result['n_d4_pits_post_conditioning']:,} "
+        f"D4 pits: {result['n_d4_pits_pre_conditioning']:,} -> {result['n_d4_pits_post_conditioning']:,} "  # noqa: E501
         f"(inside retained basins: {result['pits_inside_retained_basins']:,}, "
         f"outside retained: {result['pits_outside_retained_basins']:,})"
     )

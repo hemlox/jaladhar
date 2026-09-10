@@ -1,10 +1,8 @@
 """Accepted-step scope for the Phase 3 transport accumulator.
-
 V2: if a rejected trial is accumulated, the final field contains both trial
 increments. V5 red mutation: moving accumulation above acceptance made the
 synthetic retry total 3 rather than 2.
-Scope: synthetic scalar retry loop; full replay remains data-blocked.
-"""
+Scope: synthetic scalar retry loop; full replay remains data-blocked."""
 
 import torch
 

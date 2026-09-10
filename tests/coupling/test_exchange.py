@@ -86,17 +86,12 @@ from jaladhar.solver.state import StaticFields
 REPO = Path(__file__).resolve().parents[2]
 
 # Hand-computation constants — typed LITERALLY here (V2: the references share
-# no code with jaladhar.coupling.exchange).
-CW = 1.7  # FHWA HEC-22 / EPA SWMM Ref Manual Vol II (weir forms)
-CD = 0.65  # ditto (orifice forms)
+
+CW = 1.7
+CD = 0.65
 G = 9.81
 HF = 0.001
 AREA = 100.0
-
-
-# ---------------------------------------------------------------------------
-# Toy fixtures (declared-synthetic; through the PRODUCTION assembly path)
-# ---------------------------------------------------------------------------
 
 
 def _toy_graph(
@@ -108,14 +103,6 @@ def _toy_graph(
     counts: list[int] | None = None,
     outfalls: tuple[int, ...] = (),
 ) -> DrainGraph:
-    """edges (from_id, to_id, cap_or_None), 1-based ids; ownership via nmap.
-
-    An empty edge list gets ONE null-capacity edge appended (Q == 0 ALWAYS,
-    D-C pin): production ``build_drain_graph`` reduces over the edge tensors
-    and cannot accept an empty edge set. The appended edge is physically
-    inert for every assertion below; node 2 is created if needed and owns no
-    cells (counts fall out of nmap as 0 — legal for non-active nodes).
-    """
     inert_padding = not edges
     if inert_padding:
         edges = [(1, 2, None)]
@@ -155,9 +142,11 @@ def _toy_graph(
 
 
 def _static_zero(shape: tuple[int, int]) -> StaticFields:
-    """A dry StaticFields shell with drain_cap EXACTLY zero (coupled-mode state)."""
     hh, ww = shape
-    z = lambda *s: torch.zeros(*s, dtype=torch.float32)  # noqa: E731
+
+    def z(*s):
+        return torch.zeros(*s, dtype=torch.float32)
+
     return StaticFields(
         dz_x=z(hh, ww - 1),
         dz_y=z(hh - 1, ww),
@@ -180,7 +169,6 @@ def _static_zero(shape: tuple[int, int]) -> StaticFields:
 
 
 def _state(heads: list[float], n: int | None = None) -> NodeState:
-    """NodeState preset to given f32 heads, zero books."""
     n = len(heads) if n is None else n
     hs = torch.tensor(heads + [0.0] * (n - len(heads)), dtype=torch.float32)
     z64 = torch.zeros(n, dtype=torch.float64)
@@ -194,26 +182,21 @@ def _step(h, graph, node_state=None, dt=0.48, static=None) -> CoupleResult:
     return couple_step(h, torch.zeros(hh, ww - 1), torch.zeros(hh - 1, ww), st, ns, graph, dt)
 
 
-# ---------------------------------------------------------------------------
-# Capture magnitudes vs hand-computed values (task examples)
-# ---------------------------------------------------------------------------
-
-
 class TestCaptureMagnitudes:
     def test_weir_hand_computed(self):
         """Cw=1.7, L=6.71 m, h_eff just below 0.1 m, dt=0.4802 s -> ~1.73 mm/cell.
 
         V7 scope: 1 cell, 1 node, single step, weir regime only."""
         g = _toy_graph([], 1, widths=[6.71], nmap=torch.tensor([[1]], dtype=torch.int32))
-        h = torch.full((1, 1), 0.1 - 1e-6, dtype=torch.float32)  # strictly below switch
+        h = torch.full((1, 1), 0.1 - 1e-6, dtype=torch.float32)
         cr = _step(h, g, dt=0.4802)
-        h_eff = float(h.clamp(min=0)[0, 0])  # realized f32 value drives the reference
+        h_eff = float(h.clamp(min=0)[0, 0])
         expected = CW * 6.71 * h_eff**1.5 * 0.4802 / AREA
         got = float(cr.captured_depth_m[0, 0])
         assert abs(got - expected) <= 1e-6 * expected, (got, expected)
-        assert 1.5e-3 < got < 2.0e-3  # the task-stated ~1.73 mm magnitude
-        assert cr.cap_binding_this_step == 0  # 0.9*(h-hf) >> hydraulic rate here
-        # and it really was the WEIR form, not the orifice form (~47% different)
+        assert 1.5e-3 < got < 2.0e-3
+        assert cr.cap_binding_this_step == 0
+
         orifice_val = CD * (6.71 * 0.1) * math.sqrt(2 * G * h_eff) * 0.4802 / AREA
         assert abs(got - orifice_val) > 0.3 * expected
         assert cr.capture_m3 == pytest.approx(got * AREA, rel=1e-9)
@@ -225,13 +208,13 @@ class TestCaptureMagnitudes:
         g = _toy_graph([], 1, widths=[6.71], nmap=torch.tensor([[1]], dtype=torch.int32))
         h = torch.full((1, 1), 1.0, dtype=torch.float32)
         cr = _step(h, g, dt=0.4802)
-        dh = float(h[0, 0])  # empty node -> head_diff == h_eff
+        dh = float(h[0, 0])
         expected = CD * (6.71 * 0.1) * math.sqrt(2 * G * dh) * 0.4802 / AREA
         got = float(cr.captured_depth_m[0, 0])
         assert abs(got - expected) <= 1e-6 * expected, (got, expected)
-        assert 8.5e-3 < got < 10.0e-3  # the task-stated ~9 mm magnitude
+        assert 8.5e-3 < got < 10.0e-3
         weir_val = CW * 6.71 * dh**1.5 * 0.4802 / AREA
-        assert abs(got - weir_val) > 0.3 * expected  # really the orifice form
+        assert abs(got - weir_val) > 0.3 * expected
 
     def test_regime_switch_inclusive_lower_bound_is_orifice(self):
         """h_eff == 0.1 EXACTLY is orifice ('inclusive lower bound weir' puts
@@ -247,11 +230,6 @@ class TestCaptureMagnitudes:
         weir_val = CW * 6.71 * dh**1.5 * 0.4802 / AREA
         assert abs(got - orifice_val) <= 1e-6 * orifice_val, (got, orifice_val)
         assert abs(got - weir_val) > 0.3 * orifice_val
-
-
-# ---------------------------------------------------------------------------
-# No-reverse-capture, capture cap, non-negativity
-# ---------------------------------------------------------------------------
 
 
 class TestCaptureGuards:
@@ -289,7 +267,7 @@ class TestCaptureGuards:
         cr = _step(h, g, dt=0.48)
         cap = 0.9 * (float(h[0, 0]) - HF)
         got = float(cr.captured_depth_m[0, 0])
-        # observable is the CONTRACT f32 field: f32 rounding ~1 ULP of 0.9
+
         assert got == pytest.approx(cap, rel=1e-7), (got, cap)
         assert cr.cap_binding_this_step == 1
         assert float(cr.h_new[0, 0]) == pytest.approx(float(h[0, 0]) - cap, rel=1e-7)
@@ -328,8 +306,7 @@ class TestCaptureGuards:
                 assert bool((cr.h_new >= 0).all()), f"negative depth at dt={dt}"
                 assert bool((cr.captured_depth_m >= 0).all())
                 assert bool((cr.returned_depth_m >= 0).all())
-                # direct cap property against the INPUT field (independent recompute);
-                # tolerance is f32 field rounding on the CONTRACT captured_depth_m
+
                 cap_field = 0.9 * torch.clamp(h_before.to(torch.float64) - HF, min=0.0)
                 got = cr.captured_depth_m.to(torch.float64)
                 assert bool(
@@ -337,9 +314,6 @@ class TestCaptureGuards:
                 ), f"cap exceeded at dt={dt}"
 
     def test_negative_input_depth_refused_at_entry(self):
-        """Negative surface depths are OUT OF CONTRACT for couple_step: the
-        host mass update guarantees h >= 0 before coupling (acc.py limiter).
-        Refusal is loud at entry, not a confusing exit-side invariant trip."""
         g = _toy_graph([], 1, widths=[6.71], nmap=torch.tensor([[1]], dtype=torch.int32))
         with pytest.raises(ValueError, match="negative depths"):
             _step(torch.full((1, 1), -0.5, dtype=torch.float32), g)
@@ -351,17 +325,12 @@ class TestCaptureGuards:
         handing negative depths to the solver. Pristine control first: green."""
         g = _toy_graph([], 1, widths=[5000.0], nmap=torch.tensor([[1]], dtype=torch.int32))
         h = torch.full((1, 1), 0.25, dtype=torch.float32)
-        cr = _step(h, g, dt=0.48)  # pristine: cap 0.9*0.249 < h -> fine
+        cr = _step(h, g, dt=0.48)
         assert bool((cr.h_new >= 0).all())
 
         monkeypatch.setattr(xchg, "CAPTURE_CAP_FRACTION", 1.1)
         with pytest.raises(RuntimeError, match="negative"):
             _step(h, g, dt=0.48)
-
-
-# ---------------------------------------------------------------------------
-# Surcharge return: activation, conservation, distribution, order
-# ---------------------------------------------------------------------------
 
 
 class TestSurchargeReturn:
@@ -375,7 +344,7 @@ class TestSurchargeReturn:
         g = _toy_graph([], 1, widths=[2.285], nmap=torch.tensor([[1]], dtype=torch.int32))
         h = torch.full((1, 1), 0.05, dtype=torch.float32)
         pa = 2.285
-        head_pre = float(np.nextafter(np.float32(1.5), np.float32(2.0)))  # just above
+        head_pre = float(np.nextafter(np.float32(1.5), np.float32(2.0)))
 
         cr_below = _step(h, g, node_state=_state([1.49], n=2), dt=0.48)
         assert cr_below.return_m3 == 0.0 and cr_below.surcharging_nodes == 0
@@ -386,9 +355,9 @@ class TestSurchargeReturn:
         cr_above = _step(h, g, node_state=_state([head_pre], n=2), dt=0.48)
         assert cr_above.surcharging_nodes == 1
         assert cr_above.return_m3 > 0.0
-        excess_vol = head_pre * pa - 1.5 * pa  # from the PRE-return carried head
+        excess_vol = head_pre * pa - 1.5 * pa
         assert cr_above.return_m3 <= 0.9 * excess_vol * (1 + 1e-6)
-        assert cr_above.cap_binding_this_step == 1  # tiny excess: volume cap binds
+        assert cr_above.cap_binding_this_step == 1
 
     def test_surcharge_conserves_identity_and_uniform_distribution(self):
         """SURCHARGE-CONSERVES (#5): surface-side returned volume
@@ -403,7 +372,7 @@ class TestSurchargeReturn:
             [], 1, widths=[2.285], nmap=torch.tensor([[1, 1, 1]], dtype=torch.int32), counts=[3]
         )
         h = torch.zeros((1, 3), dtype=torch.float32)
-        cr = _step(h, g, node_state=_state([3.0], n=2), dt=0.48)  # h_node=3 -> excess 1.5 (orifice)
+        cr = _step(h, g, node_state=_state([3.0], n=2), dt=0.48)
 
         depth_side = float(cr.returned_depth_m.to(torch.float64).sum().item()) * AREA
         node_side = float(cr.node_state_new.vol_out_m3_cum[0].item())
@@ -436,24 +405,24 @@ class TestSurchargeReturn:
         )
         h = torch.zeros((2, 2), dtype=torch.float32)
         h[0, 0] = 2.0
-        head2 = float(np.float32((1.5 * 2.285 - 1e-3) / 2.285))  # hair below activation
+        head2 = float(np.float32((1.5 * 2.285 - 1e-3) / 2.285))
         state = _state([0.0, head2])
 
         cr = _step(h, g, node_state=state, dt=0.48)
 
-        captured_expect = 0.9 * (2.0 - HF) * AREA  # node1 capped -> exact volume
+        captured_expect = 0.9 * (2.0 - HF) * AREA
         assert cr.cap_binding_this_step == 1
         assert cr.capture_m3 == pytest.approx(captured_expect, rel=1e-6)
-        # routed inflow ALREADY in node2's cumulative books this step, edge-capped
+
         inflow = float(cr.node_state_new.vol_in_m3_cum[1].item())
-        expected_inflow = min(50.0, captured_expect / 0.48) * 0.48  # == 24.0 m3
+        expected_inflow = min(50.0, captured_expect / 0.48) * 0.48
         assert inflow == pytest.approx(expected_inflow, rel=1e-5)
-        # ...and node2 surcharged FROM that just-routed water in the same step
+
         assert cr.surcharging_nodes == 1
         assert cr.return_m3 > 0.0
         assert float(cr.returned_depth_m[1, 0]) > 0.0
-        assert float(cr.returned_depth_m[0, 0]) == 0.0  # node1 did not return
-        # hand-derived return magnitude through the same pinned physics
+        assert float(cr.returned_depth_m[0, 0]) == 0.0
+
         vol2 = (1.5 * 2.285 - 1e-3) + expected_inflow
         excess = vol2 / 2.285 - 1.5
         q_ret = CD * (2.285 * 0.1) * math.sqrt(2 * G * excess)
@@ -461,16 +430,7 @@ class TestSurchargeReturn:
         assert cr.return_m3 == pytest.approx(r_expect, rel=1e-4)
 
 
-# ---------------------------------------------------------------------------
-# Autograd (contract autograd_rules)
-# ---------------------------------------------------------------------------
-
-
 def _tracked_width_graph(width_tracked: torch.Tensor) -> DrainGraph:
-    """Two-node graph whose width_mean_m carries an autograd edge (the same
-    tracked tensor feeds L_weir, A_open and node_plan_area). The single edge
-    is null-capacity (Q == 0 ALWAYS) so the tracked physics is pure exchange;
-    production ``build_drain_graph`` cannot accept an empty edge set."""
     return build_drain_graph(
         edge_from=torch.zeros(1, dtype=torch.int64),
         edge_to=torch.ones(1, dtype=torch.int64),
@@ -543,15 +503,8 @@ class TestAutograd:
         assert grad_sum == 0.0, "mutation undetected: gradients survived the detach"
 
 
-# ---------------------------------------------------------------------------
-# Guards, purity, validation, books
-# ---------------------------------------------------------------------------
-
-
 class TestGuardsAndPurity:
     def test_entry_assert_rejects_unzeroed_static(self):
-        """GUARD (a): couple_step refuses a live legacy sink — non-zero OR NaN
-        drain_cap_m_s — instead of double-counting drainage beside capture."""
         g = _toy_graph([], 1, nmap=torch.tensor([[1]], dtype=torch.int32))
         h = torch.full((1, 1), 0.5, dtype=torch.float32)
         base = _static_zero((1, 1))
@@ -563,8 +516,6 @@ class TestGuardsAndPurity:
             _step(h, g, static=bad_nan)
 
     def test_zero_drain_cap_out_of_place_is_out_of_place(self):
-        """Guard (a) helper: NEW frozen instance, original untouched, realized
-        zeros in the returned tensor (V1: bytes, not intent)."""
         s_live = _static_zero((2, 2))
         s_live = replace(s_live, drain_cap_m_s=torch.full((2, 2), 1e-5, dtype=torch.float32))
         s_zero = zero_drain_cap_out_of_place(s_live)
@@ -573,8 +524,6 @@ class TestGuardsAndPurity:
         assert s_zero.drain_cap_m_s.data_ptr() != s_live.drain_cap_m_s.data_ptr()
 
     def test_purity_inputs_bitwise_unchanged(self):
-        """Out-of-place discipline: h/qx/qy/node_state bitwise unchanged;
-        outputs occupy fresh storage (no aliasing)."""
         g = _toy_graph(
             [(1, 2, 5.0)],
             2,
@@ -598,8 +547,6 @@ class TestGuardsAndPurity:
         assert cr.captured_depth_m.data_ptr() != h.data_ptr()
 
     def test_input_validation_rejections(self):
-        """Loud seams: bad dt (0 / negative / NaN / bool), wrong h dtype/shape,
-        non-NodeState state, CUDA device refused without initialising one."""
         g = _toy_graph([], 1, nmap=torch.tensor([[1]], dtype=torch.int32))
         good = torch.full((1, 1), 0.5, dtype=torch.float32)
         st = _static_zero((1, 1))
@@ -613,15 +560,12 @@ class TestGuardsAndPurity:
         with pytest.raises(ValueError, match="shape"):
             _step(torch.zeros((1, 1), dtype=torch.float32), g2)
         with pytest.raises(ValueError, match="NodeState"):
-            couple_step(
-                good, torch.zeros(1, 0), torch.zeros(0, 1), st, object(), g, 0.48  # type: ignore[arg-type]
-            )
+            couple_step(good, torch.zeros(1, 0), torch.zeros(0, 1), st, object(), g, 0.48)
         if not torch.cuda.is_available():
             with pytest.raises(ValueError, match="CPU-only"):
                 build_node_state(g, device="cuda")
 
     def test_build_node_state_initial(self):
-        """Initial state: dry network at rest — f32 zero heads, f64 zero books."""
         g = _toy_graph([], 3, nmap=torch.tensor([[1, 2, 3]], dtype=torch.int32))
         ns = build_node_state(g, "cpu")
         assert ns.h_node_m.dtype is torch.float32 and tuple(ns.h_node_m.shape) == (3,)
@@ -631,10 +575,6 @@ class TestGuardsAndPurity:
         assert bool((ns.vol_in_m3_cum == 0).all()) and bool((ns.vol_out_m3_cum == 0).all())
 
     def test_books_accumulate_f64_monotonic_multistep(self):
-        """Six coupled steps: cumulative books grow monotonically in f64 and
-        stay finite; heads stay f32; the internal continuity guard never trips
-        (it raises loudly inside couple_step if the books disagree with the
-        router's own state)."""
         g = _toy_graph(
             [(1, 2, 5.0)],
             2,
@@ -656,11 +596,6 @@ class TestGuardsAndPurity:
             prev_in = float(state.vol_in_m3_cum.sum())
             prev_out = float(state.vol_out_m3_cum.sum())
         assert prev_in > 0.0
-
-
-# ---------------------------------------------------------------------------
-# Scale probe (declared-synthetic, fast tier)
-# ---------------------------------------------------------------------------
 
 
 class TestScale:
@@ -685,9 +620,9 @@ class TestScale:
             for j in range(per_row):
                 nid = i * per_row + j + 1
                 if j + 1 < per_row:
-                    edges.append((nid, nid + 1, 3.0))  # rightward only => DAG
+                    edges.append((nid, nid + 1, 3.0))
                 if i + 1 < per_row:
-                    edges.append((nid, nid + per_row, 3.0))  # downward only
+                    edges.append((nid, nid + per_row, 3.0))
         g = _toy_graph(
             edges,
             num_nodes,
@@ -715,11 +650,6 @@ class TestScale:
         assert cum_cap > 0.0
         assert cum_ret >= 0.0
         assert "[scale-512]" in capsys.readouterr().out
-
-
-# ---------------------------------------------------------------------------
-# Entry finiteness on node books (BugHunt round-1 item F-minor)
-# ---------------------------------------------------------------------------
 
 
 class TestEntryFiniteBooks:
@@ -751,8 +681,6 @@ class TestEntryFiniteBooks:
             _step(h, g, node_state=inf_out)
 
     def test_finite_control_still_exchanges(self):
-        """Control for the new seam: finite books are NOT refused (the guard is not
-        blanket-on). One real step completes with finite outputs."""
         g = _toy_graph(
             [(1, 2, 5.0)],
             2,
@@ -765,11 +693,6 @@ class TestEntryFiniteBooks:
         assert cr.capture_m3 > 0.0
 
 
-# ---------------------------------------------------------------------------
-# Real-data tier (slow) — seam constants + DELIVERABLE 3
-# ---------------------------------------------------------------------------
-
-
 @pytest.fixture(scope="session")
 def real_cfg():
     return resolve_config(REPO / "configs" / "coupling.yaml", REPO)
@@ -777,10 +700,6 @@ def real_cfg():
 
 @pytest.mark.slow
 def test_constants_match_resolved_config(real_cfg):
-    """V8-style seam: the pinned module constants (the frozen couple_step
-    signature has no config channel) EQUAL the resolved coupling config values
-    — drift between exchange.py and configs/coupling.yaml cannot happen
-    silently. Solver-physics parities checked straight from solver.yaml."""
     import yaml
 
     cfg = real_cfg
@@ -795,7 +714,7 @@ def test_constants_match_resolved_config(real_cfg):
     solver = yaml.safe_load((REPO / "configs" / "solver.yaml").read_text())
     assert xchg.HF_FLOOR_M == solver["physics"]["hf_floor_m"]
     assert xchg.GRAVITY_M_S2 == solver["physics"]["gravity_m_s2"]
-    assert xchg.CELL_AREA_M2 == 100.0  # contract units block (loader asserts the grid)
+    assert xchg.CELL_AREA_M2 == 100.0
 
 
 @pytest.mark.slow
@@ -840,7 +759,7 @@ def test_real_graph_end_to_end_couple_step(real_cfg, capsys):
         f"surcharging_nodes={cr.surcharging_nodes} cap_binding={cr.cap_binding_this_step} "
         f"max_node_head_m={cr.max_node_head_m!r}"
     )
-    # host-side VERIFICATION re-multiply (budget consumers never do this):
+
     indep = float(cr.captured_depth_m.to(torch.float64).sum().item()) * 100.0
     assert cr.capture_m3 == indep, "capture_m3 is not the exact field sum x cell_area"
     assert cr.capture_m3 > 0.0, "a 0.5 m pond over allocated inlets must capture"

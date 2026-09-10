@@ -1,40 +1,4 @@
-"""WF-6 build lane L2, module 2 — street-intersection nodes with approaches.
-
-Derives intersection nodes from the classified named centrelines (THE subset
-imported from :mod:`jaladhar.web.watchlist`, itself pinned to
-:mod:`jaladhar.web.wards`' ``CLASSIFIED_HIGHWAYS``) and reports how many named
-streets APPROACH each node and how many of those are FLOODED in the selected
-realised product/frame.
-
-Method (``method`` field emitted verbatim):
-``"endpoint-cluster-1.0m+passthrough-12m"``
-
-1. ENDPOINT CLUSTERING at ENDPOINT_TOL_M = 1.0 m over every classified named
-   segment's endpoints.  A cluster incident to >= 2 distinct street entities is
-   a junction candidate.  This reproduces the audit baseline node count
-   EXACTLY (2,142; asserted in tests).
-2. PASS-THROUGH AWARENESS: the audit's caveat was that some crossings have a
-   through-road passing the node at distance ~0 with NO endpoint there, so an
-   endpoint-only count under-counts its approaches.  At every candidate node,
-   any DISTINCT named street whose geometry passes within PASSTHROUGH_TOL_M =
-   12 m (road-width tolerance; stated value) of the node without already
-   contributing an endpoint arm adds ONE approach for its entity.
-
-Reconciliation posture (V3/V7): the audit's approach histogram was produced by
-a method not recorded in either repository, so this module reports ITS realised
-histograms BESIDE the audit figures rather than claiming equality.  Deltas are
-data, recorded in counts.audit_baseline and asserted only as sanity bands in
-the tests.
-
-``approaches_blocked`` counts distinct street ENTITIES among a node's
-approaches whose entity has ANY member segment flooded in the selected
-product/frame — consistent with the watchlist's street-level status.
-
-No HTTP here; plain JSON-safe dict contracts only.
-
-Run standalone:
-``python -m jaladhar.web.intersections build --product <dir> [--frame TAG|INDEX] --out <json>``
-"""
+"WF-6 build lane L2, module 2 — street-intersection nodes with approaches. Derives intersection nodes from the classified named centrelines (THE subset imported from :mod:`jaladhar.web.watchlist`, itself pinned to :mod:`jaladhar.web.wards`' ``CLASSIFIED_HIGHWAYS``) and reports how many named streets APPROACH each node and how many of those are FLOODED in the selected realised product/frame. Method (``method`` field emitted verbatim): ``\"endpoint-cluster-1.0m+passthrough-12m\"`` 1. ENDPOINT CLUSTERING at ENDPOINT_TOL_M = 1.0 m over every classified named segment's endpoints. A cluster incident to >= 2 distinct street entities is a junction candidate. This reproduces the audit baseline node count EXACTLY (2,142; asserted in tests). 2. PASS-THROUGH AWARENESS: the audit's caveat was that some crossings have a through-road passing the node at distance ~0 with NO endpoint there, so an endpoint-only count under-counts its approaches. At every candidate node, any DISTINCT named street whose geometry passes within PASSTHROUGH_TOL_M = 12 m (road-width tolerance; stated value) of the node without already contributing an endpoint arm adds ONE approach for its entity. Reconciliation posture (V3/V7): the audit's approach histogram was produced by a method not recorded in either repository, so this module reports ITS realised histograms BESIDE the audit figures rather than claiming equality. Deltas are data, recorded in counts.audit_baseline and asserted only as sanity bands in the tests. ``approaches_blocked`` counts distinct street ENTITIES among a node's approaches whose entity has ANY member segment flooded in the selected product/frame — consistent with the watchlist's street-level status. No HTTP here; plain JSON-safe dict contracts only. Run standalone: ``python -m jaladhar.web.intersections build --product <dir> [--frame TAG|INDEX] --out <json>``"  # noqa: E501
 
 from __future__ import annotations
 
@@ -60,21 +24,15 @@ app = typer.Typer(add_completion=False, no_args_is_help=True)
 
 @app.callback()
 def _main() -> None:
-    """Street-intersection deriver (dashboard A1/A11 consumers)."""
+    pass
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
-#: Road-width tolerance for pass-through approaches (metres).  STATED VALUE:
-#: a carriageway plus margins; a centreline passing closer than this to the
-#: node crosses it even when OSM split the ways so no endpoint lands there.
 PASSTHROUGH_TOL_M = 12.0
 
 METHOD = "endpoint-cluster-1.0m+passthrough-12m"
 
-#: Audit-measured baseline figures (WF-6 goal prompt), reported beside our
-#: realised values.  The audit's per-node counting method for the histogram is
-#: not recoverable from either repository; deltas are reported, never hidden.
 AUDIT_BASELINE: dict[str, Any] = {
     "endpoint_only_nodes": 2142,
     "approach_distribution": {"2": 413, "3": 998, "4": 701, "5": 27, "6": 2, "7": 1},
@@ -84,12 +42,6 @@ AUDIT_BASELINE: dict[str, Any] = {
 def cluster_endpoints(
     segments: list[dict[str, Any]],
 ) -> tuple[dict[int, list[int]], list[tuple[float, float]], list[int]]:
-    """Endpoint clusters over all classified named segments.
-
-    Returns ``(clusters, points, point_owner)``: clusters maps a representative
-    point index -> member point indices; ``point_owner[i]`` is the index of the
-    segment owning point i.
-    """
 
     from scipy.spatial import cKDTree
 
@@ -127,25 +79,13 @@ def derive_junction_nodes(
     passthrough_tol_m: float = PASSTHROUGH_TOL_M,
     ward_by_segment: dict[int, dict[str, Any]] | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    """Pure junction computation over prepared inputs.
-
-    ``segments`` is :func:`jaladhar.web.watchlist.load_classified_named_segments`
-    output (segment dicts carrying segment_id/name/endpoints/geometry);
-    ``status`` is :func:`jaladhar.web.watchlist.load_segment_status_rows`
-    output (keys rows / lead_minutes / valid_time_utc, optional kind);
-    ``ward_by_segment`` is :func:`jaladhar.web.watchlist.load_ward_join`
-    output.  Split from :func:`build_intersections` so tests drive the exact
-    same code path with synthetic geometry — no mocks, no parallel
-    reimplementation.
-    """
+    "Pure junction computation over prepared inputs. ``segments`` is :func:`jaladhar.web.watchlist.load_classified_named_segments` output (segment dicts carrying segment_id/name/endpoints/geometry); ``status`` is :func:`jaladhar.web.watchlist.load_segment_status_rows` output (keys rows / lead_minutes / valid_time_utc, optional kind); ``ward_by_segment`` is :func:`jaladhar.web.watchlist.load_ward_join` output. Split from :func:`build_intersections` so tests drive the exact same code path with synthetic geometry — no mocks, no parallel reimplementation."  # noqa: E501
     entities = merge_street_entities(segments)
-    # Per-name merging gives each entity exactly one name; keep it explicit.
     entity_name = [segments[members[0]]["name"] for members in entities]
     entity_of_segment: dict[int, int] = {}
     for ei, members in enumerate(entities):
         for i in members:
             entity_of_segment[i] = ei
-    # Entity flooded flag: ANY member segment flooded (watchlist-consistent).
     entity_flooded = [
         any(
             status["rows"].get(segments[i]["segment_id"], {}).get("flood_status") == "flooded"
@@ -172,15 +112,13 @@ def derive_junction_nodes(
         arm_segments = {point_owner[pi] for pi in member_points}
         arm_entities = {entity_of_segment[i] for i in arm_segments}
         if len(arm_entities) < 2:
-            continue  # dead end / same-street continuation: not a junction
+            continue
         hist_endpoint_entity[len(arm_entities)] += 1
         hist_endpoint_arms[len(member_points)] += 1
 
         cx = sum(points[pi][0] for pi in member_points) / len(member_points)
         cy = sum(points[pi][1] for pi in member_points) / len(member_points)
 
-        # Pass-through: distinct named streets whose geometry comes within
-        # passthrough_tol_m of the node WITHOUT an arm ending there.
         probe = sgeom.Point(cx, cy)
         pt_entities: set[int] = set()
         pt_segments: set[int] = set()
@@ -190,7 +128,7 @@ def derive_junction_nodes(
                 continue
             eid = entity_of_segment[gi]
             if eid in arm_entities:
-                continue  # same street already counted through its own arm
+                continue
             pt_entities.add(eid)
             pt_segments.add(gi)
         if pt_entities:
@@ -199,7 +137,6 @@ def derive_junction_nodes(
 
         approach_entities = arm_entities | pt_entities
 
-        # Worst band over the segments physically at/through this node.
         cand_segments = sorted(arm_segments | pt_segments)
         best_seg = -1
         best_row: dict[str, Any] | None = None
@@ -244,8 +181,6 @@ def derive_junction_nodes(
             node["depth_band_cm"] = None
             node["worst_depth_cm"] = None
             node["worst_segment_id"] = None
-        # Node status: OR over the candidate segments at this node (same
-        # street-level semantics as the watchlist rows).
         cand_statuses = {
             row["flood_status"]
             for i in cand_segments
@@ -260,7 +195,6 @@ def derive_junction_nodes(
         else:
             node["status"] = "unknown"
         node.update(lead_fields)
-        # Ward of the worst segment when the realised join covers it.
         ward = (
             ward_by_segment.get(node["worst_segment_id"])
             if ward_by_segment and node["worst_segment_id"] is not None
@@ -270,7 +204,6 @@ def derive_junction_nodes(
         node["ward_number"] = ward["ward_number"] if ward else None
         nodes_out.append(node)
 
-    # Deterministic spatially-ordered node ids.
     nodes_out.sort(key=lambda n: (n["x"], n["y"]))
     for idx, node in enumerate(nodes_out):
         node["node_id"] = f"n{idx:05d}"
@@ -301,7 +234,6 @@ def build_intersections(
     passthrough_tol_m: float = PASSTHROUGH_TOL_M,
     repo_root: Path | None = None,
 ) -> dict[str, Any]:
-    """Build junction nodes with approach counts against a realised product."""
 
     root = repo_root if repo_root is not None else REPO_ROOT
     source = (
@@ -337,9 +269,6 @@ def build_intersections(
     }
 
 
-# ------------------------------------------------------------------------- CLI
-
-
 @app.command()
 def build(
     product: Path = typer.Option(..., help="Flat products dir OR frame-series run dir"),
@@ -349,7 +278,6 @@ def build(
         PASSTHROUGH_TOL_M, help="Road-width tolerance for pass-through approaches"
     ),
 ) -> None:
-    """Derive intersections and print reconciliation counts."""
 
     payload = build_intersections(
         product, frame if frame is not None else None, passthrough_tol_m=passthrough_tol_m

@@ -1,18 +1,10 @@
-"""Tests for Per-Road-Segment Validation Gate Rescore Harness.
-
-Enforces Verification Rules V1-V8:
+"""Enforces Verification Rules V1-V8:
 - V1: Realized rasters, tables, and manifests verified directly against disk.
 - V2: Independent observables named before writing checks.
 - V5: Red-under-mutation demonstrated for invariant checks.
 - V7: Check scope stated beside claimed scope.
 - Invariants:
-  1. Primary segment flood rule logic (F=20% or N=3 contig at D=0.15 m).
-  2. Hand-computed contingency table math and Monte Carlo null model lift.
-  3. Degenerate case handling (zero events, zero predictions -> NaN, never silent 0.0).
-  4. Point snapping geometry to nearest road segment.
-  5. Density stratification partitions road segments with zero leaks.
-  6. Realized Phase 3 segment report on disk integrity.
-"""
+6. Realized Phase 3 segment report on disk integrity."""
 
 from __future__ import annotations
 
@@ -39,11 +31,8 @@ REPO = Path(__file__).resolve().parents[1]
 
 def test_closing_water_budget_comes_from_realized_phase3_manifest(tmp_path: Path) -> None:
     """Changing a producer mass term must change the segment report account.
-
-    Observable if false: the account stays at historical hardcoded values.
     V5 red mutation: restoring the former literal dictionary leaves drain at
-    29,367,395.33 instead of the fixture's 20.0. Scope: one manifest seam.
-    """
+    29,367,395.33 instead of the fixture's 20.0. Scope: one manifest seam."""
     path = tmp_path / "manifest.json"
     path.write_text(
         json.dumps(
@@ -86,7 +75,6 @@ def test_closing_water_budget_rejects_historical_manifest_without_mass_block(
 
 
 def test_closing_water_budget_rejects_inconsistent_mass_derivation(tmp_path: Path) -> None:
-    """A reported residual that disagrees with producer terms is not admissible evidence."""
     path = tmp_path / "manifest.json"
     path.write_text(
         json.dumps(
@@ -114,7 +102,6 @@ def test_closing_water_budget_rejects_inconsistent_mass_derivation(tmp_path: Pat
 PHASE3_REPORT = REPO / "runs/segment_validation/baseline/segment_validation_report.json"
 PHASE3_MANIFEST = REPO / "runs/phase3_validation/manifest.json"
 SEGMENT_MANIFEST = REPO / "runs/segment_validation/baseline/manifest.json"
-# Legacy shared paths preserved but superseded (Amendment 1)
 LEGACY_PHASE3_REPORT = REPO / "runs/phase3_validation/segment_validation_report.json"
 LEGACY_SEGMENT_MANIFEST = REPO / "runs/phase3_validation/segment_validation_manifest.json"
 
@@ -125,28 +112,19 @@ def _require_artifact(path: Path, description: str) -> Path:
     return path
 
 
-# ---------------------------------------------------------------------------
 # Invariant 1: Primary Segment Flood Rule Definition & Execution
-# ---------------------------------------------------------------------------
 
 
 def test_primary_segment_flood_rule_invariants() -> None:
-    """Invariant: Segment is flooded if fraction >= 20% OR contiguous cells >= 3 at D >= 0.15 m.
-
-    Observable:
-      - 2 cells out of 10 flooded (20%), contig=2 -> is_flooded is True.
-      - 1 cell out of 10 flooded (10%), contig=1 -> is_flooded is False.
-      - 3 cells out of 100 flooded (3%), contig=3 -> is_flooded is True (bottleneck condition).
-    """
+    """Invariant: Segment is flooded if fraction >= 20% OR contiguous cells >= 3 at D >= 0.15 m."""
     assert PRIMARY_RULE.depth_threshold_m == 0.15
     assert PRIMARY_RULE.fraction_threshold == 0.20
     assert PRIMARY_RULE.contiguous_cells == 3
 
-    # Case A: 2/10 flooded, contiguous 2
     r_segs_a = np.full(10, 1, dtype=np.int32)
     road_mask_a = np.ones(10, dtype=bool)
     cell_mask_a = np.zeros(10, dtype=bool)
-    cell_mask_a[0:2] = True  # 20%
+    cell_mask_a[0:2] = True
     adj_src_a = np.array([0, 1])
     adj_dst_a = np.array([1, 0])
 
@@ -156,7 +134,6 @@ def test_primary_segment_flood_rule_invariants() -> None:
     assert bool(res_a.loc[1, "is_flooded"]) is True
     assert res_a.loc[1, "flooded_cells"] == 2
 
-    # Case B: 1/10 flooded (10%), contig 1
     cell_mask_b = np.zeros(10, dtype=bool)
     cell_mask_b[0] = True
     res_b = evaluate_segments_from_mask(
@@ -164,11 +141,10 @@ def test_primary_segment_flood_rule_invariants() -> None:
     )
     assert bool(res_b.loc[1, "is_flooded"]) is False
 
-    # Case C: 3/100 flooded (3%), contiguous 3 (bottleneck on long segment)
     r_segs_c = np.full(100, 2, dtype=np.int32)
     road_mask_c = np.ones(100, dtype=bool)
     cell_mask_c = np.zeros(100, dtype=bool)
-    cell_mask_c[10:13] = True  # 3 contiguous cells
+    cell_mask_c[10:13] = True
     adj_src_c = np.array([10, 11, 11, 12])
     adj_dst_c = np.array([11, 10, 12, 11])
 
@@ -179,33 +155,16 @@ def test_primary_segment_flood_rule_invariants() -> None:
     assert res_c.loc[2, "max_contig"] == 3
 
 
-# ---------------------------------------------------------------------------
 # Invariant 2: Hand-Computed Contingency & Null Model Math
-# ---------------------------------------------------------------------------
 
 
 def test_hand_computed_segment_contingency_and_null() -> None:
-    """Verify exact contingency scores for a hand-computed 100-segment case.
-
-    Hand calculation:
-      - Total = 100
-      - Pred = 20, Obs = 10, Hits = 5
-      - Misses = 10 - 5 = 5, False Alarms = 20 - 5 = 15, Correct Negatives = 75
-      - POD = 5 / 10 = 0.50
-      - FAR = 15 / 20 = 0.75
-      - CSI = 5 / (5 + 5 + 15) = 5 / 25 = 0.20
-      - Null TP expected = 10 * 20 / 100 = 2.0
-      - Null POD expected = 2 / 10 = 0.20
-      - Null CSI expected = 2 / (20 + 10 - 2) = 2 / 28 = 0.071428...
-      - Expected Lift (POD) = 0.50 / 0.20 = 2.50x
-      - Expected Lift (CSI) = 0.20 / (2/28) = 2.80x
-    """
     pred_mask = np.zeros(100, dtype=bool)
     obs_mask = np.zeros(100, dtype=bool)
 
     pred_mask[0:20] = True
-    obs_mask[0:5] = True  # 5 overlap hits
-    obs_mask[20:25] = True  # 5 misses
+    obs_mask[0:5] = True
+    obs_mask[20:25] = True
 
     res = compute_contingency_and_null(pred_mask, obs_mask, n_draws=10000, seed=42)
 
@@ -223,17 +182,13 @@ def test_hand_computed_segment_contingency_and_null() -> None:
 
     assert pytest.approx(res.null_tp_mean, rel=2e-2) == 2.0
     assert pytest.approx(res.null_pod_mean, rel=2e-2) == 0.20
-    # By Jensen's inequality E[TP / (A - TP)] > E[TP] / (A - E[TP]) for convex f(x) = x/(A-x)
-    # Analytical expectation sum_k P(TP=k) * k / (30 - k) = 0.07432
     assert pytest.approx(res.null_csi_mean, rel=2e-2) == 0.07432
 
     assert pytest.approx(res.lift_ratio_pod, rel=2e-2) == 2.50
     assert pytest.approx(res.lift_ratio_csi, rel=2e-2) == 0.20 / 0.07432
 
 
-# ---------------------------------------------------------------------------
 # Invariant 3: Degenerate Case Handling (NaN, Never Silent 0.0)
-# ---------------------------------------------------------------------------
 
 
 def test_degenerate_segment_scoring_nan_handling() -> None:
@@ -256,65 +211,39 @@ def test_degenerate_segment_scoring_nan_handling() -> None:
     assert res2.far == 1.0
 
 
-# ---------------------------------------------------------------------------
 # Invariant 4: Point Snapping Geometry
-# ---------------------------------------------------------------------------
 
 
 def test_point_snapping_geometry() -> None:
-    """Invariant: Nearest road segment snapping finds the exact minimum Euclidean distance cell.
-
-    Observable:
-      A point coincident with road cell coordinate has snapping distance 0.0.
-    """
+    """Invariant: Nearest road segment snapping finds the exact minimum Euclidean distance cell."""
     coords = np.array([[100.0, 200.0], [150.0, 250.0], [300.0, 400.0]])
     r_segs = np.array([101, 102, 103], dtype=np.int32)
     tree = cKDTree(coords)
 
-    # Query point at [150.0, 250.0]
     d, idx = tree.query([150.0, 250.0])
     assert d == 0.0
     assert r_segs[idx] == 102
 
-    # Query point at [103.0, 204.0] -> dist = 5.0 to [100.0, 200.0]
     d2, idx2 = tree.query([103.0, 204.0])
     assert pytest.approx(d2, rel=1e-4) == 5.0
     assert r_segs[idx2] == 101
 
 
-# ---------------------------------------------------------------------------
 # Invariant 5: Stratification Partition Consistency
-# ---------------------------------------------------------------------------
 
 
-def test_stratification_partitions_without_leakage() -> None:
-    """Invariant: Urban density classes OPEN, MODERATE, DENSE partition all road segments.
-
-    Observable: sum of segment counts in OPEN, MODERATE, DENSE equals the current report total.
-    """
+def test_historical_retired_density_report_is_not_current_producer_output() -> None:
+    """Historical report scope: current producer explicitly retires density stratification."""
     report_path = _require_artifact(PHASE3_REPORT, "realized Phase 3 segment report")
 
     with open(report_path) as f:
         data = json.load(f)
 
-    total_segs = data["domain_summary"]["total_road_segments"]
-    density_bbmp = data["stratification"]["density_stratification"]["bbmp_event_max"]
-
-    sum_density_segs = sum(density_bbmp[d]["total_segments"] for d in ["OPEN", "MODERATE", "DENSE"])
-    assert sum_density_segs == total_segs
-
-    sum_density_obs_bbmp = sum(
-        density_bbmp[d]["observed_flooded_segments"] for d in ["OPEN", "MODERATE", "DENSE"]
-    )
-    assert (
-        sum_density_obs_bbmp
-        == data["headline_results"]["bbmp_validation"]["observed_flooded_segments"]
-    )
+    assert "density_stratification" not in data.get("stratification", {})
+    assert data["retired_instruments"]["density_stratification"] == "retired_with_sar_pipeline"
 
 
-# ---------------------------------------------------------------------------
 # Invariant 6: Realized Manifest and Report Traceability (Rule 6)
-# ---------------------------------------------------------------------------
 
 
 def test_realized_segment_manifest_owns_the_rescore_report() -> None:
@@ -332,18 +261,12 @@ def test_realized_segment_manifest_owns_the_rescore_report() -> None:
     assert manifest["verdict"] == report["verdict_for_adjudication"]
 
 
-# ---------------------------------------------------------------------------
 # Invariant 7: PU Labeling Defect Correction (Part A)
-# ---------------------------------------------------------------------------
 
 
 def test_positive_unlabeled_defect_relabeling() -> None:
     """Invariant: For PU datasets (BBMP, Ground Truth), CSI and FAR are marked uninterpretable.
-
-    Observable:
-      - POD and Lift over random null (TP / E[TP]) are preserved.
-      - CSI and FAR are null/None in serialized output with explicit PU defect rationale.
-    """
+    - CSI and FAR are null/None in serialized output with explicit PU defect rationale."""
     report_path = _require_artifact(PHASE3_REPORT, "realized Phase 3 segment report")
     with open(report_path) as f:
         report = json.load(f)
@@ -355,20 +278,14 @@ def test_positive_unlabeled_defect_relabeling() -> None:
     assert bbmp["far"] is None
     assert bbmp["pu_labeling_defect_rationale"]
 
-    sar = report["headline_results"]["sentinel1_change_validation"]
-    assert sar["csi_interpretable"] is True
-    assert sar["far_interpretable"] is True
-    assert 0.0 <= sar["csi"] <= 1.0
-    assert 0.0 <= sar["far"] <= 1.0
+    assert "sentinel1_change_validation" not in report["headline_results"]
+    assert report["retired_instruments"]["sar"] == "retired_invalid_instrument"
 
 
-# ---------------------------------------------------------------------------
 # Invariant 8: Trunk Road Signal & Exact Statistical Tests (Part B)
-# ---------------------------------------------------------------------------
 
 
 def test_trunk_road_signal_is_realized_from_current_run() -> None:
-    """The report's trunk section must contain current computed metrics, not literals."""
     report_path = _require_artifact(PHASE3_REPORT, "realized Phase 3 segment report")
     with open(report_path) as f:
         report = json.load(f)
@@ -383,9 +300,7 @@ def test_trunk_road_signal_is_realized_from_current_run() -> None:
     assert trunk_eval["interpretation"]["status"] == "UNRESOLVED"
 
 
-# ---------------------------------------------------------------------------
 # Invariant 9: Underpass Co-Location Null Model & Joint Partition (Part C)
-# ---------------------------------------------------------------------------
 
 
 def test_underpass_partition_is_realized_and_colocation_is_not_fabricated() -> None:
@@ -418,16 +333,11 @@ def test_underpass_partition_is_realized_and_colocation_is_not_fabricated() -> N
     assert up_eval["co_location"]["status"] == "UNRESOLVED"
 
 
-# ---------------------------------------------------------------------------
 # Invariant 10: Ground-Truth Snap Distance Threshold (Part E)
-# ---------------------------------------------------------------------------
 
 
 def test_groundtruth_snap_distance_threshold() -> None:
-    """Invariant: replay scoring applies both date and configured snap eligibility.
-
-    Observable: headline and audit agree on the date-and-snap-eligible population.
-    """
+    """Invariant: replay scoring applies both date and configured snap eligibility."""
     report_path = _require_artifact(PHASE3_REPORT, "realized Phase 3 segment report")
     with open(report_path) as f:
         report = json.load(f)
@@ -449,22 +359,17 @@ def test_groundtruth_snap_distance_threshold() -> None:
     headline = report["headline_results"]["groundtruth_validation_date_and_snap_eligible"]
     assert headline["observed_flooded_segments"] == audit_eligible["N"]
     assert headline["hits"] == audit_eligible["TP"]
-    # Producer rounding is exact: POD 6 decimals, lift 4 decimals (Amendment 3)
     assert headline["pod"] == round(audit_eligible["POD"], 6)
     assert headline["lift_ratio_pod"] == round(audit_eligible["lift_pod"], 4)
 
 
-# ---------------------------------------------------------------------------
 # Invariant 11: Phase 3 Gate Run Closing Water Budget (Part D)
-# ---------------------------------------------------------------------------
 
 
 def test_phase3_gate_closing_water_budget() -> None:
     """The rescore reports a budget derived from the completed producer manifest.
-
     Observable: changing a producer mass term changes the rescore account; a copied
-    historic percentage cannot satisfy this producer-consumer seam.
-    """
+    historic percentage cannot satisfy this producer-consumer seam."""
     report_path = _require_artifact(PHASE3_REPORT, "realized Phase 3 segment report")
     with open(report_path) as f:
         report = json.load(f)
@@ -476,28 +381,17 @@ def test_phase3_gate_closing_water_budget() -> None:
     assert wb["mass_residual_derivation_verified"] is True
 
 
-# ---------------------------------------------------------------------------
 # Invariant 12: Segment input/output ownership split (Amendment 1)
-# ---------------------------------------------------------------------------
 
 
 def test_segment_output_dirs_must_be_distinct(tmp_path: Path) -> None:
-    """phase3_run_dir and output_dir must be distinct and non-nested (Rule 7).
-
-    Observable if false: segment stage writes into solver run directory,
-    reproducing the worktree symlink collision (MAIN/runs/phase3_validation
-    polluted). Scope: config seam only, no I/O, no GPU.
-    """
-    # Equal
+    """polluted). Scope: config seam only, no I/O, no GPU."""
     with pytest.raises(KeyError, match="must be distinct"):
         _check_segment_output_collision(tmp_path / "phase3", tmp_path / "phase3")
-    # Nested output inside input
     with pytest.raises(KeyError, match="must not be nested"):
         _check_segment_output_collision(tmp_path / "phase3", tmp_path / "phase3" / "sub")
-    # Nested input inside output
     with pytest.raises(KeyError, match="must not be nested"):
         _check_segment_output_collision(tmp_path / "phase3" / "sub", tmp_path / "phase3")
-    # Valid distinct
     _check_segment_output_collision(tmp_path / "phase3", tmp_path / "segment_baseline")
     # Also via public API must fail fast before manifest
     with pytest.raises(KeyError, match="must be distinct"):
@@ -508,23 +402,15 @@ def test_segment_output_dirs_must_be_distinct(tmp_path: Path) -> None:
         )
 
 
-# ---------------------------------------------------------------------------
 # Invariant 13: Manifest failure lifecycle wraps every operation after start (Amendment 2)
-# ---------------------------------------------------------------------------
 
 
 def test_segment_manifest_failure_lifecycle_red(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """V5 red: deliberate failure after manifest start must leave status failed, not running.
-
     Parent behavior (only final write wrapped) left manifest permanently running
-    if exception occurred during road loading / SAR / null model. Amended
-    wrapper must leave status failed with error and end timestamp, and no
-    partial report labelled completed.
-
-    Scope: one isolated output_dir, monkeypatched road index, no GPU.
-    """
+    partial report labelled completed."""
     try:
         require_clean_git(REPO)
     except DirtyTreeError as exc:
@@ -533,7 +419,6 @@ def test_segment_manifest_failure_lifecycle_red(
             f"guard does not fire before the deliberate post-start failure: {exc}"
         )
 
-    # Use a fresh output_dir distinct from solver input
     phase3_run_dir = REPO / "runs/phase3_validation"
     output_dir = tmp_path / "segment_fail_test"
     # Ensure solver input exists (otherwise test is BLOCKED, not red)
@@ -568,5 +453,3 @@ def test_segment_manifest_failure_lifecycle_red(
     if report_path.exists():
         # If a report was written, it must not be considered completed via manifest
         assert data["status"] != "completed"
-    # Parent behavior would have left status running (no end_time_iso, no error)
-    # This test would have failed before amendment.

@@ -1,13 +1,5 @@
 #!/usr/bin/env python3
-"""Run the CPU-only demo rehearsal against both product services.
-
-The rehearsal checks the realized run before starting children, probes the
-dashboard and API, sends one route request using persisted road geometry, and
-rejects numeric JSON values without a resolvable source manifest.  It does not
-claim browser-pixel coverage; the dashboard HTML and configured data endpoint
-are the observable surface available without a browser dependency. The default
-route request uses endpoints read from the persisted road centreline.
-"""
+"Run the CPU-only demo rehearsal against both product services. The rehearsal checks the realized run before starting children, probes the dashboard and API, sends one route request using persisted road geometry, and rejects numeric JSON values without a resolvable source manifest. It does not claim browser-pixel coverage; the dashboard HTML and configured data endpoint are the observable surface available without a browser dependency. The default route request uses endpoints read from the persisted road centreline."  # noqa: E501
 
 from __future__ import annotations
 
@@ -62,13 +54,11 @@ def _route_payload(
         if not isinstance(payload, dict):
             raise DemoError("--route-request must be a JSON object")
         return payload
-    # The HTTP contract is supplied by the routing track, not WF-0. Endpoints
-    # are taken from persisted OSM centreline geometry rather than invented.
     try:
         import geopandas as gpd
 
         roads = gpd.read_file(road_file)
-    except Exception as exc:  # Fiona/GDAL errors vary by installed driver.
+    except Exception as exc:
         raise DemoError(
             f"cannot derive a route request from realized road geometry {road_file}: {exc}; "
             "pass --route-request to use a known presentation pair"
@@ -166,7 +156,6 @@ def main(
     ),
     request_timeout_s: float = typer.Option(5.0, help="Seconds per endpoint request"),
 ) -> None:
-    """Rehearse startup, endpoints, route response, and manifest provenance."""
     services: list[RunningService] = []
     try:
         if dashboard_port == api_port:

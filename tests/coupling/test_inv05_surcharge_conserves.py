@@ -81,17 +81,15 @@ path (router.build_drain_graph) exactly like the unit tier.
 
 from __future__ import annotations
 
-import importlib.util
 import shutil
-import sys
 import tempfile
-import uuid
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 import pytest
 import torch
+from conftest import load_mutated_source, static_fields
 
 from jaladhar.coupling import exchange as exchange_mod
 from jaladhar.coupling.config import resolve_config
@@ -107,30 +105,25 @@ from jaladhar.solver.state import StaticFields
 REPO = Path(__file__).resolve().parents[2]
 
 # --- hand-reference constants (literals HERE, V2: no imports from the module) -------
-AREA = 100.0  # contract units block cell_area
-FREEBOARD = 1.5  # ‡ declared assumption v1 activation head
+AREA = 100.0
+FREEBOARD = 1.5
 HF_FLOOR = 0.001
 CAPTURE_CAP_FRAC = 0.9
 RETURN_CAP_FRAC = 0.9
 
-DT_MAIN = 0.48  # the workflow's canonical dt
-DT_ALT = 0.05  # second scenario: different regime mix (slower feeding)
+DT_MAIN = 0.48
+DT_ALT = 0.05
 STEPS_BY_DT = {DT_MAIN: 12, DT_ALT: 24}
 PER_STEP_REL_TOL = 4e-6  # 4-ULP-class band; mutants land ≥2500x above it
 CUM_REL_TOL = 4e-6
 WITNESS_RTOL = 1e-5
 
-EDGE_CAP_12 = 50.0  # m3/s, node1 -> node2: the feeder that drives surcharge
-# node2 -> node3 trickle, sized to the RETURN-CAP WINDOW: clamp-first floors the
-# return heads at hf_floor, so near activation the hydraulic return is floored at
-# Cw*L*hf^1.5*dt ≈ 5.9e-5 m3 while the volumetric cap shrinks ∝ excess — the cap
-# binds only within ≈ 2.9e-5 m of activation head (floored-hydraulic == cap point).
-# A 4e-5 m3/s feeder advances node3 by 8.4e-6 m head/step, INSIDE that window, so
-# once node3 crosses freeboard it stays pinned in the cap-binding regime.
+EDGE_CAP_12 = 50.0
+
 EDGE_CAP_23 = 4e-5
-WIDTHS = (5000.0, 2.285, 2.285)  # wide-inlet node1 (capture cap binds); shaft nodes
-PA3 = WIDTHS[2] * 1.0  # shaft proxy plan area of node3
-DEFICIT_3_M3 = 1.2e-4  # node3 starts this far BELOW activation: crosses mid-run
+WIDTHS = (5000.0, 2.285, 2.285)
+PA3 = WIDTHS[2] * 1.0
+DEFICIT_3_M3 = 1.2e-4
 HEAD2_ABOVE = float(np.nextafter(np.float32(FREEBOARD), np.float32(2.0)))
 HEAD3_BELOW = float(np.float32((FREEBOARD * PA3 - DEFICIT_3_M3) / PA3))
 H0 = torch.tensor([[2.0, 0.05, 0.0], [2.0, 0.05, 0.0]], dtype=torch.float32)
@@ -151,36 +144,11 @@ MUTATIONS: dict[str, tuple[str, str, str]] = {
 }
 
 
-# ---------------------------------------------------------------------------
-# Fixture (declared-synthetic) + static shell — self-contained, production seam
-# ---------------------------------------------------------------------------
 def _static_zero(shape: tuple[int, int]) -> StaticFields:
-    """Dry StaticFields shell, drain_cap EXACTLY zero (coupled-mode contract state)."""
-    hh, ww = shape
-    z = lambda *s: torch.zeros(*s, dtype=torch.float32)  # noqa: E731
-    return StaticFields(
-        dz_x=z(hh, ww - 1),
-        dz_y=z(hh - 1, ww),
-        n_x=z(hh, ww - 1),
-        n_y=z(hh - 1, ww),
-        c_x=z(hh, ww - 1),
-        c_y=z(hh - 1, ww),
-        drain_cap_m_s=z(hh, ww),
-        infil_rate_m_s=z(hh, ww),
-        edge_w_n=z(hh),
-        edge_e_n=z(hh),
-        edge_n_n=z(ww),
-        edge_s_n=z(ww),
-        edge_w_s=z(hh),
-        edge_e_s=z(hh),
-        edge_n_s=z(ww),
-        edge_s_s=z(ww),
-        shape=shape,
-    )
+    return static_fields(shape, zeroed=True)
 
 
 def _chain_graph() -> DrainGraph:
-    """1→2→3 DAG, both edges capacity-bearing; every node owns 2 cells."""
     nmap = torch.tensor([[1, 2, 3], [1, 2, 3]], dtype=torch.int32)
     return build_drain_graph(
         edge_from=torch.tensor([0, 1], dtype=torch.int64),
@@ -200,11 +168,6 @@ def _chain_graph() -> DrainGraph:
 
 
 def _initial_state(mod: Any) -> Any:
-    """NodeState built FROM THE MODULE UNDER TEST (red harness swaps modules).
-
-    node2 a hair ABOVE activation; node3 DEFICIT_3_M3 below it so the trickle
-    feeder walks it through the return-cap window mid-run (dt=MAIN scenario).
-    """
     return mod.NodeState(
         h_node_m=torch.tensor([0.0, HEAD2_ABOVE, HEAD3_BELOW], dtype=torch.float32),
         vol_in_m3_cum=torch.zeros(3, dtype=torch.float64),
@@ -213,7 +176,6 @@ def _initial_state(mod: Any) -> Any:
 
 
 def _run_chain(mod: Any, dt: float, steps: int) -> list[dict[str, Any]]:
-    """Multi-step coupled chain; per-step record carries BOTH identity sides."""
     g = _chain_graph()
     static = _static_zero((2, 3))
     state = _initial_state(mod)
@@ -228,7 +190,7 @@ def _run_chain(mod: Any, dt: float, steps: int) -> list[dict[str, Any]]:
         edge_out = torch.index_add(torch.zeros(3, dtype=torch.float64), 0, g.edge_from, transfer)
         edge_in = torch.index_add(torch.zeros(3, dtype=torch.float64), 0, g.edge_to, transfer)
         d_out = cr.node_state_new.vol_out_m3_cum - out_prev
-        per_node = d_out - edge_out  # books-side RETURN per node (routing cancelled)
+        per_node = d_out - edge_out
         records.append(
             {
                 "step": t,
@@ -249,9 +211,6 @@ def _run_chain(mod: Any, dt: float, steps: int) -> list[dict[str, Any]]:
     return records
 
 
-# ---------------------------------------------------------------------------
-# The identity check (shared verbatim by the green runs and the red harness)
-# ---------------------------------------------------------------------------
 def _worst_rel(records: list[dict[str, Any]]) -> float:
     return max(
         abs(r["surf"] - r["removed"]) / max(abs(r["surf"]), abs(r["removed"]), 1e-12)
@@ -260,7 +219,6 @@ def _worst_rel(records: list[dict[str, Any]]) -> float:
 
 
 def _check_identity(records: list[dict[str, Any]]) -> dict[str, float]:
-    """INVARIANT #5 proper: per-step AND cumulative surface==books agreement."""
     cum_s = cum_r = 0.0
     worst = 0.0
     for r in records:
@@ -283,11 +241,6 @@ def _check_identity(records: list[dict[str, Any]]) -> dict[str, float]:
 
 
 def _check_mechanism_witnesses(records: list[dict[str, Any]]) -> None:
-    """Anti-vacuity: the identity is tested on a LIVE mechanism, both caps binding.
-
-    Witnesses are FORM matches against hand-typed formulas (no shared code), so a
-    cap silently severed makes the witness fail, not just the flag disappear.
-    """
     assert any(r["surch"] >= 1 for r in records), "no step ever surcharged"
     total_surf = sum(r["surf"] for r in records)
     assert total_surf > 1.0, f"identity tested on {total_surf!r} m3 — vacuously tight"
@@ -300,7 +253,6 @@ def _check_mechanism_witnesses(records: list[dict[str, Any]]) -> None:
     assert 2 in surching, "trickle-fed node3 never crossed activation — cap window absent"
     assert 0 not in surching, "node1 (head ~0.07 m << freeboard) must never return"
 
-    # CAPTURE-CAP witness: some step captures EXACTLY 0.9*(h_before - hf_floor).
     cap_seen = None
     for r in records:
         h00 = float(r["h_before"][0, 0].item())
@@ -312,9 +264,6 @@ def _check_mechanism_witnesses(records: list[dict[str, Any]]) -> None:
     assert cap_seen is not None, "capture cap never observed binding (invariant premise)"
     assert any(r["cap_flag"] == 1 for r in records), "cap_binding_this_step never fired"
 
-    # RETURN-CAP witness: node3's books-side return == 0.9*(routed vol - freeboard vol).
-    # Reconstruction uses only observables: vol_routed3 = head3_prev*PA3 + edge_in3
-    # (capture3 == 0 by the no-reverse gate; node3 has no outgoing edges).
     ret_seen = None
     for r in records:
         vol_routed3 = r["head3_prev"] * PA3 + r["edge_in3"]
@@ -325,9 +274,7 @@ def _check_mechanism_witnesses(records: list[dict[str, Any]]) -> None:
             ret_seen = (r["step"], ret3, cap, excess)
             break
     assert ret_seen is not None, "return cap never observed binding (invariant premise)"
-    # the witness DISCRIMINATES: the regime-appropriate hydraulic form (clamp-first
-    # floored, same discipline as the module) differs strongly from the linear cap
-    # in this window (floored weir ≈ 5.9e-5 m3 vs caps of order 1e-5 and below)
+
     step, ret3, cap, excess = ret_seen
     dt = records[step]["dt"]
     e_head = excess / PA3
@@ -337,19 +284,10 @@ def _check_mechanism_witnesses(records: list[dict[str, Any]]) -> None:
     ), "return-cap witness cannot distinguish cap-form from hydraulic-form — vacuous"
 
 
-# ---------------------------------------------------------------------------
-# INVARIANT #5 — the sprint-level green tests
-# ---------------------------------------------------------------------------
 @pytest.mark.parametrize("dt", [DT_MAIN, DT_ALT], ids=["dt0.48-x12", "dt0.05-x24"])
 def test_inv05_surcharge_conserves_multistep_routing_chain(dt: float) -> None:
-    """Per-step AND cumulative identity over a routing-fed multi-step coupled chain.
-
-    dt=0.48 (12 steps) additionally proves BOTH caps bind (witness forms above);
-    dt=0.05 (24 steps, slower feeding: node3's trickle cannot cross activation
-    within the window) still must conserve on every live-return step.
-    """
     records = _run_chain(exchange_mod, dt, steps=STEPS_BY_DT[dt])
-    report = _check_identity(records)  # raises with the full failing identity line
+    report = _check_identity(records)
     if dt == DT_MAIN:
         _check_mechanism_witnesses(records)
     print(
@@ -368,22 +306,18 @@ def test_inv05_surcharge_conserves_multistep_routing_chain(dt: float) -> None:
     )
 
 
-# ---------------------------------------------------------------------------
 # V5 RED DEMO — mutated /tmp copies of exchange.py; the assertion reddens, not a crash
-# ---------------------------------------------------------------------------
+
+
 def _materialise_mutated_exchange(kind: str, root: Path) -> Any:
-    """Copy THE RUNNING exchange.py bytes to /tmp, patch the pinned site, import."""
-    src = Path(exchange_mod.__file__).read_text()
     needle, replacement, _doc = MUTATIONS[kind]
-    n_hits = src.count(needle)
-    assert n_hits == 1, f"mutation-site pin stale ({n_hits} matches for {needle!r})"
-    path = root / f"exchange_mut_{kind}.py"
-    path.write_text(src.replace(needle, replacement))
-    spec = importlib.util.spec_from_file_location(f"inv05_{kind}_{uuid.uuid4().hex[:8]}", path)
-    assert spec is not None and spec.loader is not None
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = mod  # dataclass machinery resolves annotations via sys.modules
-    spec.loader.exec_module(mod)  # router/state imports resolve to the REAL package
+    mod, _path = load_mutated_source(
+        Path(exchange_mod.__file__),
+        [(needle, replacement)],
+        tag=kind,
+        prefix="inv05",
+        directory=root,
+    )
     return mod
 
 
@@ -407,7 +341,7 @@ def test_v5_red_demo_book_mutations_redden_the_identity() -> None:
             records = None
             try:
                 records = _run_chain(mod, DT_MAIN, steps=STEPS_BY_DT[DT_MAIN])
-            except Exception as exc:  # noqa: BLE001 — an attempt record IS the result
+            except Exception as exc:
                 crash = repr(exc)
             assert crash is None, (
                 f"mutation {kind!r} CRASHED instead of letting the identity redden "
@@ -434,9 +368,9 @@ def test_v5_red_demo_book_mutations_redden_the_identity() -> None:
         shutil.rmtree(root, ignore_errors=True)
 
 
-# ---------------------------------------------------------------------------
 # BLOCKED companion (V7): real-graph sprint coverage, loud about what closes it
-# ---------------------------------------------------------------------------
+
+
 @pytest.mark.slow
 def test_real_graph_companion_full_or_blocked() -> None:
     """The SAME per-step/cumulative identity on the REAL 1,721-node graph.
@@ -459,7 +393,7 @@ def test_real_graph_companion_full_or_blocked() -> None:
     eligible = torch.nonzero((counts >= 1) & g.active_node).flatten()
     assert eligible.numel() >= 25, "too few allocatable nodes to seed surcharge"
     heads = torch.zeros(g.num_nodes, dtype=torch.float32)
-    heads[eligible[:25]] = 2.5  # above freeboard ⇒ immediate returns onto own cells
+    heads[eligible[:25]] = 2.5
     state = NodeState(
         h_node_m=heads,
         vol_in_m3_cum=torch.zeros(g.num_nodes, dtype=torch.float64),

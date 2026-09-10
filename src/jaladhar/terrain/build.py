@@ -1,36 +1,10 @@
-"""Orchestrator for the JALADHAR terrain pipeline — the §6.1 acceptance command.
-
-Runs every stage in dependency order by calling each module's own,
-individually-tested `build_X()` function directly — never reimplementing
-their logic, and relying on each module's own idempotency (fetch.py skips
-re-downloading a cached tile; every stage's output is only recomputed if
-missing) so re-running this after a partial failure resumes rather than
-redoing finished work:
-
-    grid -> fetch (DEM) -> {water, roads, buildings, roughness, drains}
-         -> conditioning -> derived -> [this module] assemble + QC
-
-Assembles the FINAL stack in `data/processed/`: every layer named in
+"""missing) so re-running this after a partial failure resumes rather than
+-> conditioning -> derived -> [this module] assemble + QC
 PROMPT.md §6.1's acceptance text (elevation, building mask, Manning's n,
-drain sink capacity, road segment IDs), plus slope and flow_accumulation
-(named in §10 as surrogate input channels) and distance_to_drain (also
-§10 — already produced by `drains.py` on the canonical grid; reused here
 directly, not recomputed, per `derived.py`'s scope note). All copied or
-cropped onto the IDENTICAL canonical grid and re-verified aligned here,
-one final time, independent of each module's own internal checks.
-
-⚠ UNTILED — A DELIBERATE, BENCHMARKED DEVIATION FROM §6'S LITERAL TEXT.
-§6's acceptance wording says "a tiled, aligned stack". Phase 0's open
 question B measured that the untiled canonical grid uses 989 MiB of 8188
-MiB VRAM (12%) on the reference GPU — full-city forward simulation does
-not need tiling; see OPEN-ITEMS.md question B. This stack is written as
-single whole-city GeoTIFFs, not tiles. A `tile_index` is still recorded in
 the manifest (empty, one whole-domain "tile" covering the full extent)
-so any later stage that expects a tile-index KEY to exist (e.g. the
-surrogate's patch-based training in §10, which tiles regardless of how the
-solver runs) has one to read, honestly reflecting the untiled reality
-rather than fabricating a tiling scheme this session never used.
-"""
+rather than fabricating a tiling scheme this session never used."""
 
 from __future__ import annotations
 
@@ -43,7 +17,7 @@ from typing import Any
 
 import matplotlib
 
-matplotlib.use("Agg")  # headless — no display server on this machine
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import rasterio
@@ -65,10 +39,7 @@ REPO = Path(__file__).resolve().parents[3]
 
 
 class BuildError(Exception):
-    """A stage failed, or the assembled stack failed a final alignment check.
-
-    Per CLAUDE.md rule 1: stop and report.
-    """
+    """Per CLAUDE.md rule 1: stop and report."""
 
 
 def git_sha() -> str:
@@ -81,12 +52,15 @@ def git_sha() -> str:
 
 
 # (source path relative to repo root, final stack filename, "copy" straight
-# across or "crop" from the wider buffered grid down to canonical)
 STACK_LAYERS: list[tuple[str, str, str]] = [
     ("data/interim/terrain/dem_conditioned_postbreach.tif", "elevation.tif", "crop"),
     ("data/interim/terrain/building_mask.tif", "building_mask.tif", "copy"),
     ("data/interim/terrain/building_height_delta.tif", "building_height_delta.tif", "copy"),
-    ("data/interim/terrain/building_conveyance_factor.tif", "building_conveyance_factor.tif", "crop"),
+    (
+        "data/interim/terrain/building_conveyance_factor.tif",
+        "building_conveyance_factor.tif",
+        "crop",
+    ),
     ("data/interim/terrain/manning_n.tif", "manning_n.tif", "copy"),
     ("data/interim/terrain/drain_capacity.tif", "drain_capacity.tif", "copy"),
     ("data/interim/terrain/distance_to_drain.tif", "distance_to_drain.tif", "copy"),
@@ -96,12 +70,19 @@ STACK_LAYERS: list[tuple[str, str, str]] = [
     ("data/interim/terrain/basin_class.tif", "basin_class.tif", "copy"),
 ]
 
-# All layers genuinely constructed over the buffered extent (3521 x 3615)
 BUFFERED_STACK_LAYERS: list[tuple[str, str, str]] = [
     ("data/interim/terrain/dem_conditioned_postbreach.tif", "elevation.tif", "copy"),
     ("data/interim/terrain/building_mask_buffered.tif", "building_mask.tif", "copy"),
-    ("data/interim/terrain/building_height_delta_buffered.tif", "building_height_delta.tif", "copy"),
-    ("data/interim/terrain/building_conveyance_factor.tif", "building_conveyance_factor.tif", "copy"),
+    (
+        "data/interim/terrain/building_height_delta_buffered.tif",
+        "building_height_delta.tif",
+        "copy",
+    ),
+    (
+        "data/interim/terrain/building_conveyance_factor.tif",
+        "building_conveyance_factor.tif",
+        "copy",
+    ),
     ("data/interim/terrain/manning_n_buffered.tif", "manning_n.tif", "copy"),
     ("data/interim/terrain/drain_capacity_buffered.tif", "drain_capacity.tif", "copy"),
     ("data/interim/terrain/distance_to_drain_buffered.tif", "distance_to_drain.tif", "copy"),
@@ -113,7 +94,6 @@ BUFFERED_STACK_LAYERS: list[tuple[str, str, str]] = [
 
 
 def assemble_stack(cfg: dict[str, Any], grid: Grid, repo_root: Path) -> dict[str, Any]:
-    """Copy/crop every interim layer into `data/processed/` and `data/processed/buffered/`, verifying alignment."""
     buffer_m = float(cfg["dem"]["buffer_m"])
     buffered_grid = grid.buffered(buffer_m)
     buf_cells = round(buffer_m / grid.resolution)
@@ -123,7 +103,6 @@ def assemble_stack(cfg: dict[str, Any], grid: Grid, repo_root: Path) -> dict[str
     buffered_dir = processed_dir / "buffered"
     buffered_dir.mkdir(parents=True, exist_ok=True)
 
-    # 1. Assemble Canonical Stack
     canonical_reports: list[dict[str, Any]] = []
     for src_rel, dst_name, mode in STACK_LAYERS:
         src_path = repo_root / src_rel
@@ -145,7 +124,7 @@ def assemble_stack(cfg: dict[str, Any], grid: Grid, repo_root: Path) -> dict[str
                 shutil.copy2(src_path, dst_path)
 
         with rasterio.open(dst_path) as check:
-            grid.assert_aligned(check)  # final, independent alignment check
+            grid.assert_aligned(check)
             arr = check.read(1)
             nodata = check.nodata
             interior_nan = bool(np.isnan(arr).any())
@@ -164,7 +143,6 @@ def assemble_stack(cfg: dict[str, Any], grid: Grid, repo_root: Path) -> dict[str
             }
         )
 
-    # 2. Assemble Buffered Stack (Genuinely constructed over buffered extent, never padded)
     buffered_reports: list[dict[str, Any]] = []
     for src_rel, dst_name, _mode in BUFFERED_STACK_LAYERS:
         src_path = repo_root / src_rel
@@ -175,7 +153,7 @@ def assemble_stack(cfg: dict[str, Any], grid: Grid, repo_root: Path) -> dict[str
         shutil.copy2(src_path, dst_path)
 
         with rasterio.open(dst_path) as check:
-            buffered_grid.assert_aligned(check)  # verify alignment against buffered grid
+            buffered_grid.assert_aligned(check)
             arr = check.read(1)
             nodata = check.nodata
             interior_nan = bool(np.isnan(arr).any())
@@ -204,7 +182,6 @@ def assemble_stack(cfg: dict[str, Any], grid: Grid, repo_root: Path) -> dict[str
 
 
 def write_qc_figures(cfg: dict[str, Any], repo_root: Path) -> list[str]:
-    """One PNG per layer, plus a whole-city mosaic, to `runs/terrain_qc/`."""
     qc_dir = repo_root / cfg["paths"]["qc_dir"]
     qc_dir.mkdir(parents=True, exist_ok=True)
     processed_dir = repo_root / cfg["paths"]["processed_dir"]
@@ -249,24 +226,9 @@ def write_qc_figures(cfg: dict[str, Any], repo_root: Path) -> list[str]:
 
 
 def run_all_stages(cfg: dict[str, Any], config_path: Path, repo_root: Path) -> None:
-    """Call every upstream module's build_X() in dependency order, via `run_stage`.
-
-    Each is independently idempotent — a fresh checkout runs everything;
-    re-running after a partial failure skips whatever's already cached/
-    written rather than redoing it, per every module's own design.
-
-    Every stage runs through `run_stage` — the SAME helper each module's
-    own CLI `main()` uses, with the identical `(stage_name, out_dir)` pair
-    — rather than calling `build_X()` directly. This is the fix for a real
-    bug the Phase 1 review found: calling `build_X()` directly rewrites a
+    """re-running after a partial failure skips whatever's already cached/
     stage's artifact on disk but writes no manifest, so a later stage
-    (`conditioning.py` reading `dem_is_dtm` from `fetch.py`'s manifest) could
-    read a manifest left over from an EARLIER run describing a DEM that is
-    no longer the one actually on disk. Going through `run_stage` here makes
-    "the manifest was written by the run that produced the current artifact"
-    true unconditionally, not just when a stage happens to also be run via
-    its own standalone CLI.
-    """
+    (`conditioning.py` reading `dem_is_dtm` from `fetch.py`'s manifest) could"""
     typer.echo("=== grid ===")
     run_stage(
         "phase1_terrain_grid",
@@ -365,15 +327,10 @@ def main(
         REPO / "runs" / "terrain_build", help="Directory to write the manifest into"
     ),
 ) -> None:
-    """Run the full terrain pipeline and assemble the final data/processed/ stack."""
     t0 = time.perf_counter()
     cfg = load_config(config)
 
-    # Every stage that can fail — including run_all_stages, moved INSIDE this
-    # try block per the Phase 1 review: it used to sit outside the only
-    # try/except in this function, so a fresh-checkout run (no --skip-stages)
     # that hit a missing upstream artifact tracebacked unhandled instead of
-    # reporting FATAL and exiting 1 like every other stage's CLI does.
     try:
         if not skip_stages:
             run_all_stages(cfg, config, REPO)

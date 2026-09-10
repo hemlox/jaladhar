@@ -1,29 +1,7 @@
 """Single source of truth for the JALADHAR terrain raster grid.
-
 Every layer in the terrain stack (elevation, building mask, Manning's n,
-drain capacity, road segment IDs, slope, flow accumulation, distance-to-
-drain) must be pixel-identical: same shape, same transform, same CRS.
-Misalignment between layers is the highest-frequency failure mode in a
-multi-layer raster stack, and it is SILENT — the solver just reads garbage
-neighbours, no exception is ever raised. So the grid is defined exactly
-once, here, and every other module imports `Grid` / `build_grid` from this
-file rather than recomputing bounds independently (a shapely/GEOS version
-bump can shift a recomputed union's bbox by a fraction of a pixel, which is
-enough to misalign two layers that were each "correctly" computed).
-
-The grid is built from `configs/domain_bengaluru.yaml` alone — CRS,
 resolution, and the BBMP boundary path — and the bbox is snapped OUTWARD to
-exact multiples of the resolution so the transform is REPRODUCIBLE FROM THE
-CONFIG ALONE. This is deliberately not the same operation as Phase 0's
-`bench/acc_stencil.py` benchmark grid, which ceils the raw bbox WIDTH from a
-fixed origin (assuming the origin is already on-lattice). Snapping both
-corners of the bbox outward independently can add up to +1 cell per axis
-versus that estimate, because the fractional slack at BOTH the min and max
-edge accumulates. Both are legitimate, they just answer different
-questions; `build_grid` here answers "what is the smallest 10 m-aligned
-raster that fully contains the union of all 225 ward polygons", which is
-the property later conditioning/derived-layer steps actually need.
-"""
+the property later conditioning/derived-layer steps actually need."""
 
 from __future__ import annotations
 
@@ -51,20 +29,13 @@ REPO = Path(__file__).resolve().parents[3]
 
 @dataclass(frozen=True)
 class Grid:
-    """A rectangular raster lattice: transform + shape + crs + resolution.
-
-    Build exactly one canonical `Grid` per run (via `build_grid`) and pass it
-    to every writer. `.profile()` turns it into a rasterio profile;
-    `.assert_aligned()` is the invariant-1 check every stack-layer writer
-    must call before writing; `.buffered()` produces a wider Grid on the
-    identical lattice, for the DEM fetch's flow-accumulation margin.
-    """
+    """`.assert_aligned()` is the invariant-1 check every stack-layer writer"""
 
     transform: Affine
     width: int
     height: int
     crs: CRS
-    bounds: tuple[float, float, float, float]  # xmin, ymin, xmax, ymax
+    bounds: tuple[float, float, float, float]
     resolution: float
 
     def profile(
@@ -76,13 +47,6 @@ class Grid:
         tiled: bool = True,
         **extra: Any,
     ) -> dict[str, Any]:
-        """A rasterio profile for a GeoTIFF on this exact lattice.
-
-        `tiled=True` (with 256x256 internal blocks) so later stages can read
-        and write in windows rather than loading the whole raster — CLAUDE.md:
-        "prefer processing rasters in windows/blocks... where the library
-        supports it."
-        """
         prof: dict[str, Any] = {
             "driver": "GTiff",
             "dtype": dtype,
@@ -102,19 +66,7 @@ class Grid:
         return prof
 
     def assert_aligned(self, dataset: Any, atol: float = 1e-6) -> None:
-        """Raise ValueError if `dataset` is not pixel-identical to this Grid.
-
-        `dataset` may be an open rasterio dataset (anything exposing
-        `.transform` / `.width` / `.height` / `.crs`) or a profile `dict`
-        with those same keys.
-
-        STRICT equality — this is for FINAL stack layers, which must match
-        the canonical domain Grid exactly (invariant 1: "all layers share
-        identical shape, transform, crs"). The buffered DEM `fetch.py`
-        produces is a deliberately WIDER lattice (see `.buffered()`) — check
-        that against the Grid returned by `.buffered(buffer_m)`, never
-        against this method, until a later stage crops it back down.
-        """
+        """the canonical domain Grid exactly (invariant 1: "all layers share"""
         if isinstance(dataset, dict):
             t, w, h, c = (
                 dataset["transform"],
@@ -141,16 +93,7 @@ class Grid:
             raise ValueError(f"grid misaligned: crs EPSG:{got_epsg} != canonical EPSG:{want_epsg}")
 
     def buffered(self, buffer_m: float) -> Grid:
-        """A new Grid widened by `buffer_m` on every side, same lattice.
-
-        `buffer_m` must be an exact multiple of `resolution` so the buffered
-        grid shares the identical pixel phase as this one — required by
-        `fetch.py`: the DEM it writes on the buffered grid must later crop
-        back to this Grid with zero resampling. This is how invariant 10
-        (>=500 m buffer before flow accumulation, for correct upstream areas
-        at the domain edge) is satisfied without inventing a second,
-        independently-computed lattice that could drift out of alignment.
-        """
+        """back to this Grid with zero resampling. This is how invariant 10"""
         cells = buffer_m / self.resolution
         if abs(cells - round(cells)) > 1e-9:
             raise ValueError(
@@ -191,27 +134,7 @@ class Grid:
 
 @contextmanager
 def atomic_output_path(path: Path) -> Iterator[Path]:
-    """Yield a `.part` sibling of `path`; rename onto `path` on clean exit,
-    delete the `.part` file if the block raises.
-
-    Works for any writer that takes a destination path — a direct rasterio
-    write, or an external tool (e.g. whitebox) that writes to its own
-    `output=` argument — the caller just points the writer at the yielded
-    tmp path instead of `path` itself. Same discipline fetch.py already
-    uses for network downloads (a partial file must never look complete),
-    applied to local writes: without it, a process killed mid-write (or a
-    whitebox subprocess that dies partway through) leaves a truncated,
-    invalid GeoTIFF sitting at the FINAL path — worse than no file at all,
-    because nothing downstream can tell it apart from a genuine one except
-    by trying to read it.
-
-    The tmp name inserts `.part` BEFORE the real suffix (`x.part.tif`, not
-    `x.tif.part`) — confirmed empirically that whitebox-tools requires its
-    `output=` path to literally END in a recognized raster extension: given
-    a `.tif.part` path it returns exit code 0 (success) while silently
-    writing nothing at all, a false-success that would otherwise turn this
-    entire safety mechanism into a silent no-write.
-    """
+    """uses for network downloads (a partial file must never look complete),"""
     tmp = path.with_name(path.stem + ".part" + path.suffix)
     try:
         yield tmp
@@ -245,29 +168,7 @@ def run_stage(
 ) -> dict[str, Any]:
     """Time `build_fn`, write ITS manifest, return its result. THE one place
     a stage's manifest gets written — called identically by every terrain
-    module's own CLI `main()` and by `build.py`'s orchestrator, so a
-    manifest is written whenever and however a stage actually runs, never
-    only on one of the two call paths.
-
-    This closes a real bug the Phase 1 review found: `build.py` used to
-    call e.g. `fetch_dem()` directly, which rewrites the DEM raster but
-    (before this function existed) wrote no manifest — only `fetch.py`'s
-    standalone `main()` did that. `conditioning.py` then reads `runs/
-    terrain_dem/manifest.json` to decide `dem_is_dtm`; a manifest left over
-    from an EARLIER run (e.g. before `configs/domain_bengaluru.yaml`'s
-    `dem.sources` order was changed) could describe a DEM that is no
-    longer the one on disk, with nothing to detect the mismatch.
-
-    Per CLAUDE.md V1 (declared state vs realized state): this function
-    makes "the manifest describes the artifact that produced it" true by
-    CONSTRUCTION — the write happens in the same call, every time the
-    stage runs, regardless of caller — rather than something that has to
-    be remembered separately at every call site.
-
-    Raises whatever `build_fn` raises; a failed stage writes no manifest
-    (an incomplete/wrong manifest would be worse than none — CLAUDE.md
-    rule 1, don't let a failure look like it produced valid output).
-    """
+    manifest is written whenever and however a stage actually runs, never"""
     t0 = time.perf_counter()
     out_dir.mkdir(parents=True, exist_ok=True)
     start_manifest = {
@@ -308,19 +209,8 @@ def run_stage(
 
 def load_boundary(cfg: dict[str, Any], repo_root: Path = REPO) -> gpd.GeoDataFrame:
     """Load and validate the BBMP boundary, in its NATIVE (file) CRS.
-
     Extracted from `build_grid` so every module that needs the boundary
-    polygon — not just for the raster grid, but e.g. as a WGS84 query
-    region for an OSM/Overpass fetch — shares one validated load rather
-    than four independent re-implementations that could silently drift
-    (a KML reader returning a partial layer produces a wrong polygon with
-    no exception; this check is what caught Phase 0's `osmnx` geocoding of
-    "BBMP" itself returning the HQ building instead of the boundary).
-
-    Returns the GeoDataFrame UNPROJECTED (whatever CRS the file itself
-    uses — WGS84 for our KML). Callers needing the metric-CRS union for
-    the raster grid should go through `build_grid`, which reprojects.
-    """
+    (a KML reader returning a partial layer produces a wrong polygon with"""
     b_cfg = cfg["boundary"]
     boundary_path = repo_root / b_cfg["path"]
     if not boundary_path.exists():
@@ -343,15 +233,8 @@ def load_boundary(cfg: dict[str, Any], repo_root: Path = REPO) -> gpd.GeoDataFra
 
 
 def build_grid(cfg: dict[str, Any], repo_root: Path = REPO) -> tuple[Grid, dict[str, Any]]:
-    """Build the canonical domain Grid from a loaded config dict.
-
-    Loads the BBMP boundary via `load_boundary` (feature-count-validated),
-    reprojects to the configured CRS, unions it, cross-checks the union
-    area against the configured expectation, then snaps the bbox OUTWARD
-    to exact multiples of the resolution.
-
-    Returns `(grid, diagnostics)` — diagnostics feeds the CLI's manifest.
-    """
+    """Loads the BBMP boundary via `load_boundary` (feature-count-validated),
+    Returns `(grid, diagnostics)` — diagnostics feeds the CLI's manifest."""
     b_cfg = cfg["boundary"]
     gdf = load_boundary(cfg, repo_root)
     n_features = len(gdf)
@@ -360,8 +243,6 @@ def build_grid(cfg: dict[str, Any], repo_root: Path = REPO) -> tuple[Grid, dict[
     resolution = float(cfg["resolution_m"])
 
     gdf_proj = gdf.to_crs(crs)
-    # total_bounds is robust to invalid input geometry; use it for the GRID
-    # extent regardless of whether the union below needs repair first.
     raw_bounds = tuple(float(x) for x in gdf_proj.total_bounds)
 
     gdf_valid = gdf_proj.copy()
@@ -420,17 +301,8 @@ def build_grid(cfg: dict[str, Any], repo_root: Path = REPO) -> tuple[Grid, dict[
 
 
 def build_grid_result(cfg: dict[str, Any], repo_root: Path = REPO) -> dict[str, Any]:
-    """`build_grid`, reshaped to the flat-dict-return shape `run_stage` expects.
-
-    `build_grid` returns `(Grid, diagnostics)` — the natural shape for a
-    caller that wants the `Grid` object directly (every other terrain
-    module does) — but `run_stage` (used uniformly across every stage so a
-    manifest is written regardless of caller, see `run_stage`'s docstring)
-    needs a single flat dict to spread into the manifest. This is that
-    adapter, used by this module's own `main()` AND by `build.py`'s
-    orchestrator, so grid.py gets the same guarantee every other stage
-    does rather than being a special case.
-    """
+    """manifest is written regardless of caller, see `run_stage`'s docstring)
+    needs a single flat dict to spread into the manifest. This is that"""
     grid, diag = build_grid(cfg, repo_root)
     return {
         "crs": str(grid.crs),

@@ -102,55 +102,35 @@ __all__ = [
 
 app = typer.Typer(add_completion=False)
 
-# Capacity-basis prefixes separating the two NULL-capacity observed classes
-# (measured against runs/drain_graph_build/drain_graph.gpkg bytes 2026-08-25:
-# 61 edges 'zero measured slope ...', 32 edges 'contributing area ... ha
-# exceeds the rational method validity limit ...'). Synthetic connectors are
-# separated structurally by edge_source == 'synthesised'.
 _ZERO_SLOPE_BASIS_PREFIX = "zero measured slope"
 _AREA_CAPPED_BASIS_PREFIX = "contributing area"
 
-_TIE_EPS_M = 1e-9  # slack on the declared capture radius boundary comparison
+_TIE_EPS_M = 1e-9
 
-# M5b adjudication (2026-08-25, recorded in graph_io.read_artefact): the
-# input-geometry self-loops are a DATA FACT, not a build defect; a consumer may
-# load when the dropped ids are enumerated in manifest counts.dropped_edge_ids
-# (verified by the reader: found 11, all enumerated) AND the owner adjudication
-# reference is present. This is that reference — plumbing a recorded owner
-# decision, not bypassing the gate; with the ids unenumerated the reader still
-# refuses.
 OWNER_ADJUDICATION_REF_M5B = (
     "M5b-adjudication-2026-08-25:self_loop_dropped_count_is_a_data_fact;"
     "ids_enumerated_in_manifest.counts.dropped_edge_ids;consumer=wf2-coupling-router"
 )
 
 
-# ---------------------------------------------------------------------------
-# Internal routing plan: static per-level edge tables, built once at load so
-# the hot path is O(E_active) tensor work per step with no Python edge loops.
-# ---------------------------------------------------------------------------
-
-
 @dataclass(frozen=True)
 class _LevelEdges:
-    """Edges whose SOURCE sits at one topo level (all strictly forward-pointing)."""
 
     level: int
-    src: torch.Tensor  # (e,) int64 source node indices (node_id - 1)
-    dst: torch.Tensor  # (e,) int64 destination node indices
-    cap: torch.Tensor  # (e,) float64 nominal capacities (finite > 0)
-    frac: torch.Tensor  # (e,) float64 proportional share cap_e/S_src; 0 where S_src == 0
-    edge_pos: torch.Tensor  # (e,) int64 positions in the full edge array
+    src: torch.Tensor
+    dst: torch.Tensor
+    cap: torch.Tensor
+    frac: torch.Tensor
+    edge_pos: torch.Tensor
 
 
 @dataclass(frozen=True)
 class RoutePlan:
-    """Static routing tables for :func:`route` (derived, read-only)."""
 
     levels: tuple[_LevelEdges, ...]
-    n_levels: int  # number of topo levels (empty levels contribute nothing)
-    edges_routed: int  # number of active capacity-bearing edges carrying flow
-    nodes_without_outflow: int  # nodes with no active capacity-bearing outgoing edge
+    n_levels: int
+    edges_routed: int
+    nodes_without_outflow: int
 
 
 def _build_route_plan(
@@ -162,12 +142,6 @@ def _build_route_plan(
     num_nodes: int,
     device: torch.device,
 ) -> RoutePlan:
-    """Group active capacity-bearing edges by their source node's topo level.
-
-    ``routeable_mask`` is ``capacity_bearing & active_edge``; anything else is
-    structurally absent from the plan and therefore carries Q_edge = 0 ALWAYS
-    (D-C pin) — it cannot appear in any transfer even under a routing bug.
-    """
     src_all = edge_from.to(device)
     lvl_src = topo_level.to(device)[src_all]
     routeable = routeable_mask.to(device)
@@ -176,7 +150,7 @@ def _build_route_plan(
     n_levels = int(topo_level.max().item()) + 1 if num_nodes > 0 else 0
     for level in range(n_levels):
         sel = routeable & (lvl_src == level)
-        pos = sel.nonzero(as_tuple=True)[0]  # ascending edge-id order (deterministic)
+        pos = sel.nonzero(as_tuple=True)[0]
         if pos.numel() == 0:
             continue
         src = src_all[pos]
@@ -186,14 +160,14 @@ def _build_route_plan(
             torch.zeros(num_nodes, dtype=torch.float64, device=device), 0, src, cap
         )
         s_src = out_sum[src]
-        # clamp-before-divide discipline: floor the denominator, select after.
+
         denom = torch.clamp(s_src, min=torch.finfo(torch.float64).tiny)
         frac = torch.where(s_src > 0, cap / denom, torch.zeros_like(cap))
         levels.append(
             _LevelEdges(level=int(level), src=src, dst=dst, cap=cap, frac=frac, edge_pos=pos)
         )
         routed_positions.append(pos)
-    # Nodes with at least one active capacity-bearing outgoing edge:
+
     has_outflow = torch.zeros(num_nodes, dtype=torch.float64, device=device)
     if routed_positions:
         out_src = src_all[torch.cat(routed_positions)]
@@ -222,23 +196,11 @@ def _level_transfer(rate: torch.Tensor, frac: torch.Tensor, cap: torch.Tensor) -
     return torch.minimum(rate * frac, cap)
 
 
-# ---------------------------------------------------------------------------
-# Topology: level-synchronous topo levels + directed-reachability classes
-# ---------------------------------------------------------------------------
-
-
 def _compute_topo_levels(
     edge_from: torch.Tensor,
     edge_to: torch.Tensor,
     num_nodes: int,
 ) -> tuple[torch.Tensor, int]:
-    """Kahn layering, level-synchronous: level 0 = sources, level(v) grows by 1
-    per layer. Equivalent to longest-path-from-source depth; on the real graph
-    this yields the 24 recorded levels with 699 nodes at level 0 [spec §0].
-
-    Returns (levels int32 (N,), n_levels int). Raises ValueError on a cycle
-    (cannot happen behind the reader's DAG assertion; kept fail-loud anyway).
-    """
     indeg = torch.index_add(
         torch.zeros(num_nodes, dtype=torch.float64),
         0,
@@ -249,7 +211,7 @@ def _compute_topo_levels(
     frontier = indeg == 0
     n_levels = 0
     while bool(frontier.any()):
-        level[frontier] = n_levels  # load-time scratch tensor owned here, not an input
+        level[frontier] = n_levels
         n_levels += 1
         dec = edge_to[frontier[edge_from]]
         indeg = torch.index_add(indeg, 0, dec, torch.full_like(dec, -1.0, dtype=torch.float64))
@@ -260,8 +222,7 @@ def _compute_topo_levels(
             f"[topo] {len(stranded)} node(s) unreachable by Kahn layering — directed cycle "
             f"(node_ids {[i + 1 for i in stranded[:10]]}...); refusing"
         )
-    # Strict monotonicity along every edge: the property that makes per-level
-    # vectorized transfers equivalent to a strict topological walk (spec §7.1).
+
     if not bool((level[edge_to] > level[edge_from]).all()):
         raise RefuseLoadError("[topo] recomputed levels not strictly increasing along edges")
     return level, n_levels
@@ -273,72 +234,45 @@ def _compute_component_classes(
     edge_to: torch.Tensor,
     num_nodes: int,
 ) -> list[str]:
-    """Directed reachability to ANY outfall node (memoized BFS walk over the
-    reversed edge set — deterministic; result is order-independent).
-
-    'outfall_terminating' := the node can reach an outfall following directed
-    edges downstream (an outfall reaches itself, path length 0);
-    'dead_end' otherwise. Spec §0 expects 55 / 1666 on the real graph; the
-    realized split is asserted by the integration test, not hardcoded here.
-    """
     reached = outfall_node.clone()
     while True:
         candidates = edge_from[reached[edge_to] & ~reached[edge_from]]
         if candidates.numel() == 0:
             break
-        reached[candidates.unique()] = True  # visited-set memoization; scratch tensor
+        reached[candidates.unique()] = True
     return ["outfall_terminating" if bool(reached[i]) else "dead_end" for i in range(num_nodes)]
-
-
-# ---------------------------------------------------------------------------
-# DrainGraph
-# ---------------------------------------------------------------------------
 
 
 @dataclass(frozen=True, eq=False)
 class DrainGraph:
-    """Read-only topology + capacity + node geometry for the coupled run.
-
-    Field-for-field per spec §4.2, plus the documented extras the workflow
-    needs: ``outfall_node`` (component-class input, diagnostics join),
-    ``active_node``/``active_edge``/``n_active_*`` (subwindow induced-subgraph
-    bookkeeping) and ``plan`` (static routing tables so :func:`route` does no
-    per-call grouping). Node index convention: tensor index i corresponds to
-    node_id i+1 (the reader asserts node_id contiguous 1..N).
-
-    Shapes: N = num_nodes, E = num_edges; node maps cover the ACTIVE GRID VIEW
-    (full buffered grid H×W when ``window=None``, else the window crop).
-    """
 
     num_nodes: int
     num_edges: int
-    topo_order: list[int]  # strict downstream order (adjacency's, validated by reader)
-    topo_level: torch.Tensor  # (N,) int32, recomputed level-synchronously
-    edge_from: torch.Tensor  # (E,) int64
-    edge_to: torch.Tensor  # (E,) int64
-    capacity_bearing: torch.Tensor  # (E,) bool
-    q_cap_nom_m3s: torch.Tensor  # (E,) float64; NaN sentinels NEVER coerced to 0
-    width_mean_m: torch.Tensor  # (N,) float64; mean width over CB incident edges; isolated 2.285
-    node_plan_area_m2: torch.Tensor  # (N,) float64 = width_mean_m * shaft_length_proxy_m
-    node_elev_m: torch.Tensor  # (N,) float64 DEM proxy invert (manifest note honoured)
-    contrib_area_m2: torch.Tensor  # (N,) float64; 0.0 where the gpkg had SQL NULL
-    component_class: list[str]  # (N,) 'outfall_terminating' | 'dead_end'
-    outfall_node: torch.Tensor  # (N,) bool  [extra: component-class + diagnostics input]
-    node_cell_row: torch.Tensor  # (N,) int32 indices into the BUFFERED grid
-    node_cell_col: torch.Tensor  # (N,) int32 indices into the BUFFERED grid
-    node_id_map: torch.Tensor  # (Hv,Wv) int32, -1 = no active node within capture_radius_m
-    node_cell_count: torch.Tensor  # (N,) int64 cells allocated (>= 1 for active nodes)
-    active_node: torch.Tensor  # (N,) bool  [extra: subwindow induced-subgraph mask]
-    active_edge: torch.Tensor  # (E,) bool  [extra: both endpoints active]
-    n_active_nodes: int  # [extra]
-    n_active_edges: int  # [extra]
+    topo_order: list[int]
+    topo_level: torch.Tensor
+    edge_from: torch.Tensor
+    edge_to: torch.Tensor
+    capacity_bearing: torch.Tensor
+    q_cap_nom_m3s: torch.Tensor
+    width_mean_m: torch.Tensor
+    node_plan_area_m2: torch.Tensor
+    node_elev_m: torch.Tensor
+    contrib_area_m2: torch.Tensor
+    component_class: list[str]
+    outfall_node: torch.Tensor
+    node_cell_row: torch.Tensor
+    node_cell_col: torch.Tensor
+    node_id_map: torch.Tensor
+    node_cell_count: torch.Tensor
+    active_node: torch.Tensor
+    active_edge: torch.Tensor
+    n_active_nodes: int
+    n_active_edges: int
     graph_fingerprint: str
-    topo_sha256: str  # sha256 over compact-JSON topo_order (UTF-8, separators (',',':'))
+    topo_sha256: str
     manifest: dict[str, Any]
-    plan: RoutePlan  # [extra: static routing tables]
-    # [extra] Defect-C bookkeeping: realized falsifier-target activity in the
-    # loaded view, recorded by the loader on EVERY load. -1 = not assessed
-    # (assembly path without a prediction set; the loader always assesses).
+    plan: RoutePlan
+
     n_active_predicted_targets: int = -1
     n_inactive_predicted_targets: int = -1
 
@@ -375,7 +309,7 @@ def build_drain_graph(
     """
     dev = torch.device(device)
     if dev.type != "cpu":
-        # V12: this workflow allocates no CUDA context, ever.
+
         raise RefuseLoadError(f"[device] router is CPU-only (V12); got device {device!r}")
 
     edge_from = edge_from.to(dev, torch.int64)
@@ -391,16 +325,12 @@ def build_drain_graph(
     if num_nodes > 0 and (
         int(edge_from.max().item()) >= num_nodes or int(edge_to.max().item()) >= num_nodes
     ):
-        # Fail loud here rather than as an opaque index error deep in topology
-        # (caught live: 1-based gpkg ids fed unconverted produce exactly this).
+
         raise RefuseLoadError(
             "[assemble] edge endpoint index exceeds num_nodes-1 — are these raw 1-based "
             "node_ids? DrainGraph edge tensors are 0-based (index = node_id - 1)"
         )
 
-    # Sentinel integrity at the assembly seam: capacity-bearing edges carry
-    # finite positive capacities; everything else stays NaN — coercion to 0
-    # anywhere upstream of here would be invisible later, so it is refused NOW.
     cb = capacity_bearing
     if not bool(torch.isfinite(q_cap[cb]).all()) or not bool((q_cap[cb] > 0).all()):
         raise RefuseLoadError("[assemble] capacity-bearing q_cap must be finite > 0")
@@ -424,7 +354,7 @@ def build_drain_graph(
         edge_from, edge_to, q_cap, cb & active_edge, topo_level, num_nodes, dev
     )
     if topo_order is None:
-        # Stable topological order derived from the recomputed levels.
+
         order = sorted(range(num_nodes), key=lambda i: (int(topo_level[i]), i))
         topo_order = [i + 1 for i in order]
 
@@ -449,10 +379,6 @@ def build_drain_graph(
         node_cell_count=node_cell_count.to(dev, torch.int64),
         active_node=active_node_t,
         active_edge=active_edge,
-        # BugHunt round-1 item B: this used to hardcode num_nodes while the
-        # sibling edge count was mask-derived — on a windowed load every
-        # consumer then read "all nodes active" no matter the view. Forward the
-        # realized count, same source as n_active_edges.
         n_active_nodes=int(active_node_t.sum().item()),
         n_active_edges=int(active_edge.sum().item()),
         graph_fingerprint=graph_fingerprint,
@@ -464,36 +390,22 @@ def build_drain_graph(
     )
 
 
-# ---------------------------------------------------------------------------
-# Loader
-# ---------------------------------------------------------------------------
-
-
 def _normalize_window(
     window: tuple[slice, slice] | tuple[int, int, int, int] | None, height: int, width: int
 ) -> tuple[int, int, int, int]:
-    """Normalize the window argument to (row0, row1, col0, col1) absolute bounds.
-
-    Accepted forms: ``None`` (full domain), a ``(rows_slice, cols_slice)`` pair,
-    or an explicit ``(row0, row1, col0, col1)`` int tuple. Slice steps must be 1.
-    Any malformed window raises :class:`RefuseLoadError` — never a bare
-    TypeError/ValueError (defect D: the documented slice-pair form used to die
-    with ``TypeError: slice indices must be integers`` inside
-    ``slice(rows).indices(...)`` before the refusal gates were reached).
-    """
     if window is None:
         return 0, height, 0, width
     if not isinstance(window, tuple):
         raise RefuseLoadError(f"[window] unsupported window form: {window!r}")
     if len(window) == 4 and all(isinstance(v, int) and not isinstance(v, bool) for v in window):
-        r0, r1, c0, c1 = window  # type: ignore[misc]
+        r0, r1, c0, c1 = window
         if not (0 <= r0 < r1 <= height and 0 <= c0 < c1 <= width):
             raise RefuseLoadError(
                 f"[window] invalid bounds {(r0, r1, c0, c1)} for grid {(height, width)}"
             )
         return int(r0), int(r1), int(c0), int(c1)
     if len(window) == 2 and all(isinstance(part, slice) for part in window):
-        rows, cols = window  # type: ignore[misc]
+        rows, cols = window
         r0, r1, rs = rows.indices(height)
         c0, c1, cs = cols.indices(width)
         if rs != 1 or cs != 1:
@@ -523,27 +435,12 @@ def _paint_node_id_map(
     y_top_m: float,
     radius_m: float,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Allocate every view cell within ``radius_m`` of an ACTIVE node to its
-    nearest such node; exact ties resolve to the LOWEST node_id (OQ1 pin).
-
-    Mechanism: paint nodes in ascending node_id order, overwriting only on a
-    STRICTLY smaller distance — earlier (lower-id) nodes therefore win ties by
-    construction and the final owner of each cell is its min-(distance, id)
-    node. Cells beyond the radius from every active node stay -1 ("cells
-    beyond radius from every node never capture", spec §5 exchange key).
-
-    Returns (node_id_map int32 (view_h, view_w), node_cell_count int64 (N,)),
-    enforcing the spec §4.2 guarantee ``node_cell_count >= 1`` for active
-    nodes: any active node left with zero cells by nearest-wins (measured: 42
-    on the real graph) is assigned its own cell. See module docstring for the
-    reported deviation this resolves.
-    """
     num_nodes = x_m.shape[0]
     best = np.full((view_h, view_w), np.inf, dtype=np.float64)
     nmap = np.full((view_h, view_w), -1, dtype=np.int32)
     k = int(math.ceil(radius_m / res_m))
     r_limit = radius_m + _TIE_EPS_M
-    for i in np.nonzero(active)[0]:  # ascending node order => lowest-id wins ties
+    for i in np.nonzero(active)[0]:
         gr, gc = int(node_row[i]), int(node_col[i])
         ni_x, ni_y = x_m[i], y_m[i]
         for rr in range(max(gr - k, 0), min(gr + k + 1, view_r0 + view_h)):
@@ -559,7 +456,7 @@ def _paint_node_id_map(
                 d = math.hypot(cx - ni_x, cy - ni_y)
                 if d <= r_limit and d < best[vrr, vcc]:
                     best[vrr, vcc] = d
-                    nmap[vrr, vcc] = i + 1  # node_id = index + 1
+                    nmap[vrr, vcc] = i + 1
     counts = np.bincount(nmap[nmap >= 0] - 1, minlength=num_nodes).astype(np.int64)
     starved = np.nonzero(active & (counts == 0))[0]
     for i in starved:
@@ -570,7 +467,6 @@ def _paint_node_id_map(
 
 
 def _load_predicted_node_ids(path: Path) -> list[int]:
-    """Read the pre-registered falsifier prediction set's node targets."""
     try:
         data = json.loads(path.read_text())
     except (OSError, json.JSONDecodeError) as exc:
@@ -593,16 +489,6 @@ def _falsifier_activity_gate(
     *,
     min_active_required: int,
 ) -> tuple[int, int]:
-    """Refuse unless >= ``min_active_required`` pre-registered falsifier target
-    nodes are active in the loaded view; return ``(n_active, n_inactive)``.
-
-    Defect-C adjudication (2026-08-26): a SUBWINDOW load passes
-    ``cfg.smoke.min_predicted_nodes_in_window`` — the spec §14 smoke window
-    (first 10 predicted nodes + pad) holds only 14/116 targets, so the former
-    require-ALL gate refused that path forever — while a FULL-domain load
-    passes ``len(targets)`` (ALL targets active). Out-of-range target node_ids
-    refuse regardless of window.
-    """
     num_nodes = int(active_np.shape[0])
     oob = [t for t in targets if not (1 <= t <= num_nodes)]
     if oob:
@@ -622,41 +508,11 @@ def load_drain_graph(
     repo_root: Path,
     window: tuple[slice, slice] | tuple[int, int, int, int] | None = None,
 ) -> DrainGraph:
-    """Load the WF-1 drain-graph artefact with the full V8 assertion stack.
-
-    Order of operations (spec §4.2): the existing asserting reader runs FIRST
-    (schema, fingerprint-vs-bytes, elevation binding — its
-    :class:`RefuseLoadError` propagates unmodified); THEN this module's
-    consumer assertions: DAG flag, expected counts and partition, sentinel
-    integrity, topo-level recomputation, component classes, node->cell maps
-    for ``window``, and the subwindow falsifier-activity refusal.
-
-    Args:
-        cfg: resolved coupling configuration (paths, expectations, storage
-            declared assumptions, capture radius).
-        repo_root: repository root (kept for signature parity / future
-            relative-path resolution; configured paths arrive absolute).
-        window: ``None`` for the full buffered domain, or ``(rows, cols)``
-            slices / ``(row0, row1, col0, col1)`` bounds selecting the ACTIVE
-            GRID VIEW. The graph tensors always stay full-size (N/E as
-            asserted); the window induces the routed subgraph
-            (``active_edge`` = both endpoints in-window) and crops
-            ``node_id_map`` to the view. Falsifier-gate refusal semantics
-            (defect C, adjudicated 2026-08-26): a windowed load REFUSES if
-            fewer than ``cfg.smoke.min_predicted_nodes_in_window`` of the
-            pre-registered falsifier target nodes are active in it; a
-            full-domain load still requires ALL of them active. Either way the
-            realized counts are recorded on ``DrainGraph`` as
-            ``n_active_predicted_targets`` / ``n_inactive_predicted_targets``.
-
-    Returns:
-        The assembled :class:`DrainGraph`.
-    """
-    del repo_root  # configured artefact paths are already absolute (rule-7 resolver)
+    del repo_root
 
     if cfg.device != "cpu":
         raise RefuseLoadError(f"[device] router is CPU-only (V12); cfg.device={cfg.device!r}")
-    if cfg.router.null_edge_policy != "q_zero_always":  # D-C pin; resolver also refuses
+    if cfg.router.null_edge_policy != "q_zero_always":
         raise RefuseLoadError(
             f"[router] null_edge_policy {cfg.router.null_edge_policy!r} != 'q_zero_always'"
         )
@@ -671,7 +527,6 @@ def load_drain_graph(
     nodes = art["nodes_gdf"]
     edges = art["edges_gdf"]
 
-    # --- explicit consumer assertions on top of the reader (spec §4.2) -------
     if man.get("graph_is_dag") is not True:
         raise RefuseLoadError(f"[consumer] manifest.graph_is_dag={man.get('graph_is_dag')!r}")
     exp_counts = cfg.graph.expected_counts
@@ -683,7 +538,6 @@ def load_drain_graph(
     if int(man.get("node_count", -1)) != len(nodes) or int(man.get("edge_count", -1)) != len(edges):
         raise RefuseLoadError("[consumer] manifest node_count/edge_count disagree with gpkg")
 
-    # --- partition from realized bytes ---------------------------------------
     edge_source = edges["edge_source"].astype(str)
     basis = edges["capacity_basis"].astype(str)
     q_notna = edges["q_capacity_nom_m3s"].notna().to_numpy()
@@ -709,21 +563,16 @@ def load_drain_graph(
     if problems:
         raise RefuseLoadError("[consumer] edge partition mismatch: " + "; ".join(problems))
 
-    # --- core tensors (copies; the gdf frames are release-grade scratch) -----
-    # gpkg node_id is 1-based; DrainGraph edge tensors are 0-BASED INDEXED
-    # (index = node_id - 1, per the dataclass contract).
     edge_from_raw = edges["from_node"].to_numpy(dtype=np.int64)
     edge_to_raw = edges["to_node"].to_numpy(dtype=np.int64)
     if int(edge_from_raw.min()) < 1 or int(edge_to_raw.min()) < 1:
         raise RefuseLoadError("[consumer] node_ids below 1 in gpkg edges")
     edge_from = torch.tensor(edge_from_raw - 1)
     edge_to = torch.tensor(edge_to_raw - 1)
-    q_cap = torch.tensor(edges["q_capacity_nom_m3s"].to_numpy(dtype=np.float64))  # NaN kept
+    q_cap = torch.tensor(edges["q_capacity_nom_m3s"].to_numpy(dtype=np.float64))
     capacity_bearing = torch.tensor(is_cb)
     num_nodes = len(nodes)
 
-    # width_mean over CAPACITY-BEARING incident edges only (contract
-    # node_storage_pinned); isolated -> pinned tertiary nominal 2.285 m.
     width_edge = edges["width_m"].to_numpy(dtype=np.float64)
     cb_w = torch.tensor(np.where(is_cb, width_edge, 0.0))
     cb_sel = torch.tensor(is_cb)
@@ -752,12 +601,9 @@ def load_drain_graph(
     node_elev = torch.tensor(nodes["elev_m"].to_numpy(dtype=np.float64))
     ca_raw = nodes["contrib_area_m2"].to_numpy(dtype=np.float64)
     contrib = torch.tensor(np.where(np.isnan(ca_raw), 0.0, ca_raw))
-    # Declared outfall set (rule 0): gpkg node_type == 'outfall', exactly as
-    # before WF-2 M1. Extended seeds (lake_polygon / domain_boundary) are added
-    # BELOW, after the producer grid block is parsed — consumer-side only.
+
     declared_outfall_np = (nodes["node_type"].astype(str) == "outfall").to_numpy()
 
-    # --- grid geometry: producer-declared block from the graph manifest (V8) --
     grid = ((man.get("config_snapshot") or {}).get("grid") or {}) if man else {}
     for key in ("height", "width", "transform", "cell_area_m2"):
         if key not in grid:
@@ -779,14 +625,6 @@ def load_drain_graph(
     if not bool(inside.all()):
         raise RefuseLoadError("[grid] a node falls outside the producer-declared buffered grid")
 
-    # --- WF-2 M1 terminal-seed extension (v2-lake-boundary; consumer-side) ----
-    # Owner directive: a rajakaluve discharging into Bellandur/Varthur Lake HAS
-    # reached a terminal sink; a reach crossing the domain boundary HAS left
-    # the domain. The definition lives in cfg.graph.terminal_definition
-    # (configs/terminal_definition.yaml, visible + justified); seeds are derived
-    # HERE at load, never written into producer artefacts (the drain-graph
-    # contract forbids producers emitting node_type=inlet/lake_boundary — flag:
-    # a contract amendment note may be wanted once boundary exchange lands).
     tdef = load_terminal_definition(Path(cfg.graph.terminal_definition))
     terminal = resolve_terminal_nodes(
         node_xy=np.column_stack([x_arr, y_arr]),
@@ -799,11 +637,6 @@ def load_drain_graph(
     for nid in terminal.seed_union:
         outfall_node[nid - 1] = True
 
-    # V8 cross-assertion AT THE SEAM: the torch BFS that feeds
-    # graph.component_class and the canonical stdlib traversal in
-    # jaladhar.drainage.terminal must partition the graph IDENTICALLY over the
-    # extended seed set. Two traversals exist by design; this is what keeps
-    # their DEFINITION single. Divergence refuses the load.
     classes_torch = _compute_component_classes(outfall_node, edge_from, edge_to, len(nodes))
     torch_ot = {i + 1 for i, c in enumerate(classes_torch) if c == "outfall_terminating"}
     canon_ot = classify_reachability(
@@ -818,25 +651,14 @@ def load_drain_graph(
             f"classify_reachability={len(canon_ot)} — refusing"
         )
 
-    # Thread the realized seed resolution into the manifest echo so run
-    # manifests and diagnostics.component_split carry definition_version +
-    # counts_by_rule (labels only; historical run manifests are NOT rewritten).
     man = {**man, "terminal_seed_resolution": terminal.as_manifest_block()}
 
-    # --- window / induced subgraph / falsifier gate ---------------------------
     vr0, vr1, vc0, vc1 = _normalize_window(window, gh, gw)
     active_np = (row_abs >= vr0) & (row_abs < vr1) & (col_abs >= vc0) & (col_abs < vc1)
     active_node_t = torch.tensor(active_np)
     n_active_nodes = int(active_node_t.sum().item())
 
-    # Defect-C semantics (adjudicated 2026-08-26): a SUBWINDOW load refuses when
-    # FEWER than cfg.smoke.min_predicted_nodes_in_window pre-registered target
-    # nodes are active in it — the spec §14 smoke window (first 10 predicted
-    # nodes + cfg.smoke.window_pad_cells pad) holds only 14/116 targets, so the
-    # former require-ALL gate made that path unloadable permanently. A
-    # FULL-domain load still requires ALL targets active. The realized
-    # active/inactive counts are recorded on the graph either way.
-    n_active_pred = n_inactive_pred = -1  # -1: not assessed (no usable set)
+    n_active_pred = n_inactive_pred = -1
     fs_path = Path(cfg.diagnostics.falsifier_set)
     targets: list[int] = []
     if window is not None:
@@ -848,9 +670,7 @@ def load_drain_graph(
         targets = _load_predicted_node_ids(fs_path)
         min_required = int(cfg.smoke.min_predicted_nodes_in_window)
     elif fs_path.exists():
-        # Full domain: strict ALL-targets-active requirement retained. A missing
-        # set here is diagnostics.refuse_start_on_missing_falsifier's refusal to
-        # own (resolver-side), not this loader's — hence exists() gated.
+
         targets = _load_predicted_node_ids(fs_path)
         min_required = len(targets)
     else:
@@ -860,7 +680,6 @@ def load_drain_graph(
             targets, active_np, min_active_required=min_required
         )
 
-    # --- node->cell maps for the active view ---------------------------------
     nmap_np, counts_np = _paint_node_id_map(
         x_arr,
         y_arr,
@@ -909,30 +728,9 @@ def load_drain_graph(
     )
 
 
-# ---------------------------------------------------------------------------
-# Routing (hot path)
-# ---------------------------------------------------------------------------
-
-
 def route(
     vol: torch.Tensor, graph: DrainGraph, dt: float
 ) -> tuple[torch.Tensor, torch.Tensor, dict]:
-    """One host-dt routing pass over the drain graph (spec §7, D-C pin verbatim).
-
-    Args:
-        vol: (N,) float64 node volumes [m³]. Never mutated.
-        graph: loaded :class:`DrainGraph`.
-        dt: host timestep [s], finite > 0. No substepping.
-
-    Returns:
-        (vol_new (N,) float64, q_edge (E,) float64, diag dict). ``q_edge`` is
-        positive downstream, EXACTLY 0.0 on every non-capacity-bearing edge and
-        every inactive (outside the induced subgraph) edge; gradients flow
-        through both returns (no detach, no in-place writes).
-
-    Raises:
-        ValueError: on dt/vol validation failures.
-    """
     if (
         not isinstance(dt, (int, float))
         or isinstance(dt, bool)
@@ -956,18 +754,18 @@ def route(
         raise ValueError("[route] vol contains NaN/inf")
 
     dev = graph.edge_from.device
-    v = vol  # never written; every level produces a NEW tensor
+    v = vol
     q_pieces: list[torch.Tensor] = []
     pos_pieces: list[torch.Tensor] = []
     transferred_total = torch.zeros((), dtype=torch.float64, device=dev)
     capped_edges = 0
     for lv in graph.plan.levels:
-        available_rate = torch.clamp(v[lv.src], min=0.0) / dt  # clamp-before-divide
+        available_rate = torch.clamp(v[lv.src], min=0.0) / dt
         q = _level_transfer(available_rate, lv.frac, lv.cap)
         transferred = q * dt
         flow_out = torch.index_add(torch.zeros_like(v), 0, lv.src, transferred)
         flow_in = torch.index_add(torch.zeros_like(v), 0, lv.dst, transferred)
-        v = v + (flow_in - flow_out)  # volume-conservative, out-of-place
+        v = v + (flow_in - flow_out)
         q_pieces.append(q)
         pos_pieces.append(lv.edge_pos)
         transferred_total = transferred_total + transferred.sum()
@@ -993,11 +791,6 @@ def route(
     return v, q_edge, diag
 
 
-# ---------------------------------------------------------------------------
-# CLI (AGENTS.md style rule: every stage runnable standalone)
-# ---------------------------------------------------------------------------
-
-
 @app.command()
 def selfcheck(
     config: Path = typer.Option(
@@ -1006,11 +799,6 @@ def selfcheck(
     vol_m3: float = typer.Option(1000.0, help="Uniform initial volume per node [m3]"),
     dt: float = typer.Option(0.48, help="Routing timestep [s]"),
 ) -> None:
-    """Load the REAL drain graph with all V8 assertions and route once.
-
-    Prints the realized counts, partition, topo levels, component split, NaN
-    sentinel statistics, and the end-to-end volume conservation identity —
-    the     V12 execution evidence for this unit."""
     repo_root = Path(__file__).resolve().parents[3]
     cfg = resolve_config(config, repo_root)
     graph = load_drain_graph(cfg, repo_root)
@@ -1051,7 +839,7 @@ def selfcheck(
     print(f"null_edge_q_exact_zero={bool((null_q == 0).all())}")
 
 
-def main() -> None:  # pragma: no cover
+def main() -> None:
     app()
 
 

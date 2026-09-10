@@ -1,23 +1,5 @@
 #!/usr/bin/env python3
-"""M2 headless smoke — cited wading policy + routing unblock, route-around flow.
-
-Stdlib-only (argparse/json/subprocess/urllib): starts the real background stack
-(dashboard + routing API with policy and snap configured), snapshots /health
-before/after into ``runs/m2_smoke_<ts>/``, chooses a flooded-street pair from
-the live dashboard watchlist, resolves origin/destination from already-served
-segment geometry (the segment's own endpoints — graph nodes are built from
-segment endpoints, so snap distance is 0), then POSTs /route per configured
-vehicle class asserting EITHER ok-with-avoided_segments OR the exact honest
-refusal code expected under the realized gate state. Both branches are printed
-and which-branch-exercised is stated per class in summary.json.
-
-Gate-report binding: ``runs/wf3_replay2_gates_v7_excluded/g1_score.json`` is
-used when it exists; otherwise the stack runs in absent-state (no
---gate-report-file), where every route honestly refuses
-scientific_gate_not_accepted.
-
-Everything this script starts, it kills.
-"""
+"M2 headless smoke — cited wading policy + routing unblock, route-around flow. Stdlib-only (argparse/json/subprocess/urllib): starts the real background stack (dashboard + routing API with policy and snap configured), snapshots /health before/after into ``runs/m2_smoke_<ts>/``, chooses a flooded-street pair from the live dashboard watchlist, resolves origin/destination from already-served segment geometry (the segment's own endpoints — graph nodes are built from segment endpoints, so snap distance is 0), then POSTs /route per configured vehicle class asserting EITHER ok-with-avoided_segments OR the exact honest refusal code expected under the realized gate state. Both branches are printed and which-branch-exercised is stated per class in summary.json. Gate-report binding: ``runs/wf3_replay2_gates_v7_excluded/g1_score.json`` is used when it exists; otherwise the stack runs in absent-state (no --gate-report-file), where every route honestly refuses scientific_gate_not_accepted. Everything this script starts, it kills."  # noqa: E501
 
 from __future__ import annotations
 
@@ -84,7 +66,6 @@ def wait_ready(
 
 
 def _servable_product_path(entry: Path, payload: dict[str, Any]) -> Path | None:
-    """The product twin this run can actually serve (flat CSV or frame-0 CSV)."""
 
     if payload.get("series_kind"):
         frames = payload.get("frames")
@@ -100,13 +81,7 @@ def _servable_product_path(entry: Path, payload: dict[str, Any]) -> Path | None:
 
 
 def pick_run_dir(explicit: Path | None) -> tuple[Path, dict[str, Any]]:
-    """Newest completed FLAT run preferred; series only when no flat run exists.
-
-    Rationale (measured, not stylistic): the routing API binds a FROZEN
-    FLAT-contract depth product; a frame-series twin is refused by design
-    (see ``_demo_common.depth_product_file_for``), so exercising the route
-    gate stack requires the flat shape.  Explicit ``--run-dir`` always wins.
-    """
+    "Newest completed FLAT run preferred; series only when no flat run exists. Rationale (measured, not stylistic): the routing API binds a FROZEN FLAT-contract depth product; a frame-series twin is refused by design (see ``_demo_common.depth_product_file_for``), so exercising the route gate stack requires the flat shape. Explicit ``--run-dir`` always wins."  # noqa: E501
 
     if explicit is not None:
         manifest_path = explicit / "manifest.json"
@@ -143,7 +118,6 @@ def depth_product_csv(run_dir: Path, manifest: dict[str, Any]) -> Path:
 
 
 def realized_forecast_lead(product_csv: Path) -> int | None:
-    """Read the product's OWN realized forecast lead from its bytes (rule 3)."""
 
     import csv
 
@@ -233,7 +207,6 @@ def main() -> int:
 
     processes: list[subprocess.Popen[Any]] = []
 
-    # ---- launcher banner pass (real ROUTING_STATE lines from launch_demo)
     launcher_banner: dict[str, Any] = {"skipped": args.skip_launcher_banner}
     if not args.skip_launcher_banner:
         launcher_argv = [
@@ -279,7 +252,6 @@ def main() -> int:
         json.dumps(launcher_banner, indent=2), encoding="utf-8"
     )
 
-    # ---- background stack
     api_argv = [
         python,
         "-m",
@@ -347,7 +319,6 @@ def main() -> int:
             f"(status={scientific.get('status')})"
         )
 
-        # ---- choose a flooded-street pair from the live dashboard watchlist
         pair_choice: dict[str, Any] = {"dashboard_up": dashboard_up}
         origin: list[float] | None = None
         destination: list[float] | None = None
@@ -404,7 +375,6 @@ def main() -> int:
             )
             return 1
 
-        # ---- POST /route per configured class
         policy_payload = json.loads(DEFAULT_POLICY.read_text(encoding="utf-8"))
         classes = sorted(policy_payload.get("policies", {}))
         blocked_classes = sorted(policy_payload.get("blocked_classes", {}))
@@ -415,11 +385,8 @@ def main() -> int:
         all_matched = True
 
         def expected_outcome(vehicle_class: str, *, with_lead: bool) -> tuple[str, str]:
-            """(expected, rationale) under the REALIZED gate/product state."""
 
             if not with_lead:
-                # Field omitted because the displayed payload realizes no
-                # forecast lead (hindcast offsets are never sent as leads):
                 # field validation refuses BEFORE any gate — honest 400.
                 return "refusal_400_invalid_request_missing_field", (
                     "no forecast lead in the served frame payload; the required "
@@ -450,8 +417,6 @@ def main() -> int:
                 full_body["forecast_lead_minutes"] = realized_lead
             probes.append((f"{vehicle_class}/with-realized-lead", full_body, True))
             if realized_lead is None:
-                # UI-honesty probe: exactly what routing.js sends when the
-                # displayed payload carries no forecast lead.
                 probes.append(
                     (
                         f"{vehicle_class}/omitted-field",

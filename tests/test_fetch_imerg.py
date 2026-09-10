@@ -1,5 +1,3 @@
-"""Data-independent checks for IMERG acquisition listing semantics."""
-
 from datetime import date
 
 from jaladhar.forcing import fetch_imerg
@@ -23,12 +21,8 @@ class _Response:
 
 
 def test_cmr_listing_deduplicates_download_targets(monkeypatch) -> None:
-    """Duplicate CMR entries cannot dispatch two writers to one `.part` file.
-
-    Observable if false: the same URL appears twice in the returned work list.
-    V5 red mutation: returning ``urls`` directly produces two entries.
-    Scope: one mocked CMR page; live collection completeness is not claimed.
-    """
+    """V5 red mutation: returning ``urls`` directly produces two entries.
+    Scope: one mocked CMR page; live collection completeness is not claimed."""
     monkeypatch.setattr(fetch_imerg.requests, "get", lambda *args, **kwargs: _Response())
 
     urls = fetch_imerg.granule_urls(date(2022, 9, 5), date(2022, 9, 5), "test-token")

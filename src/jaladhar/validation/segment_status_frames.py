@@ -1,24 +1,9 @@
-"""Produce the frozen per-road-segment depth product as a multi-frame series.
-
-This module is the WF-3b addition to the WF-3 product boundary.  It consumes the
+"""This module is the WF-3b addition to the WF-3 product boundary.  It consumes the
 realized per-frame solver rasters of an uncoupled historical replay (admitted via
-a ``data/curation`` frame-series sidecar that binds every frame's SHA-256) and
 emits, per frame, a contract-shaped CSV/JSON twin: per-segment depth bands in
-centimetres with the frame's own valid time.  The event-maximum product is a
-separate run and is never touched.
-
 Contract fit, stated plainly (the frozen text is not edited):
-
 * every frozen ROW and CONSUMER assertion applies verbatim to each per-frame
-  twin -- full lookup segment set incl. synthesized no-data rows, floor-cm
-  min/max bands over canonical cells, PRIMARY_RULE flood status from float
-  metres, aware-UTC timestamps, producer-stamped issue time;
-* the one run-level rule that cannot hold per frame is the artifact location
-  ``runs/<run_id>/products/segment_status.*``: frames live under
-  ``runs/<run_id>/products/frames/<tag>/`` so that single-product consumers
-  (dashboard discovery, fallback selection) cannot mistake 97 same-lead files
-  for one product.  The run manifest records this deviation explicitly.
-"""
+for one product.  The run manifest records this deviation explicitly."""
 
 from __future__ import annotations
 
@@ -43,7 +28,7 @@ from jaladhar.validation.depth_product_contract import (  # noqa: E402
     load_requirements,
     sha256_file,
     validate_frame_series_admission,
-)
+)  # noqa: E402
 from jaladhar.validation.segment_status import (  # noqa: E402
     EXCLUSION_MODES,
     PRODUCT_FIELDS,
@@ -60,7 +45,7 @@ from jaladhar.validation.segment_status import (  # noqa: E402
     load_aligned_rasters,
     normalise_utc,
     resolve_exclusion_mask,
-)
+)  # noqa: E402
 from jaladhar.validation.segment_validation import PRIMARY_RULE  # noqa: E402
 
 FRAME_FILE_RE = re.compile(r"^depth_t(\d+)s\.tif$")
@@ -73,7 +58,6 @@ class MultiframeProductError(RuntimeError):
 
 
 def _relative(path: Path) -> str:
-    """Repository-relative path against THIS module's REPO (test-mutable)."""
 
     import os
 
@@ -176,9 +160,7 @@ def _resolve_multiframe_config(
         payload = None
     # Coupling lattice mirrors segment_status.py: a COUPLED source is refused;
     # an explicit coupling_enabled=false declaration carries fuller provenance
-    # than silence and is accepted as uncoupled (same decision the single
     # product path already makes). Only a manifest that predates declarations
-    # (key absent) still requires the legacy admission sidecar below.
     source_declares_uncoupled = False
     if isinstance(payload, dict):
         declared_coupling = payload.get("coupling_enabled")
@@ -399,7 +381,6 @@ def build_multiframe_product(
             f"realized no-data split does not match the frozen split: {split} != {expected_split}"
         )
 
-    # Storage-water exclusion: ONE mask computed once over the canonical grid and
     # reused for every frame (V8: asserted against realized class bytes at this seam).
     fully_excluded_count = 0
     excluded_mask: np.ndarray | None = None
@@ -409,7 +390,6 @@ def build_multiframe_product(
         excluded_mask, mask_info = resolve_exclusion_mask(
             inputs.road_ids, class_array, sorted(excluded_basin_classes), exclusion_mode
         )
-        # Direct per-segment accounting of dropped cells; cross-checked below against
         # the synthesized no-data delta (V2: two independent observables).
         road_flat = inputs.road_ids.reshape(-1)
         n_ids = int(inputs.road_ids.max()) + 1
@@ -498,7 +478,6 @@ def build_multiframe_product(
                 else {}
             ),
         },
-        # Rule 6: input SHAs enter at run start, not only on success.
         "input_sha256": start_input_hashes,
         "storage_water_exclusion": storage_exclusion_start,
         "adjudication_ref": adjudication_ref,

@@ -1,26 +1,5 @@
 #!/usr/bin/env python
-"""Score WF-3/G1 from realized depth, road, and BBMP complaint artifacts.
-
-The scorer is CPU-only.  It never manufactures a raster, treats an excluded
-complaint as a negative, or substitutes a missing depth-convention declaration.
-The G1 population is the modeled-direct segment universe; lookup-only
-``no_data`` segments are present in the product but are not silently counted as
-dry in the gate denominator.
-
-The scorer:
-
-1. evaluates per-segment flood status using the existing primary rule;
-2. snaps all in-domain BBMP points to the nearest realized road cell, enforcing
-   the configured maximum snap distance;
-3. reports point-level hit rate, flooded-segment fraction, and a 10,000-draw
-   toroidal spatial-translation null with the supplied seed and lift;
-4. preserves exact-cell and 3x3 local-max point readings separately as
-   retrospective diagnostics, never as the signed per-segment held-out G3 gate.
-
-The primary/sensitivity ordering is read from
-``data/curation/goal_d_depth_convention.json``.  If that file is absent or
-malformed, this command stops before scoring.
-"""
+"Score WF-3/G1 from realized depth, road, and BBMP complaint artifacts. The scorer is CPU-only. It never manufactures a raster, treats an excluded complaint as a negative, or substitutes a missing depth-convention declaration. The G1 population is the modeled-direct segment universe; lookup-only ``no_data`` segments are present in the product but are not silently counted as dry in the gate denominator. The scorer: 1. evaluates per-segment flood status using the existing primary rule; 2. snaps all in-domain BBMP points to the nearest realized road cell, enforcing the configured maximum snap distance; 3. reports point-level hit rate, flooded-segment fraction, and a 10,000-draw toroidal spatial-translation null with the supplied seed and lift; 4. preserves exact-cell and 3x3 local-max point readings separately as retrospective diagnostics, never as the signed per-segment held-out G3 gate. The primary/sensitivity ordering is read from ``data/curation/goal_d_depth_convention.json``. If that file is absent or malformed, this command stops before scoring."  # noqa: E501
 
 from __future__ import annotations
 
@@ -74,15 +53,11 @@ EXPECTED_NULL_DRAWS = 10_000
 DEFAULT_CONVENTION_PATH = REPO / "data/curation/goal_d_depth_convention.json"
 DEFAULT_VALIDATION_CONFIG = REPO / "configs/validation.yaml"
 
-# The signed 60% hit-rate minimum was anchored to Replay #2's POINT-mediated BBMP
-# score (point depth >= 0.10 m), recorded in the historical manifest's sweep table.
-# This scorer reports SEGMENT-mediated flood_status under the frozen product rule;
-# the framing gap is disclosed beside every verdict, never reconciled away.
 POINT_ANCHOR_THRESHOLD_M = 0.10
 
 
 class G1ScoringError(RuntimeError):
-    """Raised when a realized G1 input cannot be scored honestly."""
+    "Raised when a realized G1 input cannot be scored honestly."
 
 
 def _metric_framing_block(
@@ -92,12 +67,6 @@ def _metric_framing_block(
     fixed_denominator_points: int,
     source_manifest_relative_path: str,
 ) -> dict[str, Any]:
-    """Disclose the point- vs segment-mediated metric gap behind the signed anchor.
-
-    Derived from realized bytes (the source manifest's ``results.bbmp_scoring``
-    sweep), not from prose. If the anchor is absent the block says so explicitly;
-    a missing anchor must be visible in the gate report rather than silent.
-    """
 
     def _unavailable(reason: str) -> dict[str, Any]:
         return {
@@ -171,7 +140,6 @@ def _metric_framing_block(
 
 @dataclass(frozen=True)
 class DepthConvention:
-    """The signed ordering of the two depth observations."""
 
     primary: str
     sensitivity: str
@@ -181,7 +149,6 @@ class DepthConvention:
 
 @dataclass(frozen=True)
 class ComplaintPoint:
-    """One realized point and its transformed model-grid location."""
 
     point_id: str
     source_file: str
@@ -194,7 +161,6 @@ class ComplaintPoint:
 
 @dataclass(frozen=True)
 class StrictDepthPoint:
-    """One curated strict-depth row transformed onto the realized model grid."""
 
     point_id: str
     location_name: str
@@ -217,7 +183,6 @@ def load_strict_depth_points(
     event_window_start: str,
     event_window_end: str,
 ) -> tuple[list[StrictDepthPoint], dict[str, Any]]:
-    """Load only signed strict-depth rows in the scoring event and model grid."""
 
     import pandas as pd
 
@@ -286,7 +251,6 @@ def load_strict_depth_points(
 
 
 def load_depth_convention(path: Path) -> DepthConvention:
-    """Read and validate the signed convention declaration without inference."""
     if not path.exists():
         raise FileNotFoundError(f"declared depth-convention file is absent: {path}")
     try:
@@ -335,12 +299,11 @@ def load_bbmp_points(
     width: int,
     expected_count: int | None = 399,
 ) -> tuple[list[ComplaintPoint], dict[str, Any]]:
-    """Load all BBMP point geometries and retain only cells inside the raster."""
     raw_points: list[tuple[str, str, int, float, float]] = []
     for source_file in _candidate_point_files(path):
         try:
             frame = gpd.read_file(source_file)
-        except Exception as exc:  # Fiona/GDAL errors vary by installed driver.
+        except Exception as exc:
             raise G1ScoringError(f"could not read complaint artifact {source_file}: {exc}") from exc
         if frame.crs is None:
             raise G1ScoringError(f"complaint artifact has no CRS: {source_file}")
@@ -365,8 +328,6 @@ def load_bbmp_points(
             "refusing to silently score a different label set"
         )
 
-    # Re-read each file in its declared CRS and transform point coordinates to
-    # the model grid.  This avoids assuming that a driver returned WGS84.
     transformed: list[ComplaintPoint] = []
     excluded = 0
     for source_file in _candidate_point_files(path):
@@ -431,7 +392,6 @@ def _spatial_null_score(
     max_snap_distance_m: float,
     fixed_unscorable_count: int = 0,
 ) -> dict[str, Any]:
-    """Translate the realized complaint pattern over the road domain with wraparound."""
 
     if n_draws <= 0:
         raise ValueError("G1 spatial-null draw count must be positive")
@@ -642,10 +602,6 @@ def _convention_score(
     if excluded_mask is None:
         score["flooded_road_cell_fraction"] = float(raw_flooded_cells / road_cell_count)
     else:
-        # Side metric only: with a storage-water exclusion applied, the reported
-        # fraction is computed over NON-excluded road cells and labelled as such;
-        # the raw all-road-cells value (which includes initial-condition water
-        # in excluded basins) is retained under an explicit field.
         keep = np.logical_and(on_road, ~np.asarray(excluded_mask, dtype=bool))
         kept_flooded_cells = int(
             np.logical_and(keep, depth_arr >= float(PRIMARY_RULE.depth_threshold_m)).sum()
@@ -668,7 +624,7 @@ def _depth_band_score(
     local_max: bool,
     in_band_threshold: float,
 ) -> dict[str, Any]:
-    """Score one predeclared G3 depth-reading convention on strict rows."""
+    "Score one predeclared G3 depth-reading convention on strict rows."
 
     details: list[dict[str, Any]] = []
     within = 0
@@ -760,7 +716,6 @@ def _source_groundtruth_reproduction(
     local_score: dict[str, Any],
     exact_score: dict[str, Any],
 ) -> dict[str, Any]:
-    """Check rerun readings against the historical manifest's rounded point records."""
 
     try:
         historical = source_manifest["results"]["groundtruth_scoring"]["points_detail"]
@@ -809,7 +764,7 @@ def _source_groundtruth_reproduction(
 
 
 def _assert_product_matches_frame(product: DepthProduct, frame: Any, *, convention: str) -> None:
-    """Ensure a scored convention cannot silently diverge from the rendered product."""
+    "Ensure a scored convention cannot silently diverge from the rendered product."
 
     realized = {
         int(row.segment_id): (
@@ -854,7 +809,7 @@ def _gate_verdict(
     hit_rate_threshold: float,
     lift_threshold: float,
 ) -> tuple[str, str]:
-    """Return a scope-aware verdict; a reduced population can never pass G1."""
+    "Return a scope-aware verdict; a reduced population can never pass G1."
 
     denominator = int(score["fixed_denominator_points"])
     if expected_point_count is not None and denominator != expected_point_count:
@@ -903,9 +858,6 @@ def _resolve_score_config(
         "strict_depth_points": strict_depth_points,
     }
     if excluded:
-        # Storage-water exclusion inputs resolve HERE, at aggregated startup
-        # pre-flight (rule 7): a missing basin raster or unknown mode must fail
-        # before any directory is created or manifest written.
         if basin_class_raster is None:
             errors.append(
                 "basin_class_raster: required when excluded_basin_classes is set "
@@ -960,8 +912,6 @@ def _resolve_score_config(
         "max_snap_distance_m": max_snap_distance_m,
     }
     if excluded:
-        # Absent when no exclusion was requested: manifests stay byte-compatible
-        # with the pre-exclusion schema minus these keys.
         resolved["basin_class_raster"] = basin_class_raster
         resolved["excluded_basin_classes"] = sorted(excluded)
         resolved["exclusion_mode"] = exclusion_mode
@@ -993,7 +943,6 @@ def score_g1(
     excluded_basin_classes: frozenset[int] | None = None,
     exclusion_mode: str = "segment_touch",
 ) -> dict[str, Any]:
-    """Run the CPU-only G1 scorer and write a terminal report/manifest."""
     excluded_basin_classes = frozenset(excluded_basin_classes or frozenset())
     config = _resolve_score_config(
         depth_raster=depth_raster,
@@ -1068,8 +1017,6 @@ def score_g1(
 
         inputs = load_aligned_rasters(depth_raster, road_raster)
         lookup = pd.read_csv(lookup_csv)
-        # Storage-water exclusion: when scoring an EXCLUDED product, the scorer's own
-        # recomputation must apply the identical declared exclusion -- otherwise the
         # consistency assert below would refuse the very product under test.
         excluded_mask = None
         storage_exclusion_block: dict[str, Any] | None = None
@@ -1403,7 +1350,6 @@ def main(
         help="Exclusion semantics of the scored product: segment_touch or cell",
     ),
 ) -> None:
-    """Score G1 and write a provenance-bearing JSON report."""
     with config.open(encoding="utf-8") as handle:
         cfg = yaml.safe_load(handle) or {}
     gt_cfg = cfg.get("groundtruth", {})

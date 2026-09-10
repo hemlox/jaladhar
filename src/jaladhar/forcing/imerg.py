@@ -1,23 +1,11 @@
-"""GPM IMERG Historical Rainfall Forcing Adapter.
-
-Adapts half-hourly GPM_3IMERGHH v07 granules (0.1 deg) to the canonical 10 m
-domain grid (3421 x 3515, EPSG:32643).
-
-Converts native half-hourly precipitation rate (mm/hr) to incremental depth (mm)
-for each interval: depth_mm = rate_mm_hr * 0.5 hr.
-
-HONESTY CONSTRAINT (enforced in code):
-The BBMP extent falls inside a block of 0.1-deg IMERG cells (16 cells covering
-the canonical 10 m domain raster). The adapter exposes the native cell mapping
-so downstream code cannot silently assume fine-scale rainfall detail.
-"""
+"""Adapts half-hourly GPM_3IMERGHH v07 granules (0.1 deg) to the canonical 10 m"""
 
 from __future__ import annotations
 
 import json
 import subprocess
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -49,7 +37,6 @@ def git_sha() -> str:
 
 
 def resolve_config(cfg: dict[str, Any]) -> dict[str, Any]:
-    """Validate all required config keys at startup. Fails immediately with aggregated errors."""
     missing: list[str] = []
     for key in ["domain_config", "mode", "historical", "output"]:
         if key not in cfg:
@@ -77,14 +64,6 @@ def resolve_config(cfg: dict[str, Any]) -> dict[str, Any]:
 
 
 def compute_imerg_grid_mapping(grid: Grid) -> tuple[np.ndarray, np.ndarray, np.ndarray, int]:
-    """Compute mapping from canonical 10 m UTM grid to IMERG (ilon, ilat) indices.
-
-    Returns:
-        ilon_grid: (height, width) array of IMERG longitude indices
-        ilat_grid: (height, width) array of IMERG latitude indices
-        native_cell_ids: (height, width) array of unique integer IDs per distinct IMERG cell
-        n_distinct: Number of distinct IMERG cells covering the grid
-    """
     cols = np.arange(grid.width)
     rows = np.arange(grid.height)
     x_coords = grid.bounds[0] + (cols + 0.5) * grid.resolution
@@ -95,15 +74,12 @@ def compute_imerg_grid_mapping(grid: Grid) -> tuple[np.ndarray, np.ndarray, np.n
     lons, lats = transformer.transform(xx, yy)
 
     # IMERG v07 grid: 0.1 deg cells, center at -179.95 + i*0.1, -89.95 + j*0.1
-    # Bins are [lon - 0.05, lon + 0.05) -> floor((lon + 180) / 0.1)
     ilon = np.floor((lons + 180.0) / 0.1).astype(np.int32)
     ilat = np.floor((lats + 90.0) / 0.1).astype(np.int32)
 
-    # Generate unique integer cell IDs for each (ilon, ilat) pair
     unique_pairs = sorted(set(zip(ilon.flatten(), ilat.flatten(), strict=False)))
     pair_to_id = {pair: idx for idx, pair in enumerate(unique_pairs)}
 
-    # Vectorized assignment
     native_cell_ids = np.zeros(ilon.shape, dtype=np.int32)
     for pair, cid in pair_to_id.items():
         mask = (ilon == pair[0]) & (ilat == pair[1])
@@ -113,15 +89,13 @@ def compute_imerg_grid_mapping(grid: Grid) -> tuple[np.ndarray, np.ndarray, np.n
 
 
 def parse_granule_timestamp(file_name: str) -> datetime:
-    """Extract start timestamp from IMERG filename."""
     # Example: 3B-HHR.MS.MRG.3IMERG.20220905-S000000-E002959.0000.V07B.HDF5
     stamp = file_name.split(".3IMERG.")[1].split("-")[0:2]
-    dt_str = stamp[0] + stamp[1][1:]  # YYYYMMDDHHMMSS
-    return datetime.strptime(dt_str, "%Y%m%d%H%M%S").replace(tzinfo=timezone.utc)
+    dt_str = stamp[0] + stamp[1][1:]
+    return datetime.strptime(dt_str, "%Y%m%d%H%M%S").replace(tzinfo=UTC)
 
 
 class ImergHistoricalAdapter(RainfallAdapter):
-    """Historical rainfall adapter for GPM IMERG half-hourly data."""
 
     def __init__(self, config_path: Path = REPO / "configs/forcing.yaml"):
         with open(config_path) as f:
@@ -129,13 +103,11 @@ class ImergHistoricalAdapter(RainfallAdapter):
         self.config = resolve_config(raw_cfg)
         self.config_path = config_path
 
-        # Load domain grid
         domain_cfg_path = REPO / self.config["domain_config"]
         with open(domain_cfg_path) as f:
             domain_cfg = yaml.safe_load(f)
         self.grid, self.grid_diag = build_grid(domain_cfg, REPO)
 
-        # Precompute coordinate mapping
         (
             self.ilon_grid,
             self.ilat_grid,
@@ -160,7 +132,6 @@ class ImergHistoricalAdapter(RainfallAdapter):
         start_time: datetime,
         end_time: datetime,
     ) -> RainfallEvent:
-        """Load IMERG granules within [start_time, end_time] and map to canonical grid."""
         intervals: list[RainfallInterval] = []
 
         for p in self.granule_files:
@@ -169,13 +140,10 @@ class ImergHistoricalAdapter(RainfallAdapter):
                 continue
 
             with h5py.File(p, "r") as f:
-                precip_global = f["Grid/precipitation"][0]  # shape (3600, 1800) in mm/hr
-                # Extract rates onto canonical grid
+                precip_global = f["Grid/precipitation"][0]
                 rate_mm_hr = precip_global[self.ilon_grid, self.ilat_grid]
-                # Negative values are IMERG fill/nodata -> 0.0 mm/hr
                 rate_mm_hr = np.where(rate_mm_hr < 0, 0.0, rate_mm_hr)
 
-                # Convert mm/hr across 30-min (0.5 hr) interval to incremental depth (mm)
                 interval_minutes = 30.0
                 depth_mm = rate_mm_hr * (interval_minutes / 60.0)
 
@@ -224,7 +192,6 @@ def main(
     end: str = typer.Option("2022-09-05T23:30:00Z", help="End timestamp ISO UTC"),
     out: Path = typer.Option(REPO / "runs/forcing", help="Output directory for run manifest"),
 ) -> None:
-    """Run IMERG historical adapter and verify Sept 5 2022 target metrics."""
     out.mkdir(parents=True, exist_ok=True)
     manifest_path = out / "manifest.json"
 
@@ -235,7 +202,7 @@ def main(
         "status": "running",
         "git_sha": git_sha(),
         "config_path": str(config),
-        "start_time_iso": datetime.now(timezone.utc).isoformat(),
+        "start_time_iso": datetime.now(UTC).isoformat(),
     }
     manifest_path.write_text(json.dumps(manifest, indent=2))
 

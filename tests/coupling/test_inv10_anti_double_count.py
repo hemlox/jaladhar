@@ -65,127 +65,55 @@ condition, and runs a bounded (<=2-step) full-domain realization if the seam eve
 
 from __future__ import annotations
 
-import copy
 import json
 import re
-from dataclasses import replace as dc_replace
 from pathlib import Path
 from typing import Any
 
 import pytest
 import torch
+from conftest import chain_graph, closed_solver_config, coupling_config, static_fields
 
 import jaladhar.coupling.solver_hook as hook
 from jaladhar.coupling import exchange as exchange_mod
 from jaladhar.coupling.config import resolve_config
 from jaladhar.coupling.exchange import build_node_state
 from jaladhar.coupling.ledger import LEGACY_ZERO_BOUND_RELATIVE, AntiDoubleCountError
-from jaladhar.coupling.router import RefuseLoadError, build_drain_graph, load_drain_graph
+from jaladhar.coupling.router import RefuseLoadError, load_drain_graph
 from jaladhar.coupling.solver_hook import simulate_coupled
 from jaladhar.solver.acc import SolverParams, acc_step
 from jaladhar.solver.run import uniform_storm
-from jaladhar.solver.state import StaticFields, initial_state, load_solver_config
+from jaladhar.solver.state import initial_state
 
 REPO = Path(__file__).resolve().parents[2]
 
 # --- hand-reference constants (typed literals HERE; V2: not imported from production) -------
-AREA_M2 = 100.0  # contract units block cell_area (= resolution_m^2, domain resolution 10 m)
-CAP_M_S = 3.2e-6  # live legacy drain prior — declared-synthetic, same status as the config prior
-H_SEED_M = 0.05  # wet seed: puts every cell above hf_floor so capture is live on step 1
-BOUND_REL = 4.0 * float(torch.finfo(torch.float32).eps)  # the documented 4 x eps32 noise bound
+AREA_M2 = 100.0
+CAP_M_S = 3.2e-6
+H_SEED_M = 0.05
+BOUND_REL = 4.0 * float(torch.finfo(torch.float32).eps)
 
-# Meta-check target: production must enforce exactly the documented bound (V1: the doc's
-# number and the enforced number are different claims until compared).
 assert LEGACY_ZERO_BOUND_RELATIVE == BOUND_REL
 
 
 def _hand_bound_m3(scale_m3: float) -> float:
-    """The documented acceptance bound, recomputed by hand: 4 x eps32 x scale."""
     return BOUND_REL * max(abs(float(scale_m3)), 1e-12)
 
 
-# ---------------------------------------------------------------------------
-# Fixtures — declared-synthetic; reused verbatim from tests/coupling/test_solver_hook.py
-# (house pattern). NOT Bengaluru data; rule 1 respected.
-# ---------------------------------------------------------------------------
-
-
-def _static(shape: tuple[int, int], *, drain_cap_m_s: float = CAP_M_S) -> StaticFields:
-    """Flat closed domain with a LIVE legacy drain prior (zeroing must matter)."""
-    hh, ww = shape
-    z = lambda *s: torch.zeros(*s, dtype=torch.float32)  # noqa: E731
-    f = lambda *s, v=0.0: torch.full((*s,), v, dtype=torch.float32)  # noqa: E731
-    return StaticFields(
-        dz_x=z(hh, ww - 1),
-        dz_y=z(hh - 1, ww),
-        n_x=f(hh, ww - 1, v=0.03),
-        n_y=f(hh - 1, ww, v=0.03),
-        c_x=torch.ones(hh, ww - 1, dtype=torch.float32),
-        c_y=torch.ones(hh - 1, ww, dtype=torch.float32),
-        drain_cap_m_s=f(hh, ww, v=drain_cap_m_s),
-        infil_rate_m_s=z(hh, ww),
-        edge_w_n=f(hh, v=0.03),
-        edge_e_n=f(hh, v=0.03),
-        edge_n_n=f(ww, v=0.03),
-        edge_s_n=f(ww, v=0.03),
-        edge_w_s=f(hh, v=1e-4),
-        edge_e_s=f(hh, v=1e-4),
-        edge_n_s=f(ww, v=1e-4),
-        edge_s_s=f(ww, v=1e-4),
-        edge_open=(0.0, 0.0, 0.0, 0.0),  # CLOSED micro-domain: boundary_out == 0 exactly
-        shape=shape,
-    )
+def _static(shape: tuple[int, int], *, drain_cap_m_s: float = CAP_M_S):
+    return static_fields(shape, drain_cap_m_s=drain_cap_m_s)
 
 
 def _chain_graph(rows: int, cols: int, n_nodes: int = 8, cap: float = 0.05):
-    """n-node capacity-bearing chain across distinct cells; terminal node is an outfall."""
-    base_r, base_c = max(1, rows // 8), max(1, cols // 8)
-    cells = [(base_r + i, base_c) for i in range(n_nodes)]
-    assert cells[-1][0] < rows and cells[-1][1] < cols
-    nmap = torch.full((rows, cols), -1, dtype=torch.int32)
-    for i, (r, c) in enumerate(cells):
-        nmap[r, c] = i + 1
-    edges = [(i, i + 1, cap) for i in range(1, n_nodes)]
-    return build_drain_graph(
-        edge_from=torch.tensor([e[0] - 1 for e in edges], dtype=torch.int64),
-        edge_to=torch.tensor([e[1] - 1 for e in edges], dtype=torch.int64),
-        capacity_bearing=torch.ones(len(edges), dtype=torch.bool),
-        q_cap_nom_m3s=torch.tensor([float(e[2]) for e in edges], dtype=torch.float64),
-        width_mean_m=torch.full((n_nodes,), 6.71, dtype=torch.float64),
-        shaft_length_proxy_m=1.0,
-        node_elev_m=torch.linspace(10.0, 0.0, n_nodes, dtype=torch.float64),
-        contrib_area_m2=torch.zeros(n_nodes, dtype=torch.float64),
-        outfall_node=(torch.arange(n_nodes) == n_nodes - 1),
-        node_cell_row=torch.tensor([c[0] for c in cells], dtype=torch.int32),
-        node_cell_col=torch.tensor([c[1] for c in cells], dtype=torch.int32),
-        node_id_map=nmap,
-        node_cell_count=torch.ones(n_nodes, dtype=torch.int64),
-    )
+    return chain_graph(rows, cols, n_nodes=n_nodes, cap=cap)
 
 
 def _coupling_cfg(tmp_path: Path):
-    base = resolve_config(REPO / "configs" / "coupling.yaml", REPO)
-    outs = dc_replace(
-        base.outputs,
-        run_dir=tmp_path / "run",
-        manifest=tmp_path / "run" / "manifest.json",
-        surcharge_events_csv=tmp_path / "run" / "products" / "surcharge_events.csv",
-        event_continuity_csv=tmp_path / "run" / "products" / "event_continuity.csv",
-        depth_series_dir=tmp_path / "run" / "depth",
-    )
-    return dc_replace(base, outputs=outs)
+    return coupling_config(REPO, tmp_path)
 
 
 def _solver_cfg() -> dict[str, Any]:
-    cfg = load_solver_config(REPO / "configs" / "solver.yaml", REPO)
-    cfg = copy.deepcopy(cfg)
-    cfg["boundaries"]["mode"] = "closed"  # closed synthetic micro-domain
-    return cfg
-
-
-# ---------------------------------------------------------------------------
-# GREEN arm — pristine code realizes the claim; observables from manifest lines on disk
-# ---------------------------------------------------------------------------
+    return closed_solver_config(REPO)
 
 
 def test_inv10_green_mirror_zero_exactly_and_capture_positive(tmp_path) -> None:
@@ -226,14 +154,12 @@ def test_inv10_green_mirror_zero_exactly_and_capture_positive(tmp_path) -> None:
     host = man["mass_host_budget_verbatim"]
     led = man["coupling_ledger"]
 
-    # The wet-storm premise must be realized first: rain actually fell, steps actually ran.
     assert man["steps"] > 0
     assert host["rain_in_m3"] > 0.0
 
-    # --- TERM 1: legacy drained term, three surfaces, each == 0.0 EXACTLY -----------------
-    mirror_host = host["drain_out_m3"]  # mass.py accumulator (module 1)
-    mirror_led = led["legacy_drain_out_m3"]  # coupling ledger mirror (module 2)
-    mirror_top = man["legacy_drain_out_m3"]  # top-level D-E line (serialized from module 2)
+    mirror_host = host["drain_out_m3"]
+    mirror_led = led["legacy_drain_out_m3"]
+    mirror_top = man["legacy_drain_out_m3"]
     print(f"\n[inv10-green] legacy MassBudget.drain_out_m3 (verbatim): {mirror_host!r}")
     print(f"[inv10-green] ledger.legacy_drain_out_m3     (verbatim): {mirror_led!r}")
     print(f"[inv10-green] manifest top-level legacy_drain_out_m3:    {mirror_top!r}")
@@ -241,8 +167,6 @@ def test_inv10_green_mirror_zero_exactly_and_capture_positive(tmp_path) -> None:
     assert mirror_led == 0.0, f"ledger mirror moved: {mirror_led!r}"
     assert mirror_top == 0.0, f"top-level D-E line moved: {mirror_top!r}"
 
-    # Documented acceptance form: |mirror| within 4 x eps32 x scale, scale recomputed by hand
-    # from the manifest's own values (not the ledger's bound computation).
     scale = max(abs(host["rain_in_m3"]), abs(host["v_current_m3"]), 1e-12)
     bound = _hand_bound_m3(scale)
     assert abs(mirror_top) <= bound, (
@@ -251,7 +175,6 @@ def test_inv10_green_mirror_zero_exactly_and_capture_positive(tmp_path) -> None:
     )
     print(f"[inv10-green] hand-recomputed bound = 4*eps32*{scale!r} = {bound:.3e} m3")
 
-    # --- TERM 2: capture strictly positive under the wet storm ----------------------------
     captured_top = man["captured_to_drains_m3"]
     captured_led = led["captured_to_drains_m3"]
     print(
@@ -261,14 +184,11 @@ def test_inv10_green_mirror_zero_exactly_and_capture_positive(tmp_path) -> None:
     assert captured_top > 0.0, "coupled wet-storm run captured nothing — capture side vacuous"
     assert captured_led == captured_top, "manifest surfaces disagree on captured_to_drains_m3"
 
-    # The two D-E quantities are DISTINCT lines (guard c's red test depends on the separation).
     assert "drain_out_net_m3" in man and "surcharge_returned_m3" in man
     print("[inv10-green] PASS: mirror==0.0 exactly on 3 surfaces; captured>0; D-E lines distinct")
 
 
-# ---------------------------------------------------------------------------
 # RED arm 1 — THE named mutation, nothing else touched: L1 refuses pre-loop
-# ---------------------------------------------------------------------------
 
 
 def test_inv10_red_arm1_identity_passthrough_refuses_at_driver_assert(
@@ -288,7 +208,7 @@ def test_inv10_red_arm1_identity_passthrough_refuses_at_driver_assert(
     this file's ownership. V7 scope: input assembly only; no loop executes."""
     cfg = _coupling_cfg(tmp_path)
     scfg = _solver_cfg()
-    monkeypatch.setattr(hook, "zero_drain_cap_out_of_place", lambda s: s)  # THE MUTATION
+    monkeypatch.setattr(hook, "zero_drain_cap_out_of_place", lambda s: s)
 
     with pytest.raises(RuntimeError, match="guard \\(a\\)") as excinfo:
         simulate_coupled(
@@ -305,19 +225,13 @@ def test_inv10_red_arm1_identity_passthrough_refuses_at_driver_assert(
     print(f"\n[inv10-red-arm1] refused verbatim: {excinfo.value}")
     assert "zeroed copy still carries non-zero" in str(excinfo.value)
 
-    # Realized manifest state (see docstring FINDING): last in-place update survives; no
-    # terminal-status handler covers the pre-loop guard refusal.
     man = json.loads(cfg.outputs.manifest.read_text())
     assert man["status"] == "running", (
         f"expected the documented pre-loop reality (status stays at its last in-place value), "
         f"got {man['status']!r} — if this now lands a terminal status, UPDATE this test and "
         "delete the docstring FINDING: the integration unit closed the gap"
     )
-    # DECLARATION-parity check (relabelled per the vacuity-audit adjudication): this
-    # manifest flag is guard b's DECLARATION surface — the driver recording that the
-    # coupled_mode_transformation was APPLIED. It is NOT itself the realized-zeroing
-    # proof; that lives in L1/L2, which fired above. Pinning the declaration keeps the
-    # manifest surface honest without this assert claiming more than it declares.
+
     assert man["coupled_mode_transformation"]["legacy_drain_disabled"] is True, (
         "guard-b DECLARATION surface moved: manifest no longer records "
         "legacy_drain_disabled=true (the REALIZED zeroing is proven separately by L1 "
@@ -327,11 +241,6 @@ def test_inv10_red_arm1_identity_passthrough_refuses_at_driver_assert(
         "[inv10-red-arm1] manifest status realized as 'running' (pre-loop refusal precedes "
         "the driver's terminal-status try block) — NAMED GAP, integration-unit item"
     )
-
-
-# ---------------------------------------------------------------------------
-# RED arm 2 — L1 disarmed (house pattern): L2, the exchange entry assert, refuses on step 1
-# ---------------------------------------------------------------------------
 
 
 def test_inv10_red_arm2_identity_passthrough_refuses_at_exchange_entry(
@@ -345,8 +254,8 @@ def test_inv10_red_arm2_identity_passthrough_refuses_at_exchange_entry(
     V7 scope: one rejected coupled step on a 16x16 toy domain; scope claimed: the L1->L2 seam."""
     cfg = _coupling_cfg(tmp_path)
     scfg = _solver_cfg()
-    monkeypatch.setattr(hook, "zero_drain_cap_out_of_place", lambda s: s)  # THE MUTATION
-    monkeypatch.setattr(hook, "_assert_zeroed", lambda s: None)  # L1 disarmed
+    monkeypatch.setattr(hook, "zero_drain_cap_out_of_place", lambda s: s)
+    monkeypatch.setattr(hook, "_assert_zeroed", lambda s: None)
 
     with pytest.raises(ValueError, match="guard \\(a\\)") as excinfo:
         simulate_coupled(
@@ -366,12 +275,6 @@ def test_inv10_red_arm2_identity_passthrough_refuses_at_exchange_entry(
     man = json.loads(cfg.outputs.manifest.read_text())
     assert man["status"] == "failed"
     assert "guard (a)" in man["error"]
-
-
-# ---------------------------------------------------------------------------
-# RED arm 3 — L1+L2 disarmed: the double-count configuration FULLY realized;
-#             the invariant's own teeth (L3 AntiDoubleCountError) fire on step 1
-# ---------------------------------------------------------------------------
 
 
 def test_inv10_red_arm3_double_count_realized_then_ledger_refuses(tmp_path, monkeypatch) -> None:
@@ -407,7 +310,6 @@ def test_inv10_red_arm3_double_count_realized_then_ledger_refuses(tmp_path, monk
     graph = _chain_graph(16, 16, n_nodes=2)
     static_live = _static((16, 16))
 
-    # --- Part 1: independent witness of the double-count signature ------------------------
     dx = float(scfg["_domain"]["resolution_m"])
     p = SolverParams.from_config(scfg, dx)
     dt_w = 1.0
@@ -415,13 +317,11 @@ def test_inv10_red_arm3_double_count_realized_then_ledger_refuses(tmp_path, monk
     h0 = torch.full_like(h0, H_SEED_M)
     h_acc, qx_a, qy_a, _diag = acc_step(h0, qx0, qy0, static_live, dt_w, p, rain_rate_m_s=0.0)
 
-    # legacy term: hand-typed acc.py:313-314 semantics over the LIVE field (my arithmetic)
     legacy_witness_m3 = (
         float(torch.minimum(static_live.drain_cap_m_s * dt_w, h_acc).sum(dtype=torch.float64))
         * AREA_M2
     )
-    # capture term: the exchange sees a ZEROED view (its entry assert intact here);
-    # I reduce captured_depth_m myself instead of reading cr.capture_m3.
+
     cr = exchange_mod.couple_step(
         h_acc,
         qx_a,
@@ -450,13 +350,9 @@ def test_inv10_red_arm3_double_count_realized_then_ledger_refuses(tmp_path, monk
         f"documented bound {bound_witness:.3e} m3 — the 'orders above' premise fails"
     )
 
-    # --- Part 2: production path refuses under the fully-realized defect ------------------
     real_couple_step = hook.couple_step
 
     def exchange_view_shim(h, qx, qy, static_arg, node_state, g, dt):
-        """Disarmament of the L2 DETECTOR ONLY: feed couple_step a zeroed view so the
-        demonstration reaches L3. The DEFECT stays fully live on the solver side — acc_step
-        below drains through the untouched LIVE raster."""
         return real_couple_step(
             h,
             qx,
@@ -467,9 +363,9 @@ def test_inv10_red_arm3_double_count_realized_then_ledger_refuses(tmp_path, monk
             dt,
         )
 
-    monkeypatch.setattr(hook, "zero_drain_cap_out_of_place", lambda s: s)  # THE MUTATION
-    monkeypatch.setattr(hook, "_assert_zeroed", lambda s: None)  # L1 disarmed
-    monkeypatch.setattr(hook, "couple_step", exchange_view_shim)  # L2 disarmed
+    monkeypatch.setattr(hook, "zero_drain_cap_out_of_place", lambda s: s)
+    monkeypatch.setattr(hook, "_assert_zeroed", lambda s: None)
+    monkeypatch.setattr(hook, "couple_step", exchange_view_shim)
 
     with pytest.raises(AntiDoubleCountError, match="guard \\(c\\)") as excinfo:
         simulate_coupled(
@@ -509,9 +405,9 @@ def test_inv10_red_arm3_double_count_realized_then_ledger_refuses(tmp_path, monk
     )
 
 
-# ---------------------------------------------------------------------------
 # BLOCKED companion (V7): full-domain coverage names what closes it
-# ---------------------------------------------------------------------------
+
+
 @pytest.mark.slow
 def test_real_graph_companion_full_or_blocked() -> None:
     """The SAME green-arm claim on the REAL full domain (real buffered terrain + real

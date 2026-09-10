@@ -1,17 +1,4 @@
-"""Phase 3 Validation Gate: September 2022 Event Replay and Uncalibrated Baseline Scoring.
-
-PROMPT.md §8 & CLAUDE.md:
-- Hard go/no-go gate for the project.
-- Forces model with GPM IMERG historical half-hourly adapter over the Sept 2022 flood event.
-- Evaluates uncalibrated baseline against three independent label sets:
-  1. BBMP flood-prone locations (399 raw points across 3 KMLs: 70 + 129 + 200) -> hit rate and FAR
-  2. Sentinel-1 SAR flood extent (06:10 IST 5 Sept 2022 SAR pass), STRATIFIED BY URBAN DENSITY,
-     with and without permanent-water exclusion (basin_class 1, 2, 3), across a depth threshold
-     sweep.
-  3. Ground-truth geolocated flood points (24 points) -> depth as a band and depth RMSE.
-- Evaluates against published bar (CSI ≈ 0.73, RMSE ≈ 0.17 m; Water 17(8):1239, 2025).
-- Enforces strict anti-fabrication and Rule 6/7 provenance requirements.
-"""
+"""Run the retained historical replay and BBMP/ground-truth validation gate."""
 
 from __future__ import annotations
 
@@ -26,14 +13,9 @@ import geopandas as gpd
 import numpy as np
 import pyproj
 import rasterio
-import scipy.ndimage
 import torch
 import typer
 import yaml
-from rasterio.crs import CRS
-from rasterio.vrt import WarpedVRT
-from rasterio.windows import from_bounds
-from scipy.interpolate import Rbf, RegularGridInterpolator
 from scipy.spatial import cKDTree
 
 from jaladhar.forcing.imerg import ImergHistoricalAdapter
@@ -50,14 +32,10 @@ from jaladhar.solver.run import compute_budget_estimate, estimate_steps_band, wr
 from jaladhar.solver.state import load_domain, load_solver_config
 from jaladhar.solver.timestep import TimestepController
 from jaladhar.terrain.grid import build_grid
-from jaladhar.validation.density import run_density_pipeline
 from jaladhar.validation.groundtruth import (
     load_and_validate_groundtruth,
     resolve_groundtruth_scoring_config,
     select_event_groundtruth,
-)
-from jaladhar.validation.scoring import (
-    score_threshold_curve,
 )
 
 app = typer.Typer(add_completion=False)
@@ -70,21 +48,17 @@ def resolve_phase3_config(
     val_cfg: dict[str, Any],
     compute_cfg: dict[str, Any],
 ) -> dict[str, Any]:
-    """Validate all required config keys at startup per CLAUDE.md Rule 7."""
     missing: list[str] = []
 
-    # Solver keys
     for k in ["physics", "timestep", "wetdry", "buildings", "boundaries", "sinks", "mass"]:
         if k not in solver_cfg:
             missing.append(f"solver.{k}")
 
-    # Forcing keys
     if forcing_cfg.get("mode") != "historical":
         missing.append("forcing.mode == 'historical'")
     if "historical" not in forcing_cfg or "granules_dir" not in forcing_cfg["historical"]:
         missing.append("forcing.historical.granules_dir")
 
-    # Compute keys
     for key in ["anchor", "budget", "pool", "vram"]:
         if key not in compute_cfg:
             missing.append(f"compute.{key}")
@@ -93,7 +67,6 @@ def resolve_phase3_config(
     if "vram" in compute_cfg and "safety_margin_fraction" not in compute_cfg["vram"]:
         missing.append("compute.vram.safety_margin_fraction")
 
-    # Validation keys
     if "groundtruth" not in val_cfg:
         missing.append("validation.groundtruth")
     else:
@@ -104,23 +77,6 @@ def resolve_phase3_config(
         ]:
             if key not in val_cfg["groundtruth"]:
                 missing.append(f"validation.groundtruth.{key}")
-    if "density_stratification" not in val_cfg:
-        missing.append("validation.density_stratification")
-    else:
-        for key in ["output_density_classes_path"]:
-            if key not in val_cfg["density_stratification"]:
-                missing.append(f"validation.density_stratification.{key}")
-    if "sar_water_classifier" not in val_cfg:
-        missing.append("validation.sar_water_classifier")
-    else:
-        for key in [
-            "flood_scene_tif",
-            "flood_calibration_xml",
-            "basin_class_path",
-            "water_threshold_db",
-        ]:
-            if key not in val_cfg["sar_water_classifier"]:
-                missing.append(f"validation.sar_water_classifier.{key}")
     if "groundtruth" in val_cfg:
         for key in ["bbmp_kml_dir", "road_segment_id_path"]:
             if key not in val_cfg["groundtruth"]:
@@ -140,64 +96,6 @@ def resolve_phase3_config(
     }
 
 
-def compute_s1_sigma0_db(
-    tif_path: Path,
-    xml_path: Path,
-    dst_bounds: Any,
-    dst_shape: tuple[int, int],
-    dst_transform: Any,
-) -> tuple[np.ndarray, np.ndarray]:
-    """Compute calibrated Sentinel-1 VV sigma0 (dB) on target grid."""
-    import xml.etree.ElementTree as ET
-
-    with rasterio.open(tif_path) as src:
-        gcps, _ = src.gcps
-        with WarpedVRT(src, crs=CRS.from_epsg(32643)) as vrt:
-            win = from_bounds(*dst_bounds, transform=vrt.transform)
-            dn = vrt.read(1, window=win, out_shape=dst_shape).astype(np.float32)
-
-    tree = ET.parse(xml_path)
-    vectors = tree.getroot().find("calibrationVectorList")
-    lut_lines = [int(vec.find("line").text) for vec in vectors]
-    lut_pixels = np.fromstring(vectors[0].find("pixel").text, sep=" ", dtype=int)
-    lut_sigma0 = np.array(
-        [np.fromstring(vec.find("sigmaNought").text, sep=" ", dtype=np.float32) for vec in vectors]
-    )
-    interp = RegularGridInterpolator((lut_lines, lut_pixels), lut_sigma0, method="linear")
-
-    gcp_lons = np.array([g.x for g in gcps])
-    gcp_lats = np.array([g.y for g in gcps])
-    gcp_cols = np.array([g.col for g in gcps])
-    gcp_rows = np.array([g.row for g in gcps])
-
-    rbf_row = Rbf(gcp_lons, gcp_lats, gcp_rows, function="linear")
-    rbf_col = Rbf(gcp_lons, gcp_lats, gcp_cols, function="linear")
-
-    trans_to_wgs = pyproj.Transformer.from_crs("EPSG:32643", "EPSG:4326", always_xy=True)
-
-    rows_idx = np.linspace(0, dst_shape[0] - 1, 100)
-    cols_idx = np.linspace(0, dst_shape[1] - 1, 100)
-    rr, cc = np.meshgrid(rows_idx, cols_idx, indexing="ij")
-    xx, yy = rasterio.transform.xy(dst_transform, rr, cc)
-    lons, lats = trans_to_wgs.transform(np.array(xx), np.array(yy))
-
-    src_r = rbf_row(lons, lats)
-    src_c = rbf_col(lons, lats)
-    pts = np.column_stack([src_r.ravel(), src_c.ravel()])
-    lut_samples = interp(pts).reshape(100, 100)
-
-    zoom_factors = (dst_shape[0] / 100.0, dst_shape[1] / 100.0)
-    asigma_full = scipy.ndimage.zoom(lut_samples, zoom_factors, order=1).astype(np.float32)
-
-    valid = (dn > 0) & (asigma_full > 0)
-    sigma0_lin = np.zeros_like(dn)
-    sigma0_lin[valid] = (dn[valid] / asigma_full[valid]) ** 2
-
-    sigma0_db = np.full(dst_shape, np.nan, dtype=np.float32)
-    sigma0_db[valid] = 10.0 * np.log10(np.maximum(sigma0_lin[valid], 1e-7))
-    return sigma0_db, valid
-
-
 @dataclass
 class SimulationOutput:
     steps: int
@@ -209,10 +107,8 @@ class SimulationOutput:
     retry_attempts: int
     h_canonical_final: np.ndarray
     h_canonical_max: np.ndarray
-    h_sar_instant: np.ndarray
-    sar_timestamp_iso: str
     mass_dict: dict[str, Any]
-    depth_snapshots: list[tuple[float, str]]  # (sim_time_s, file_path)
+    depth_snapshots: list[tuple[float, str]]
     total_rain_volume_m3: float
     areal_mean_rain_mm: float
     distinct_imerg_cells: int
@@ -247,19 +143,16 @@ def run_phase3_simulation(
     out_dir: Path = REPO / "runs/phase3_validation",
     event_start_iso: str = "2022-09-04T00:00:00Z",
     event_end_iso: str = "2022-09-05T23:30:00Z",
-    sar_instant_iso: str = "2022-09-05T00:40:28Z",
-    snapshot_every_s: float = 1800.0,  # 30-min snapshot cadence
+    snapshot_every_s: float = 1800.0,
     lifecycle: RunManifest | None = None,
-    elevation_override: Path | None = None,  # master underpass: variant DEM on same grid
+    elevation_override: Path | None = None,
     h0_raster: Path | None = None,  # warm start: realized depth raster (canonical grid) at issue
-    tile: tuple[int, int, int, int] | None = None,  # (r0,r1,c0,c1) canonical-coord 1/N subdomain
+    tile: tuple[int, int, int, int] | None = None,
 ) -> SimulationOutput:
-    """Execute uncalibrated solver run forced by IMERG over September 2022 event."""
     out_dir.mkdir(parents=True, exist_ok=True)
     if lifecycle is None:
         raise ValueError("run_phase3_simulation requires the gate's RunManifest owner")
 
-    # 1. Load configs & pre-flight verification
     solver_cfg = load_solver_config(solver_cfg_path, REPO)
     with open(forcing_cfg_path) as f:
         forcing_cfg = yaml.safe_load(f)
@@ -271,7 +164,6 @@ def run_phase3_simulation(
 
     resolve_phase3_config(solver_cfg, forcing_cfg, val_cfg, compute_cfg)
 
-    # 2. Setup domain and grid
     grid, _ = build_grid(solver_cfg["_domain"], REPO)
     device = "cuda" if torch.cuda.is_available() else "cpu"
     if device == "cpu" and not compute_cfg.get("execution", {}).get(
@@ -312,21 +204,16 @@ def run_phase3_simulation(
             )
     p = SolverParams.from_config(solver_cfg, dx)
 
-    # 3. Load IMERG historical rainfall forcing
     adapter = ImergHistoricalAdapter(forcing_cfg_path)
     st = datetime.fromisoformat(event_start_iso.replace("Z", "+00:00"))
     et = datetime.fromisoformat(event_end_iso.replace("Z", "+00:00"))
-    sar_time = datetime.fromisoformat(sar_instant_iso.replace("Z", "+00:00"))
-
-    sar_sim_offset_s = (sar_time - st).total_seconds()
-    sim_duration_s = (et - st).total_seconds() + 1800.0  # include full final interval
+    sim_duration_s = (et - st).total_seconds() + 1800.0
 
     event = adapter.get_forcing(st, et)
     event.verify_mass_conservation()
     if event.mode is ForcingMode.NOWCAST:
         assert_nowcast_metadata_contract(event)
 
-    # Buffer native cell ids to match buffered solver domain (pad 50 cells)
     native_ids_canon = adapter.native_cell_ids
     has_uncovered_cells = bool(np.any(native_ids_canon < 0))
     native_ids_buf = (
@@ -343,7 +230,6 @@ def run_phase3_simulation(
         native_ids_lookup = native_ids_lookup[w_r0:w_r1, w_c0:w_c1]
     native_ids_tensor = torch.as_tensor(native_ids_lookup, dtype=torch.long, device=device)
 
-    # Pre-extract interval rates on GPU (m/s)
     interval_rates_gpu: list[torch.Tensor] = []
     interval_rates_native_m_s: list[np.ndarray] = []
     for iv in event.intervals:
@@ -364,7 +250,6 @@ def run_phase3_simulation(
     if event.mode is ForcingMode.NOWCAST:
         assert_rate_conversion_parameterised(event, interval_rates_native_m_s)
 
-    # 4. Compute budget estimate before launch (CLAUDE.md §Compute)
     band = tuple(solver_cfg["compute_estimate"]["h_max_band_m"])
     n_lo, n_hi = estimate_steps_band(solver_cfg, sim_duration_s, band)
     n_cells = static.shape[0] * static.shape[1]
@@ -410,9 +295,6 @@ def run_phase3_simulation(
     typer.echo(f"Domain Areal Mean Rainfall: {event.areal_mean_total_mm:.2f} mm")
     typer.echo(f"Total Domain Rainfall Volume: {event.total_volume_m3:,.1f} m³")
     typer.echo(
-        f"SAR Comparison Instant: {sar_instant_iso} (offset: {sar_sim_offset_s / 3600:.2f} h)"
-    )
-    typer.echo(
         f"Compute Budget Estimate: {est['estimated_gpu_hours']:.3f} GPU-h "
         f"({100 * est['fraction_of_nightly']:.1f}% of nightly {est['nightly_gpu_hours']} h ceiling)"
     )
@@ -429,7 +311,6 @@ def run_phase3_simulation(
             "event_window": {
                 "start": event_start_iso,
                 "end": event_end_iso,
-                "sar_instant": sar_instant_iso,
                 "duration_hours": sim_duration_s / 3600.0,
             },
             "forcing_summary": {
@@ -449,7 +330,6 @@ def run_phase3_simulation(
         raise RuntimeError("Compute or VRAM budget exceeded")
     t0 = time.perf_counter()
 
-    # 6. Initialize solver state
     ctrl = TimestepController(
         dx=dx,
         alpha=float(solver_cfg["timestep"]["cfl_alpha"]),
@@ -497,14 +377,9 @@ def run_phase3_simulation(
     cumulative_drain_depth_m = torch.zeros(static.shape, dtype=torch.float64, device=device)
     cumulative_infiltration_depth_m = torch.zeros(static.shape, dtype=torch.float64, device=device)
 
-    # State tracking
-    if tile is not None:
-        h_canonical_max = np.zeros(tile_shape, dtype=np.float32)
-        h_sar_instant = np.zeros(tile_shape, dtype=np.float32)
-    else:
-        h_canonical_max = np.zeros((grid.height, grid.width), dtype=np.float32)
-        h_sar_instant = np.zeros((grid.height, grid.width), dtype=np.float32)
-    sar_captured = False
+    h_canonical_max = np.zeros(
+        tile_shape if tile is not None else (grid.height, grid.width), dtype=np.float32
+    )
 
     snapshots_meta: list[tuple[float, str]] = []
     snapshots_dir = out_dir / "depth_rasters"
@@ -515,7 +390,6 @@ def run_phase3_simulation(
         profile_canon["width"] = tile_shape[1]
         profile_canon["transform"] = grid.transform * rasterio.Affine.translation(tile[2], tile[0])
 
-    # 7. Timestep Loop
     t = 0.0
     steps = 0
     max_courant = 0.0
@@ -558,8 +432,6 @@ def run_phase3_simulation(
                 steps_with_rejection += 1
 
             h, qx, qy = h_new, qx_new, qy_new
-            # Only the accepted trial reaches this point. Accumulating inside
-            # the retry loop would count rejected transport.
             cumulative_transport_depth_m.add_(diag["transport_depth_change_m"], alpha=1.0)
             cumulative_drain_depth_m.add_(diag["drained_depth_m"], alpha=1.0)
             cumulative_infiltration_depth_m.add_(diag["infiltrated_depth_m"], alpha=1.0)
@@ -572,7 +444,6 @@ def run_phase3_simulation(
             t += dt
             steps += 1
 
-            # Update event maximum depth over canonical grid
             if tile is not None:
                 h_cpu_canon = h.detach().cpu().numpy()
             else:
@@ -584,18 +455,6 @@ def run_phase3_simulation(
                 )
             np.maximum(h_canonical_max, h_cpu_canon, out=h_canonical_max)
 
-            # Capture SAR comparison instant (06:10 IST on 5 Sept 2022)
-            if not sar_captured and t >= sar_sim_offset_s:
-                h_sar_instant = h_cpu_canon.copy()
-                sar_captured = True
-                sar_path = out_dir / "depth_sar_instant_20220905_004028Z.tif"
-                with rasterio.open(sar_path, "w", **profile_canon) as dst:
-                    dst.write(h_sar_instant, 1)
-                typer.echo(
-                    f"  [SNAPSHOT] Captured SAR epoch at t={t / 3600:.2f}h -> {sar_path.name}"
-                )
-
-            # Write cadence snapshots
             if t >= next_snap:
                 snap_path = snapshots_dir / f"depth_t{int(round(t)):06d}s.tif"
                 with rasterio.open(snap_path, "w", **profile_canon) as dst:
@@ -711,7 +570,6 @@ def run_phase3_simulation(
         }
     )
 
-    # Save native IMERG cell id raster (Honesty constraint)
     imerg_cell_ids_path = out_dir / "imerg_native_cell_ids.tif"
     profile_int = grid.profile(dtype="int32", nodata=-1)
     if tile is not None:
@@ -724,7 +582,6 @@ def run_phase3_simulation(
     with rasterio.open(imerg_cell_ids_path, "w", **profile_int) as dst:
         dst.write(native_ids_write.astype(np.int32), 1)
 
-    # Write dt schedule binary sidecar
     dt_sidecar = write_dt_sidecar(ctrl.schedule, out_dir / "dt_schedule.f32.gz")
     lifecycle.update_running({"dt_schedule": dt_sidecar})
 
@@ -749,8 +606,6 @@ def run_phase3_simulation(
         retry_attempts=ctrl.rejections,
         h_canonical_final=h_final_canon,
         h_canonical_max=h_canonical_max,
-        h_sar_instant=h_sar_instant,
-        sar_timestamp_iso=sar_instant_iso,
         mass_dict=budget.as_dict(),
         depth_snapshots=snapshots_meta,
         total_rain_volume_m3=event.total_volume_m3,
@@ -771,94 +626,20 @@ def score_phase3_validation(
     out_dir: Path = REPO / "runs/phase3_validation",
     thresholds_m: list[float] = (0.05, 0.10, 0.15, 0.20, 0.30, 0.50, 1.00),
 ) -> dict[str, Any]:
-    """Score uncalibrated simulation outputs against Sentinel-1, BBMP, and Ground Truth points."""
-    with open(val_cfg_path) as f:
-        val_cfg = yaml.safe_load(f)
-
-    # 1. Load Basin Class raster for permanent water exclusion (classes 1, 2, 3)
-    sar_cfg = val_cfg["sar_water_classifier"]
+    """Score the realized replay against retained BBMP and ground-truth labels."""
+    with val_cfg_path.open() as handle:
+        val_cfg = yaml.safe_load(handle)
     gt_cfg = val_cfg["groundtruth"]
-    basin_class_path = REPO / sar_cfg["basin_class_path"]
-    if not basin_class_path.exists():
-        raise FileNotFoundError(f"Basin class raster missing at {basin_class_path}")
-    with rasterio.open(basin_class_path) as src:
-        basin_class = src.read(1)
-        grid_bounds = src.bounds
-        grid_shape = src.shape
-        grid_transform = src.transform
+    road_path = REPO / gt_cfg["road_segment_id_path"]
+    with rasterio.open(road_path) as src:
+        grid_transform, grid_shape = src.transform, src.shape
+    if sim_out.h_canonical_max.shape != grid_shape:
+        raise ValueError(
+            f"replay maximum shape {sim_out.h_canonical_max.shape} != road label grid {grid_shape}"
+        )
 
-    # Permanent water exclusion: 1 (storage/lakes), 2 (quarries), 3 (landfills)
-    permanent_water_mask = (basin_class == 1) | (basin_class == 2) | (basin_class == 3)
-    excluded_water_cells_count = int(np.sum(permanent_water_mask))
-
-    # 2. Load Urban Density Classes raster (OPEN, MODERATE, DENSE)
-    density_classes_path = REPO / val_cfg["density_stratification"]["output_density_classes_path"]
-    if not density_classes_path.exists():
-        run_density_pipeline(val_cfg_path)
-    with rasterio.open(density_classes_path) as src:
-        density_raster = src.read(1)
-
-    density_class_names = {0: "OPEN", 1: "MODERATE", 2: "DENSE"}
-
-    # 3. Compute Sentinel-1 Observed Water Extent for 5 Sept 2022 00:40:28 UTC
-    s1_tif = REPO / sar_cfg["flood_scene_tif"]
-    s1_xml = REPO / sar_cfg["flood_calibration_xml"]
-    if not s1_tif.exists() or not s1_xml.exists():
-        raise FileNotFoundError("Sentinel-1 flood scene files missing in data/raw/sentinel1/")
-
-    sigma0_db, s1_valid = compute_s1_sigma0_db(
-        s1_tif, s1_xml, grid_bounds, grid_shape, grid_transform
-    )
-    water_threshold_db = float(sar_cfg["water_threshold_db"])
-    s1_water_observed = (sigma0_db <= water_threshold_db) & s1_valid
-
-    # Save calibrated S1 backscatter and water mask rasters
-    s1_out_path = out_dir / "sentinel1_flood_sigma0_db.tif"
-    with rasterio.open(
-        s1_out_path,
-        "w",
-        driver="GTiff",
-        dtype="float32",
-        width=grid_shape[1],
-        height=grid_shape[0],
-        count=1,
-        crs="EPSG:32643",
-        transform=grid_transform,
-        nodata=np.nan,
-    ) as dst:
-        dst.write(sigma0_db, 1)
-
-    threshold_label = f"{abs(water_threshold_db):g}".replace(".", "p")
-    s1_mask_out_path = out_dir / f"sentinel1_flood_observed_water_mask_{threshold_label}dB.tif"
-    with rasterio.open(
-        s1_mask_out_path,
-        "w",
-        driver="GTiff",
-        dtype="uint8",
-        width=grid_shape[1],
-        height=grid_shape[0],
-        count=1,
-        crs="EPSG:32643",
-        transform=grid_transform,
-        nodata=255,
-    ) as dst:
-        dst.write(s1_water_observed.astype(np.uint8), 1)
-
-    # 4. PART B.2: Sentinel-1 Extent Scoring (Stratified + Exclusion + Sweep)
-    sar_dt = datetime.fromisoformat(sim_out.sar_timestamp_iso.replace("Z", "+00:00"))
-    sar_sweep_results = score_threshold_curve(
-        predicted_depth=sim_out.h_sar_instant,
-        observed_flooded=s1_water_observed,
-        comparison_timestamp=sar_dt,
-        thresholds_m=thresholds_m,
-        permanent_water_mask=permanent_water_mask,
-        density_raster=density_raster,
-        density_classes=density_class_names,
-    )
-
-    # 5. PART B.1: BBMP Flood-Prone List Scoring (398 points)
     bbmp_dir = REPO / gt_cfg["bbmp_kml_dir"]
-    bbmp_points: list[tuple[float, float, str]] = []  # (x_utm, y_utm, name)
+    bbmp_points: list[tuple[float, float, str]] = []
     trans_wgs_to_utm = pyproj.Transformer.from_crs("EPSG:4326", "EPSG:32643", always_xy=True)
 
     for kml_file in sorted(bbmp_dir.glob("*.kml")):
@@ -870,14 +651,12 @@ def score_phase3_validation(
                 p_name = str(row.get("Name", row.get("Description", kml_file.stem)))
                 bbmp_points.append((ux, uy, p_name))
 
-    # Query modeled event maximum depth at BBMP locations (with 50 m / 5-cell radius max filter)
     bbmp_sweep_scores: list[dict[str, Any]] = []
     bbmp_depths: list[float] = []
 
     for ux, uy, _ in bbmp_points:
         row, col = rasterio.transform.rowcol(grid_transform, ux, uy)
         if 0 <= row < grid_shape[0] and 0 <= col < grid_shape[1]:
-            # 5x5 window max depth (50 m neighborhood)
             r0, r1 = max(0, row - 2), min(grid_shape[0], row + 3)
             c0, c1 = max(0, col - 2), min(grid_shape[1], col + 3)
             val = float(np.max(sim_out.h_canonical_max[r0:r1, c0:c1]))
@@ -891,7 +670,6 @@ def score_phase3_validation(
     for th in thresholds_m:
         hits = int(np.sum(bbmp_depths_arr > th))
         hit_rate = hits / total_bbmp if total_bbmp > 0 else 0.0
-        # Domain flooded cell fraction as FAR proxy
         pred_flooded_cells = int(np.sum(sim_out.h_canonical_max > th))
         bbmp_sweep_scores.append(
             {
@@ -906,7 +684,6 @@ def score_phase3_validation(
             }
         )
 
-    # 6. PART B.3: Ground-Truth Points Scoring (24 points)
     gt_csv = REPO / val_cfg["groundtruth"]["points_csv"]
     gt_points_all, gt_summary = load_and_validate_groundtruth(gt_csv, bbmp_dir)
     scoring_start, scoring_end, max_snap_distance_m = resolve_groundtruth_scoring_config(gt_cfg)
@@ -938,16 +715,13 @@ def score_phase3_validation(
         row, col = rasterio.transform.rowcol(grid_transform, ux, uy)
 
         if 0 <= row < grid_shape[0] and 0 <= col < grid_shape[1]:
-            # Query point & 3x3 local neighborhood max
             r0, r1 = max(0, row - 1), min(grid_shape[0], row + 2)
             c0, c1 = max(0, col - 1), min(grid_shape[1], col + 2)
             model_depth_point = float(sim_out.h_canonical_max[row, col])
             model_depth_local_max = float(np.max(sim_out.h_canonical_max[r0:r1, c0:c1]))
-            sar_instant_depth = float(sim_out.h_sar_instant[row, col])
         else:
             model_depth_point = 0.0
             model_depth_local_max = 0.0
-            sar_instant_depth = 0.0
 
         low = pt.depth_band_low_m
         high = pt.depth_band_high_m
@@ -998,7 +772,6 @@ def score_phase3_validation(
                 "depth_cue": pt.depth_cue,
                 "model_depth_point_m": round(model_depth_point, 4),
                 "model_depth_local_max_m": round(model_depth_local_max, 4),
-                "sar_instant_depth_m": round(sar_instant_depth, 4),
                 "road_snap_distance_m": round(float(snap_distance_m), 3),
                 "band_status": band_status,
                 "eligible_for_depth_scoring": eligible_for_depth_scoring,
@@ -1011,7 +784,6 @@ def score_phase3_validation(
     gt_rmse_m = math.sqrt(np.mean(depth_errors_sq)) if depth_errors_sq else None
     gt_mae_m = float(np.mean(depth_errors_abs)) if depth_errors_abs else None
 
-    # 7. Aggregate Full Validation Results
     val_report: dict[str, Any] = {
         "stage": "phase3_uncalibrated_validation_gate",
         "timestamp_iso": datetime.now(UTC).isoformat(),
@@ -1026,15 +798,11 @@ def score_phase3_validation(
             "distinct_imerg_cells": sim_out.distinct_imerg_cells,
         },
         "exclusions": {
-            "excluded_basin_classes": [1, 2, 3],
-            "excluded_description": "storage/lakes (1), quarries (2), landfills (3)",
-            "excluded_cell_count": excluded_water_cells_count,
+            "excluded_description": "No SAR/permanent-water exclusion; retained labels only.",
+            "excluded_cell_count": 0,
             "domain_total_cells": sim_out.h_canonical_max.size,
-            "excluded_pct_of_domain": round(
-                (excluded_water_cells_count / sim_out.h_canonical_max.size) * 100.0, 3
-            ),
+            "excluded_pct_of_domain": 0.0,
         },
-        "sar_stratified_scoring": [res.to_dict() for res in sar_sweep_results],
         "bbmp_scoring": {
             "total_points": total_bbmp,
             "sweep": bbmp_sweep_scores,
@@ -1061,6 +829,10 @@ def score_phase3_validation(
                 f"{len(gt_points)} are eligible for this replay window. The set was not padded."
             ),
         },
+        "retired_instruments": {
+            "sar": "retired_invalid_instrument",
+            "density_stratification": "retired_with_sar_pipeline",
+        },
         "external_literature_comparison": {
             "status": "NOT_SCORED",
             "reason": (
@@ -1085,7 +857,6 @@ def run_phase3_gate(
     out_dir: Path = REPO / "runs/phase3_validation",
     event_start_iso: str = "2022-09-04T00:00:00Z",
     event_end_iso: str = "2022-09-05T23:30:00Z",
-    sar_instant_iso: str = "2022-09-05T00:40:28Z",
     elevation_override: Path | None = None,
     *,
     repo_root: Path = REPO,
@@ -1113,7 +884,6 @@ def run_phase3_gate(
             "event": {
                 "start": event_start_iso,
                 "end": event_end_iso,
-                "sar_instant": sar_instant_iso,
             },
         },
         config_paths={
@@ -1133,7 +903,6 @@ def run_phase3_gate(
             out_dir=out_dir,
             event_start_iso=event_start_iso,
             event_end_iso=event_end_iso,
-            sar_instant_iso=sar_instant_iso,
             lifecycle=lifecycle,
             elevation_override=elevation_override,
         )
@@ -1177,7 +946,6 @@ def main(
         None, help="Variant DEM raster (same buffered grid) to replace elevation.tif"
     ),
 ) -> None:
-    """Run Phase 3 Validation Gate end to end and produce uncalibrated baseline score."""
     run_phase3_gate(
         solver_cfg_path=solver_config,
         forcing_cfg_path=forcing_config,

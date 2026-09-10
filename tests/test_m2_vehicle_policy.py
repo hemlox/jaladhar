@@ -1,38 +1,15 @@
-"""M2 cited-wading-policy + routing-unblock tests (new file; foreign lane files untouched).
-
-Scope statement (V7): these tests exercise, over small fixture repositories plus
-the REAL curated pair in ``data/curation`` —
-
-  * the policy loader's optional-annotation surface (sensitivity band,
-    provenance grade, interpretation), extra-key tolerance, verbatim
-    ``blocked_classes`` pass-through, and the sha256 evidence-binding refusal
-    paths;
-  * the ``python -m jaladhar.routing.policy validate`` CLI exit code against
-    the curated repository artifact;
-  * the launcher's ROUTING_STATE derivation for the three M2 banner outcomes
-    (all-green / G1 FAIL / missing policy) at the pure-function level;
-  * the routing HTTP surface's opt-in CORS behaviour on a live ephemeral
-    server with a stub service.
-
+"""Scope statement (V7): these tests exercise, over small fixture repositories plus
+provenance grade, interpretation), extra-key tolerance, verbatim
+``blocked_classes`` pass-through, and the sha256 evidence-binding refusal
 They do NOT exercise full-stack route execution against a realized depth
-product (that is ``scripts/demo/smoke_route_around.py``) nor browser DOM
 behaviour (the CDP harness run beside it; PARTIAL by construction).
-
 V5 mutations demonstrated red before trusting green:
-  MUT-1  source_evidence.sha256 byte tampered            -> loader refuses
-         (observed: status unavailable_external_unknown, "does not match").
-  MUT-2  evidence FILE byte tampered after hashing       -> loader refuses
-         (same observable, independent side of the hash pair).
-Threshold tamper (30 -> 31 in the policy file alone) is NOT red-testable
+MUT-1  source_evidence.sha256 byte tampered            -> loader refuses
+(observed: status unavailable_external_unknown, "does not match").
+MUT-2  evidence FILE byte tampered after hashing       -> loader refuses
 through the loader BY DESIGN: ``source_sha256`` is COMPUTED over realized
-bytes at load time, never read from a declaration, so no internal
-inconsistency exists for the loader to trip on. The detection path for a
 threshold tamper is provenance comparison downstream (every /route response
-embeds the computed policy sha256, so any recorded consumer can detect the
-changed bytes). That semantic is pinned by
-``test_threshold_tamper_stays_loadable_but_moves_the_computed_sha`` below,
-which asserts the computed sha differs from the pristine bytes' sha.
-"""
+which asserts the computed sha differs from the pristine bytes' sha."""
 
 from __future__ import annotations
 
@@ -64,7 +41,6 @@ def _write_json(path: Path, payload: Any) -> None:
 
 
 def _policy_payload() -> dict[str, Any]:
-    """Minimal valid policy payload shaped like the curated one."""
 
     return {
         "policies": {
@@ -84,7 +60,6 @@ def _policy_payload() -> dict[str, Any]:
 
 
 def _fixture_repo(tmp_path: Path) -> tuple[Path, Path]:
-    """A tmp repository holding a self-consistent policy/evidence pair."""
 
     repo = tmp_path / "repo"
     evidence = repo / "data/curation/evidence.md"
@@ -97,11 +72,7 @@ def _fixture_repo(tmp_path: Path) -> tuple[Path, Path]:
     return repo, policy
 
 
-# --------------------------------------------------------- 1. validate CLI
-
-
 def test_validate_cli_exit_zero_surfaces_both_classes_and_annotations() -> None:
-    """The planned acceptance command exits 0 and surfaces every curated field."""
 
     proc = subprocess.run(
         [
@@ -173,16 +144,9 @@ def test_mut2_tampered_evidence_file_byte_refuses(tmp_path: Path) -> None:
 
 
 def test_threshold_tamper_stays_loadable_but_moves_the_computed_sha(tmp_path: Path) -> None:
-    """A 30 -> 31 threshold edit cannot redden the LOADER path by design.
-
-    Stated explicitly (plan S7 item 2): ``source_sha256`` is computed-not-
-    declared, so a policy-file tamper produces no internal inconsistency.  The
+    """Stated explicitly (plan S7 item 2): ``source_sha256`` is computed-not-
     red-testable provenance path is the EVIDENCE hash (MUT-1/MUT-2 above); the
-    threshold tamper is detectable where the computed sha is consumed — every
-    /route response embeds ``provenance.vehicle_policy.sha256``, so a recorded
-    prior value betrays the change.  This test pins that semantic: loadable,
-    yes; byte-identical, never.
-    """
+    /route response embeds ``provenance.vehicle_policy.sha256``, so a recorded"""
 
     repo, policy = _fixture_repo(tmp_path)
     from jaladhar.routing.policy import load_vehicle_policies
@@ -248,9 +212,6 @@ def test_malformed_blocked_classes_shape_refuses(tmp_path: Path) -> None:
     assert catalog.error is not None and "object" in catalog.error
 
 
-# ------------------------------------------- 4. banner outcomes i / ii / iii
-
-
 def _launch_demo_module():
     scripts_dir = REPO_ROOT / "scripts" / "demo"
     if str(scripts_dir) not in sys.path:
@@ -276,15 +237,8 @@ def test_banner_outcome_i_all_green_is_ready() -> None:
 
 
 def test_banner_outcome_ii_g1_fail_names_scientific_gate_blocker() -> None:
-    """G1 FAIL => headline not_ready + scientific_gate=not_accepted blocker.
-
-    Scope note (V7): this pins the DERIVED state lines (the decision logic).
-    The headline must read ``ROUTING_STATE=not_ready`` — derived from the
-    payload's OVERALL status, never from one gate's status string. The
-    process-level ``API_SERVING_DEGRADED`` stdout line is exercised
-    end-to-end by scripts/demo/smoke_route_around.py running the launcher
-    --startup-only against the real stack; its output is recorded there.
-    """
+    """Scope note (V7): this pins the DERIVED state lines (the decision logic).
+    The headline must read ``ROUTING_STATE=not_ready`` — derived from the"""
 
     payload = dict(_READY_PAYLOAD)
     payload["status"] = "not_ready"
@@ -304,9 +258,6 @@ def test_banner_outcome_iii_missing_policy_names_vehicle_blocker() -> None:
     payload["vehicle_policies"] = {"status": "unavailable_external_unknown"}
     lines = _launch_demo_module()._routing_state_lines(payload)
     text = "\n".join(lines)
-    # Headline derives from the OVERALL payload status (fix F2): a not_ready
-    # payload is never headlined with a gate status string like
-    # "unavailable_owner_gate" or "available".
     assert lines[0] == "ROUTING_STATE=not_ready"
     assert "vehicle_policy=unavailable_external_unknown" in text
     assert "scientific_gate=" not in text.split("ROUTING_BLOCKERS=")[1].splitlines()[0]
@@ -316,7 +267,6 @@ def test_banner_outcome_iii_missing_policy_names_vehicle_blocker() -> None:
 
 
 class _StubService:
-    """Only the attributes the handler touches for /health and /policies."""
 
     def health(self) -> dict[str, Any]:
         return {"status": "not_ready"}
@@ -360,7 +310,7 @@ def _request(url: str, *, method: str, origin: str | None) -> Any:
     request = urllib.request.Request(url, headers=headers, method=method)
     try:
         return urllib.request.urlopen(request, timeout=5)
-    except urllib.error.HTTPError as exc:  # non-2xx answers carry headers too
+    except urllib.error.HTTPError as exc:
         return exc
 
 
@@ -399,8 +349,6 @@ def test_no_cors_headers_when_cors_origin_unset(routing_server) -> None:
 
 
 def test_mismatched_origin_gets_no_cors_headers(routing_server) -> None:
-    """Allow-list semantics (fix F3): an Origin that is not exactly the configured
-    value receives NO CORS headers — no ACAO, no echoed Origin, on GET and preflight."""
 
     base = routing_server("http://127.0.0.1:8501")
     for method in ("GET", "OPTIONS"):
@@ -413,7 +361,6 @@ def test_mismatched_origin_gets_no_cors_headers(routing_server) -> None:
 
 
 def test_origin_differing_only_in_trailing_slash_is_mismatched(routing_server) -> None:
-    """Exact-string matching: a near-miss origin must not be echoed as allowed."""
 
     base = routing_server("http://127.0.0.1:8501")
     response = _request(f"{base}/health", method="GET", origin="http://127.0.0.1:8501/")

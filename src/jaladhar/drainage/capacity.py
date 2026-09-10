@@ -1,28 +1,16 @@
 """WF-1 capacity assignment: cited rational+Manning design capacity on observed edges.
-
 RULE-1 BOUNDARY: every number written here is either MEASURED (contrib area from the
 D8 pointer, slope from the stitched edges), SOLVED (depth by bisection of Manning
 full-flow against rational Q), or CITED (widths/n/C/uplift/safety factor with an
 explicit source chain). There is NO fallback climatology: if no realized design
 intensity exists in config, capacity stays blocked_missing_design_intensity and the
-hydraulic fields remain NULL (menu M11 / deviation D16).
-
 Contributing area is computed FIRST and ALWAYS (even when capacity is blocked):
-Kahn indegree-order accumulation over the D8 pointer raster, accum[cell] =
-1 + sum(upstream), pinned to each node's grid cell and to each edge's from_node
 (headwater pin, units_and_conversion.contrib_area_pin).
-
 Synthetic connectors NEVER receive hydraulics: capacity_basis is stamped with the
 exact contract disclaimer and every other capacity field stays NULL (rule 1).
-
 CPU-only; no torch/CUDA imports. Rule-6 manifest section written at CLI run start
-and updated in place. Rule-7 config resolution aggregates ALL problems into ONE
-ValueError.
-
 Shared vocabulary (pairs table, disclaimer text, basis keys, consumer assertions)
-is imported from graph_io so producer-side validation IS the consumer enforcement
-(V8 seam: one definition, enforced at both ends).
-"""
+(V8 seam: one definition, enforced at both ends)."""
 
 from __future__ import annotations
 
@@ -53,6 +41,7 @@ from jaladhar.drainage.graph_io import (
     _check_observed_capacity,
 )
 from jaladhar.drainage.stitch import EdgeRec, NodeRec
+from jaladhar.provenance import lookup_config
 
 app = typer.Typer(add_completion=False)
 REPO = Path(__file__).resolve().parents[3]
@@ -90,9 +79,9 @@ WIDTH_DOWNGRADE = (
 SIDE_SLOPE_TEXT = "1H:1V"
 SOURCE_CPHEEO = "CPHEEO Manual 2019 Ch1 rainfall/Ch5 sewerage design"
 SOURCE_TOI = "Times of India 2016-08-02 BBMP drain-norm survey chain"
-N_CORNER_LOW = 0.013  # allowed-pairs extremes pin the joint sensitivity box
+N_CORNER_LOW = 0.013
 N_CORNER_HIGH = 0.030
-UNDETERMINED_BAND_CONTRACT_CLAIM_X = 4.2  # capacity_confidence_semantics: x[0.45,1.9]
+UNDETERMINED_BAND_CONTRACT_CLAIM_X = 4.2
 BLOCKED_STATUS = "blocked_missing_design_intensity"
 BLOCKED_REASON = (
     "no realized IDF/design-intensity source in-repo; owner must supply return period + "
@@ -114,21 +103,9 @@ class CapacityOrderingError(CapacityError):
     """q_low <= q_nom <= q_high violated - STOP, never tuned away."""
 
 
-# ----------------------------------------------------------------------- rule 7
-
-
 def _repo(p: Any) -> Path:
     path = Path(str(p))
     return path if path.is_absolute() else REPO / path
-
-
-def _cfg_get(d: dict, dot: str) -> Any:
-    cur: Any = d
-    for part in dot.split("."):
-        if not isinstance(cur, dict) or part not in cur:
-            return None
-        cur = cur[part]
-    return cur
 
 
 _NUM_KEYS = (
@@ -157,18 +134,17 @@ _REQUIRED_KEYS = (
 
 
 def _validate_capacity_cfg(d: dict, label: str, problems: list[str]) -> None:
-    """Every key this module will ever touch, checked into ONE aggregated problem list.
-    Nullable-by-contract keys (design_return_period_yr, intensity_mm_hr, idf_source,
+    """Nullable-by-contract keys (design_return_period_yr, intensity_mm_hr, idf_source,
     idf_table_path) may be absent/null - their COMBINATION decides blocked mode."""
     for key in _REQUIRED_KEYS:
-        if _cfg_get(d, key) is None:
+        if lookup_config(d, key) is None:
             problems.append(f"{label}{key} missing")
     for key in _INT_KEYS:
-        v = _cfg_get(d, key)
+        v = lookup_config(d, key)
         if v is not None and (isinstance(v, bool) or not isinstance(v, int) or v < 1):
             problems.append(f"{label}{key} must be int >= 1, got {v!r}")
     for key in _NUM_KEYS:
-        v = _cfg_get(d, key)
+        v = lookup_config(d, key)
         if v is not None and (
             isinstance(v, bool)
             or not isinstance(v, (int, float))
@@ -177,7 +153,7 @@ def _validate_capacity_cfg(d: dict, label: str, problems: list[str]) -> None:
         ):
             problems.append(f"{label}{key} must be finite number > 0, got {v!r}")
 
-    t = _cfg_get(d, "grid.transform")
+    t = lookup_config(d, "grid.transform")
     if t is not None and (
         not isinstance(t, list)
         or len(t) != 6
@@ -187,13 +163,13 @@ def _validate_capacity_cfg(d: dict, label: str, problems: list[str]) -> None:
     ):
         problems.append(f"{label}grid.transform must be 6 finite numbers, got {t!r}")
 
-    shape = _cfg_get(d, "capacity.shape")
+    shape = lookup_config(d, "capacity.shape")
     if shape is not None and shape != "trapezoidal_1H1V_width_is_bed_width":
         problems.append(
             f"{label}capacity.shape must be 'trapezoidal_1H1V_width_is_bed_width', got {shape!r}"
         )
 
-    n_nom = _cfg_get(d, "capacity.n_nominal")
+    n_nom = lookup_config(d, "capacity.n_nominal")
     if n_nom is not None and (
         isinstance(n_nom, bool)
         or not isinstance(n_nom, (int, float))
@@ -204,18 +180,18 @@ def _validate_capacity_cfg(d: dict, label: str, problems: list[str]) -> None:
         )
 
     clo, chi, cnom = (
-        _cfg_get(d, "capacity.C_low"),
-        _cfg_get(d, "capacity.C_high"),
-        _cfg_get(d, "capacity.C_nominal"),
+        lookup_config(d, "capacity.C_low"),
+        lookup_config(d, "capacity.C_high"),
+        lookup_config(d, "capacity.C_nominal"),
     )
     if None not in (clo, chi, cnom) and not (clo < cnom < chi):
         problems.append(
             f"{label}capacity.C must satisfy C_low < C_nominal < C_high, got {clo}/{cnom}/{chi}"
         )
     slo, shi, snom = (
-        _cfg_get(d, "capacity.safety_factor_low"),
-        _cfg_get(d, "capacity.safety_factor_high"),
-        _cfg_get(d, "capacity.safety_factor_nominal"),
+        lookup_config(d, "capacity.safety_factor_low"),
+        lookup_config(d, "capacity.safety_factor_high"),
+        lookup_config(d, "capacity.safety_factor_nominal"),
     )
     if None not in (slo, snom, shi) and not (slo <= snom <= shi):
         problems.append(
@@ -223,9 +199,9 @@ def _validate_capacity_cfg(d: dict, label: str, problems: list[str]) -> None:
             f"got {slo}/{snom}/{shi}"
         )
     ulo, uhi, unom = (
-        _cfg_get(d, "capacity.climate_uplift_low"),
-        _cfg_get(d, "capacity.climate_uplift_high"),
-        _cfg_get(d, "capacity.climate_uplift_nominal"),
+        lookup_config(d, "capacity.climate_uplift_low"),
+        lookup_config(d, "capacity.climate_uplift_high"),
+        lookup_config(d, "capacity.climate_uplift_nominal"),
     )
     if None not in (ulo, unom, uhi) and not (ulo <= unom <= uhi):
         problems.append(
@@ -233,10 +209,10 @@ def _validate_capacity_cfg(d: dict, label: str, problems: list[str]) -> None:
             f"got {ulo}/{unom}/{uhi}"
         )
 
-    rp = _cfg_get(d, "capacity.design_return_period_yr")
-    inten = _cfg_get(d, "capacity.intensity_mm_hr")
-    idf_path = _cfg_get(d, "capacity.idf_table_path")
-    idf_src = _cfg_get(d, "capacity.idf_source")
+    rp = lookup_config(d, "capacity.design_return_period_yr")
+    inten = lookup_config(d, "capacity.intensity_mm_hr")
+    idf_path = lookup_config(d, "capacity.idf_table_path")
+    idf_src = lookup_config(d, "capacity.idf_source")
     if idf_path:
         if not _repo(idf_path).exists():
             problems.append(f"{label}capacity.idf_table_path file does not exist: {idf_path}")
@@ -273,8 +249,7 @@ def is_blocked(d: dict) -> bool:
 
 
 def resolve_config(config_path: str) -> dict:
-    """Rule-7 pre-flight: touch every key this run will ever need; aggregate ALL
-    problems into ONE ValueError. Blocked mode is NOT a resolution failure - it is
+    """problems into ONE ValueError. Blocked mode is NOT a resolution failure - it is
     a realized state reported by assign_capacity."""
     problems: list[str] = []
     with open(config_path) as f:
@@ -294,11 +269,8 @@ def resolve_config(config_path: str) -> dict:
     return d
 
 
-# ------------------------------------------------------------- contributing area
-
-
 def _print_budget(n_cells: int) -> dict:
-    ram_mb = n_cells * 27 / 1e6  # accum i64 + indeg i64 + dest i64 + ptr u8 + valid u8
+    ram_mb = n_cells * 27 / 1e6
     print(
         f"[budget] D8 accumulation over {n_cells:,} cells, ~{ram_mb:.0f} MB RAM "
         f"(limit {BUDGET_MAX_RSS_MB:.0f} MB), CPU-only single pass"
@@ -314,8 +286,7 @@ def _load_pointer(
     pointer_path: str, cfg: dict, problems: list[str]
 ) -> tuple[np.ndarray, list[float]]:
     """Read the D8 pointer raster; assert dims/transform against the configured grid.
-    Returns (array, transform) - the realized raster transform is the alignment
-    reference for the elevation-surface gate."""
+    Returns (array, transform) - the realized raster transform is the alignment"""
     path = Path(pointer_path)
     if not path.exists():
         problems.append(f"pointer raster does not exist: {pointer_path}")
@@ -340,8 +311,7 @@ def _load_elevation_surface(
     pointer_transform: list[float],
     problems: list[str],
 ) -> str:
-    """Elevation surface contributes PROVENANCE (sha256 binding) + an alignment gate;
-    no hydraulic value is sampled from it here (slope arrives on the edges)."""
+    """Elevation surface contributes PROVENANCE (sha256 binding) + an alignment gate;"""
     path = Path(elevation_surface_path)
     if not path.exists():
         problems.append(f"elevation surface does not exist: {elevation_surface_path}")
@@ -359,13 +329,7 @@ def _load_elevation_surface(
 
 
 def accumulate_d8(pointer: np.ndarray) -> tuple[np.ndarray, dict]:
-    """Kahn indegree-order accumulation over the D8 pointer.
-
-    accum[cell] = 1 + sum(upstream cells). Codes 1..128 route to their ESRI offset;
-    code 0 is a pit terminal; 255/nodata cells are SKIPPED entirely (outside the
-    mapped domain); a routed step onto a nodata/out-of-grid cell leaves the domain
-    (terminal). Integer sums are order-invariant, so the result is deterministic
-    regardless of peel order; seeds enter in ascending flat-index order anyway."""
+    """(terminal). Integer sums are order-invariant, so the result is deterministic"""
     h, w = pointer.shape
     budget = _print_budget(h * w)
     codes_ok = np.isin(pointer, np.array((PIT_CODE, *ESRI_D8_CODES), dtype=pointer.dtype))
@@ -378,7 +342,7 @@ def accumulate_d8(pointer: np.ndarray) -> tuple[np.ndarray, dict]:
     idx = np.flatnonzero(valid_flat)
     codes = pointer.reshape(-1)[idx].astype(np.int64)
     rows, cols = idx // w, idx % w
-    routes = codes != PIT_CODE  # pits terminate; the zero LUT entry must NOT self-route
+    routes = codes != PIT_CODE
     nr = rows + _D8_DR[codes]
     nc = cols + _D8_DC[codes]
     inb = routes & (nr >= 0) & (nr < h) & (nc >= 0) & (nc < w)
@@ -387,7 +351,7 @@ def accumulate_d8(pointer: np.ndarray) -> tuple[np.ndarray, dict]:
     lands_valid = np.zeros(idx.shape, dtype=bool)
     ok = dest >= 0
     lands_valid[ok] = valid_flat[dest[ok]]
-    dest[~lands_valid] = -1  # out-of-grid / nodata destination => leaves the domain
+    dest[~lands_valid] = -1
 
     dest_full = np.full(h * w, -1, dtype=np.int64)
     dest_full[idx] = dest
@@ -431,9 +395,7 @@ def _cell_of(x_m: float, y_m: float, transform: list[float]) -> tuple[int, int]:
 def _fill_node_contrib_areas(
     nodes: list[NodeRec], accum: np.ndarray, transform: list[float]
 ) -> None:
-    """contrib_area_cells at each node's grid cell; m2 = cells*100.0 exact;
-    ha = cells*0.01 exact. Never null (schema): a node off-grid or on a skipped
-    (nodata) cell - accum 0 there by construction - is a STOP."""
+    """(nodata) cell - accum 0 there by construction - is a STOP."""
     errors: list[str] = []
     for n in nodes:
         row, col = _cell_of(n.x_m, n.y_m, transform)
@@ -454,9 +416,6 @@ def _fill_node_contrib_areas(
         raise CapacityError("node contrib-area sampling failed:\n" + "\n".join(errors))
 
 
-# ------------------------------------------------------------------- hydraulics
-
-
 def _qfull(b: float, n: float, slope: float, d: float) -> float:
     """Manning full-flow conveyance, trapezoid side 1H:1V, bed width = b."""
     area = b * d + d * d
@@ -465,43 +424,13 @@ def _qfull(b: float, n: float, slope: float, d: float) -> float:
     return (1.0 / n) * area * r ** (2.0 / 3.0) * math.sqrt(slope)
 
 
-def _solve_depth(q_design: float, b: float, n: float, slope: float) -> float:
-    """Bisection root of q_full(d) = Q_design on [1e-4, 10] m; 60 iterations,
-    tol 1e-9, deterministic. Unbracketed demand is a STOP, never a clamped guess."""
-    lo, hi = BISECTION_LO_M, BISECTION_HI_M
-    f_lo, f_hi = _qfull(b, n, slope, lo), _qfull(b, n, slope, hi)
-    if not (f_lo <= q_design <= f_hi):
-        raise CapacityError(
-            f"design flow {q_design:.6g} m3/s not bracketed by full-flow conveyance "
-            f"[{f_lo:.6g}, {f_hi:.6g}] m3/s on depth range [{lo},{hi}] m "
-            "(unbracketed demand: extend the pinned range by adjudication, never clamp)"
-        )
-    for _ in range(BISECTION_ITERS):
-        mid = 0.5 * (lo + hi)
-        if _qfull(b, n, slope, mid) < q_design:
-            lo = mid
-        else:
-            hi = mid
-        if hi - lo <= BISECTION_TOL_M:
-            break
-    return 0.5 * (lo + hi)
-
-
-# Owner-adjudicated extension (M11 round 2026-08-25, deviation D22): trunk
-# drains with city-scale headwater contributing areas demand depths beyond the
-# original 10 m envelope. Solve to 25 m; where even that cannot convey the
-# design flow the edge is recorded as surcharged-by-definition rather than
-# clamped or invented.
 DEPTH_BOUNDS_M = {"primary": 3.0, "secondary": 2.25, "tertiary": 1.5}
 RATIONAL_MAX_CONTRIB_HA = 5000.0  # rational method small-catchment validity (<=50 km2)
 
 
 def _solve_depth_bounded(q_design: float, b: float, n: float, slope: float, d_max: float):
     """Owner adjudication WF-1b (deviation D23): solved Manning depth is BOUNDED
-    at the order's realistic rajakaluve channel depth (owner-supplied design
-    bound; no surveyed depths exist in-repo). Returns (depth, demand_exceeds):
-    when rational demand exceeds conveyance at the bound, depth=bound and
-    demand_exceeds=True - capacity is the bounded-section SUPPLY."""
+    when rational demand exceeds conveyance at the bound, depth=bound and"""
     lo, hi = BISECTION_LO_M, d_max
     f_lo, f_hi = _qfull(b, n, slope, lo), _qfull(b, n, slope, hi)
     if f_hi < q_design:
@@ -534,7 +463,6 @@ def _width_basis_text(order: str, w: float, lo: float, hi: float, pct: float) ->
     )
     return (
         # consumer_assertion_5 requires the EXACT {w:.2f} rendering (V10): for the
-        # tertiary midpoint 2.285 that is '2.29', not a substring of '2.285'.
         f"bed width {w} m nominal ({w:.2f} m rounded 2dp; {band}); "
         f"{FT_TO_M_CHAIN[order]}; "
         f"{WIDTH_SOURCE_CHAIN}; {WIDTH_DOWNGRADE}"
@@ -542,9 +470,7 @@ def _width_basis_text(order: str, w: float, lo: float, hi: float, pct: float) ->
 
 
 def _resolve_intensity(cap: dict) -> tuple[float, str]:
-    """Realized design intensity: configured mm/hr with named source, or looked up
-    from the owner-supplied IDF CSV (columns return_period_yr,intensity_mm_hr,
-    exact-match row). No third path exists."""
+    """Realized design intensity: configured mm/hr with named source, or looked up"""
     inten = cap.get("intensity_mm_hr")
     if inten is not None:
         return float(inten), str(cap.get("idf_source", "")).strip()
@@ -645,10 +571,6 @@ def _solve_observed_edge(
     e: EdgeRec, node_cells: dict[int, int], cap: dict, intensity: float, intensity_prov: str
 ) -> tuple[float, float, float, float, dict]:
     """Full capacity solve for one observed edge. Returns (q_low, q_nom, q_high, depth, basis).
-
-    Corner convention (deviation D12, inspectable in capacity_basis): every corner
-    evaluates q_full at the NOMINAL solved depth with corner (n, width); the ratio
-    r_c = q_full_c / Q_design(corner C, corner-uplifted i, headwater A) is rescaled
     by Q_design_nominal so the band is expressed in nominal-demand units."""
     order = str(e.order)
     if order not in WIDTH_NOMINAL_M:
@@ -657,8 +579,6 @@ def _solve_observed_edge(
     if not (math.isfinite(slope) and slope > 0.0):
         # Zero measured slope on the pinned surface (flat engineered segments at
         # 10 m DEM resolution). Manning capacity would be exactly zero; inventing
-        # a gradient violates rule 1, so the edge is skipped honestly: the caller
-        # leaves capacity fields NULL with an explicit routing-only basis.
         return None
     fn = e.from_node
     if fn not in node_cells or node_cells[fn] is None:
@@ -667,7 +587,6 @@ def _solve_observed_edge(
 
     # Rational-method validity cap (WF-1b owner adjudication): beyond the
     # small-catchment limit the formula does not apply - no capacity claim,
-    # identical treatment to zero-slope routing-only edges.
     if a_ha > RATIONAL_MAX_CONTRIB_HA:
         e.capacity_basis = (  # type: ignore[attr-defined]
             f"contributing area {a_ha:.0f} ha exceeds the rational method validity "
@@ -735,13 +654,8 @@ def _solve_observed_edge(
     return q_low, q_nom, q_high, depth, basis
 
 
-# ------------------------------------------------------------------- validation
-
-
 def validate_capacity_records(nodes: list[NodeRec], edges: list[EdgeRec]) -> None:
-    """Producer-side enforcement of the consumer's capacity assertions (graph_io),
-    so assign output self-verifies BEFORE it can reach an artefact. Raises ValueError
-    naming the specific violated clause."""
+    """Producer-side enforcement of the consumer's capacity assertions (graph_io),"""
     del nodes
     for e in edges:
         eid = int(e.edge_id)
@@ -784,9 +698,6 @@ def validate_capacity_records(nodes: list[NodeRec], edges: list[EdgeRec]) -> Non
             raise ValueError(f"edge {eid}: {exc}") from exc
 
 
-# --------------------------------------------------------------------- assign
-
-
 def assign_capacity(
     nodes: list[NodeRec],
     edges: list[EdgeRec],
@@ -795,8 +706,7 @@ def assign_capacity(
     cfg: dict,
 ) -> tuple[list[NodeRec], list[EdgeRec], dict]:
     """Contract entrypoint: contrib areas ALWAYS; rational+Manning capacity on
-    observed edges ONLY; blocked_missing_design_intensity when no realized design
-    intensity exists (rule 1/5, menu M11/D16)."""
+    observed edges ONLY; blocked_missing_design_intensity when no realized design"""
     t0 = time.perf_counter()
     problems: list[str] = []
     _validate_capacity_cfg(cfg, "", problems)
@@ -886,7 +796,7 @@ def assign_capacity(
         e.q_capacity_nom_m3s = q_nom  # type: ignore[attr-defined]
         e.q_capacity_low_m3s = q_low  # type: ignore[attr-defined]
         e.q_capacity_high_m3s = q_high  # type: ignore[attr-defined]
-        e.capacity_basis = json.dumps(basis, sort_keys=True, separators=(",", ":"))  # type: ignore[attr-defined]
+        e.capacity_basis = json.dumps(basis, sort_keys=True, separators=(",", ":"))  # type: ignore[attr-defined]  # noqa: E501
         e.width_basis = basis["width"]  # type: ignore[attr-defined]
         spans.append(q_high / q_low)
         sources_used.update(basis["sources"])
@@ -929,9 +839,6 @@ def assign_capacity(
         f"x{UNDETERMINED_BAND_CONTRACT_CLAIM_X}; i={intensity} mm/hr ({intensity_prov})"
     )
     return nodes, edges, metrics
-
-
-# ------------------------------------------------------------------- CLI (rule 6)
 
 
 def _utc_now() -> str:
@@ -1078,7 +985,6 @@ def run(
         None, "--out-dir", help="Write updated NPZ + rule-6 manifest here"
     ),
 ) -> None:
-    """Standalone capacity run over stitched records (report-only without --out-dir)."""
     cfg = resolve_config(str(config))
     if nodes_npz is None or edges_npz is None:
         raise typer.BadParameter("standalone runs need both --nodes-npz and --edges-npz")

@@ -10,12 +10,9 @@ from jaladhar.terrain.water import WaterFetchError, fetch_osm_polygons, fetch_os
 
 
 def test_fetch_osm_water_keeps_only_clipped_polygons(monkeypatch) -> None:
-    """If broken, line geometry or outside water would reach the shared reference file.
-
-    Scope: one configured OSM response with one inside polygon, one line, and
+    """Scope: one configured OSM response with one inside polygon, one line, and
     one outside polygon. This tests source filtering only; an Overpass call is
-    intentionally not made in the unit suite.
-    """
+    intentionally not made in the unit suite."""
     response = gpd.GeoDataFrame(
         {"name": ["Inside", "line", "outside"]},
         geometry=[
@@ -42,7 +39,6 @@ def test_fetch_osm_water_keeps_only_clipped_polygons(monkeypatch) -> None:
 
 
 def test_fetch_osm_water_rejects_empty_overpass_response(monkeypatch) -> None:
-    """Red path: an empty response cannot become an empty reference layer."""
     empty = gpd.GeoDataFrame(geometry=[], crs="EPSG:4326")
     monkeypatch.setattr(
         "jaladhar.terrain.water.ox.features_from_polygon", lambda *_args, **_kwargs: empty
@@ -53,7 +49,6 @@ def test_fetch_osm_water_rejects_empty_overpass_response(monkeypatch) -> None:
 
 
 def test_fetch_osm_polygons_labels_a_missing_quarry_source(monkeypatch) -> None:
-    """Red path: a no-result quarry query cannot silently become no quarries."""
     empty = gpd.GeoDataFrame(geometry=[], crs="EPSG:4326")
     monkeypatch.setattr(
         "jaladhar.terrain.water.ox.features_from_polygon", lambda *_args, **_kwargs: empty

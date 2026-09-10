@@ -88,13 +88,7 @@ _ZERO_PREFIX = "zero measured slope"
 _AREA_PREFIX = "contributing area"
 
 
-# ---------------------------------------------------------------------------
-# /tmp copy machinery — DATA copies only; live runs/ and data/ never touched.
-# ---------------------------------------------------------------------------
-
-
 def _variant_dir(seam_root: Path, name: str) -> Path:
-    """Fresh copy of the pristine trio under ``seam_root/<name>/``."""
     dst = seam_root / name
     if dst.exists():
         shutil.rmtree(dst)
@@ -124,7 +118,7 @@ def _mutate_edge_capacity(variant: Path, predicate, value: float | None) -> int:
     gpkg.unlink()
     sel = predicate(edges)
     assert int(sel.sum()) >= 1, "mutation predicate selected nothing — test bug"
-    idx = int(np.nonzero(sel.to_numpy())[0][0])  # deterministic lowest edge_id
+    idx = int(np.nonzero(sel.to_numpy())[0][0])
     edges.loc[idx, "q_capacity_nom_m3s"] = value
     nodes.to_file(gpkg, layer="drain_nodes", driver="GPKG")
     edges.to_file(gpkg, layer="drain_edges", driver="GPKG", mode="a")
@@ -132,9 +126,6 @@ def _mutate_edge_capacity(variant: Path, predicate, value: float | None) -> int:
 
 
 def _assemble_from(art_dir: Path) -> dict[str, Any]:
-    """Assemble EXACTLY the dict ``read_artefact`` returns, parsed from the
-    given COPY directory. Only the frozen reader's rejection is bypassed —
-    every router-side V8 assertion downstream runs for real over these bytes."""
     return {
         "nodes_gdf": gpd.read_file(art_dir / "drain_graph.gpkg", layer="drain_nodes"),
         "edges_gdf": gpd.read_file(art_dir / "drain_graph.gpkg", layer="drain_edges"),
@@ -150,10 +141,7 @@ def _load_variant(monkeypatch: pytest.MonkeyPatch, cfg: CouplingConfig, art_dir:
     return load_drain_graph(cfg, REPO)
 
 
-# ---------------------------------------------------------------------------
-# Independent recount of the 4-class partition straight from gpkg bytes —
 # shares no code with load_drain_graph's internal recount (V2 non-mirror).
-# ---------------------------------------------------------------------------
 
 
 def _partition_from_bytes(edges: gpd.GeoDataFrame) -> dict[str, int]:
@@ -170,14 +158,8 @@ def _partition_from_bytes(edges: gpd.GeoDataFrame) -> dict[str, int]:
     }
 
 
-# ---------------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------------
-
-
 @pytest.fixture(scope="session")
 def seam_root() -> Path:
-    """Clean-state /tmp staging (V4): rebuilt from live runs/ bytes each session."""
     if TMP_ROOT.exists():
         shutil.rmtree(TMP_ROOT)
     TMP_ROOT.mkdir(parents=True)
@@ -198,11 +180,6 @@ def fs(cfg: CouplingConfig):
     return load_falsifier_set(cfg.diagnostics.falsifier_set)
 
 
-# ---------------------------------------------------------------------------
-# GREEN: pristine copies load clean, realized guarantees reproduced independently
-# ---------------------------------------------------------------------------
-
-
 def test_pristine_copies_load_clean_with_realized_guarantees(
     seam_root: Path, cfg: CouplingConfig, monkeypatch: pytest.MonkeyPatch, fs
 ) -> None:
@@ -216,12 +193,10 @@ def test_pristine_copies_load_clean_with_realized_guarantees(
     reproducing from the copied gpkg BYTES."""
     g = _load_variant(monkeypatch, cfg, seam_root / "pristine")
 
-    # node/edge counts: realized tensors vs config expectation vs manifest text
     assert g.num_nodes == EXPECTED_NODES and g.num_edges == EXPECTED_EDGES
     man_text = json.loads((seam_root / "pristine" / "manifest.json").read_text())
     assert man_text["graph_is_dag"] is True and man_text["edge_count"] == EXPECTED_EDGES
 
-    # partition: independent recount == config pin == loader's realized mask
     counted = _partition_from_bytes(
         gpd.read_file(seam_root / "pristine" / "drain_graph.gpkg", layer="drain_edges")
     )
@@ -233,12 +208,10 @@ def test_pristine_copies_load_clean_with_realized_guarantees(
         + EXPECTED_PARTITION["synthetic"]
     )
 
-    # sentinel integrity on the ASSEMBLED tensors: NaN kept, capacities finite>0
     assert bool(torch.isnan(g.q_cap_nom_m3s[~g.capacity_bearing]).all())
     cb_q = g.q_cap_nom_m3s[g.capacity_bearing]
     assert bool(torch.isfinite(cb_q).all() and (cb_q > 0).all())
 
-    # topo_sha256 reproduces from the copied adjacency file bytes
     adj = json.loads((seam_root / "pristine" / "drain_graph_adjacency.json").read_text())
     adj_order = [int(i) for i in adj["topo_order"]]
     expect_sha = hashlib.sha256(
@@ -246,29 +219,21 @@ def test_pristine_copies_load_clean_with_realized_guarantees(
     ).hexdigest()
     assert g.topo_sha256 == expect_sha and g.topo_order == adj_order
 
-    # full-domain falsifier activity: ALL pre-registered targets active, recorded
     assert g.n_active_predicted_targets == len(fs.predicted_node_ids)
     assert g.n_inactive_predicted_targets == 0
 
-    # falsifier-set sha cross-check: pristine gpkg bytes ARE the recorded source
     pristine_sha = sha256_file(seam_root / "pristine" / "drain_graph.gpkg")
     assert pristine_sha == fs.source_gpkg_sha256
     block = compare_falsifier([], fs, pristine_sha)
     assert block["source_gpkg_sha256_crosscheck"]["status"] == "match"
 
 
-# ---------------------------------------------------------------------------
 # RED DEMOS (V5) — each mutation refused LOUDLY by its specific gate
-# ---------------------------------------------------------------------------
 
 
 def test_red_a_manifest_edge_count_off_by_one_refused(
     seam_root: Path, cfg: CouplingConfig, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """(a) manifest edge_count 1587 -> 1588: the count-vs-gpkg gate must refuse;
-    silently accepted, a spoofed/truncated graph would shift every downstream
-    number without error. Mutation recorded here; each test mutates its own
-    fresh copy (pristine trio never modified)."""
     variant = _variant_dir(seam_root, "mut_a_edge_count")
     _mutate_manifest(variant, edge_count=EXPECTED_EDGES + 1)
     with pytest.raises(
@@ -294,10 +259,6 @@ def test_red_b_manifest_dag_flag_false_refused(
 def test_red_c_capacity_edge_nulled_partition_mismatch_refused(
     seam_root: Path, cfg: CouplingConfig, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """(c) one capacity edge's q_cap set NULL in the gpkg copy: the partition
-    recount drops to 1207 capacity-bearing and the mutated edge falls outside
-    all four classes — BOTH problems named in ONE aggregated refusal. Silently
-    accepted, that edge would carry Q=0 ALWAYS instead of its cited capacity."""
     variant = _variant_dir(seam_root, "mut_c_qcap_null")
     eid = _mutate_edge_capacity(variant, lambda e: e["q_capacity_nom_m3s"].notna(), None)
     print(f"\n[inv07-red-c] mutated edge_id={eid} q_capacity_nom_m3s -> NULL in {variant}")
@@ -312,10 +273,6 @@ def test_red_c_capacity_edge_nulled_partition_mismatch_refused(
 def test_red_d_nan_sentinel_coerced_to_zero_refused(
     seam_root: Path, cfg: CouplingConfig, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """(d) NaN sentinel coerced to 0.0 on a synthetic (non-capacity) edge: the
-    partition stays intact (synthetics are null-class either way), so ONLY the
-    assembly-seam sentinel integrity check can catch it — coercion anywhere
-    upstream would be invisible later (invariant #11's defect class)."""
     variant = _variant_dir(seam_root, "mut_d_nan_to_zero")
     eid = _mutate_edge_capacity(
         variant, lambda e: e["edge_source"].astype(str) == "synthesised", 0.0
@@ -359,11 +316,6 @@ def test_red_e_falsifier_sha_crosscheck_moves_with_graph_bytes(
         f"\n[inv07-red-e] pristine={matched['source_gpkg_sha256_crosscheck']['status']} "
         f"mutated={mismatched['source_gpkg_sha256_crosscheck']['status']}"
     )
-
-
-# ---------------------------------------------------------------------------
-# Reader tier LIVE (D-G closed by contract v1.2.0, owner amendment 2026-08-26)
-# ---------------------------------------------------------------------------
 
 
 def _null_capacity_recount(edges: gpd.GeoDataFrame) -> int:
@@ -415,19 +367,15 @@ def test_reader_tier_realized_artefact_loads_clean_with_recorded_d_g_properties(
     )
     man_text = json.loads((SRC_DIR / "manifest.json").read_text())
 
-    # loads clean at the realized size
     assert len(art["nodes_gdf"]) == EXPECTED_NODES
     assert len(art["edges_gdf"]) == EXPECTED_EDGES
 
-    # (b) recorded properties == manifest counts block == pinned literals
     assert man_text["counts"]["zero_length_dropped_count"] == 42
     assert art["dropped_zero_length_count"] == man_text["counts"]["zero_length_dropped_count"]
     assert man_text["counts"]["self_loop_dropped_count"] == 11
     assert art["dropped_self_loop_count"] == man_text["counts"]["self_loop_dropped_count"]
     assert art["null_capacity_edge_count"] == 93
 
-    # ...and the null count reproduces from the RETURNED edge frames via the
-    # independent recount, and from the adjacency's recorded drop entries
     assert _null_capacity_recount(art["edges_gdf"]) == art["null_capacity_edge_count"]
     adj = art["adjacency"]
     assert adj["dropped"]["zero_length"] == ["count=42"]
@@ -468,14 +416,10 @@ def test_red_f_declared_null_edge_given_numeric_capacity_refused_at_reader_tier(
     print(f"[inv07-red-f] verbatim refusal: {ei.value}")
 
 
-# ---------------------------------------------------------------------------
 # Scope statement (V7) — machine-readable summary printed with -s
-# ---------------------------------------------------------------------------
 
 
 def test_scope_statement(fs) -> None:
-    """Prints what this module exercised against the full guarantee list, so
-    the shortfall lives in test output rather than only in a status report."""
     exercised = [
         "reader: read_artefact LOADS the realized artefact end-to-end, recorded D-G "
         "properties 42/11/93 vs manifest counts + independent gpkg recount (D-G closed)",

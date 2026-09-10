@@ -90,31 +90,22 @@ from jaladhar.coupling.config import (
 
 REPO = Path(__file__).resolve().parents[2]
 
-# ---------------------------------------------------------------------------
-# Fixtures-as-code: the complete 57-key coupling document, hand-typed from spec §5
-# plus the WF-2 M1 graph.terminal_definition leaf, WF-2 M2's
-# diagnostics.attribution_mode / diagnostics.attribution_radius_basis leaves and the
-# round-3 C2/D2 diagnostics.attribution_radius_node_m leaf
-# ---------------------------------------------------------------------------
-
 THE_MISSING: tuple[str, ...] = (
     "budget.judged_bar_relative",
     "diagnostics.attribution_radius_m",
     "outputs.surcharge_events_csv",
 )
-FIRST_MISSING_IN_SCHEMA_ORDER = THE_MISSING[0]  # budget.* precedes diagnostics.* precedes outputs.*
+FIRST_MISSING_IN_SCHEMA_ORDER = THE_MISSING[0]
 
-# Minimal host solver chain: exactly the subtrees resolve_config's pass-4(c) reads.
 SOLVER_YAML: dict[str, Any] = {
     "physics": {"hf_floor_m": 0.001},
     "sinks": {"infiltration": {"uniform_rate_mm_per_hr": 0.0}},
 }
 
-FIRST_SECOND_S = 1.0  # the claim's latency bound for every failure path
+FIRST_SECOND_S = 1.0
 
 
 def _fresh_fixture() -> dict[str, Any]:
-    """Fresh deep copy per call — no test mutates another's document."""
     return {
         "coupling": {
             "enabled": True,
@@ -127,9 +118,6 @@ def _fresh_fixture() -> dict[str, Any]:
             "gpkg": "runs/drain_graph_build/drain_graph.gpkg",
             "adjacency": "runs/drain_graph_build/drain_graph_adjacency.json",
             "manifest": "runs/drain_graph_build/manifest.json",
-            # V6 record: SPEC grew (WF-2 M1 owner directive) — the fixture
-            # follows the 54th declared leaf consciously, exactly as this
-            # drift guard demands, not silently.
             "terminal_definition": "configs/terminal_definition.yaml",
             "require_dag": True,
             "expected_counts": {"nodes": 1721, "edges": 1587},
@@ -175,15 +163,8 @@ def _fresh_fixture() -> dict[str, Any]:
             "refuse_start_on_missing_falsifier": True,
             "suspicious_deadend_share": 0.5,
             "ground_truth_manifest": "runs/groundtruth/manifest.json",
-            # V6 record (2026-08-26, second growth): SPEC grew 54 -> 56 (WF-2 M2
-            # owner ruling D-GT: nearest-EDGE GT attribution is config-declared).
-            # The fixture follows the two new leaves CONSCIOUSLY, exactly as this
-            # drift guard demands, not silently.
             "attribution_mode": "edge",
             "attribution_radius_m": 100.0,
-            # V6 record (2026-08-26, third growth): SPEC grew 56 -> 57 (round-3
-            # fix C2/D2 — node mode's historical 100 m radius pin becomes its
-            # OWN leaf, diagnostics.attribution_radius_node_m).
             "attribution_radius_node_m": 100.0,
             "attribution_radius_basis": "D-GT owner ruling 2026-08-26 (inline fixture value; "
             "the REAL configs/coupling.yaml carries its own measured basis string)",
@@ -220,7 +201,6 @@ def _dotted_leaves(node: dict[str, Any], prefix: str = "") -> set[str]:
 
 
 def _has(raw: dict[str, Any], dotted: str) -> bool:
-    """Local walker (dicts only) — independent precondition check, pre-resolve."""
     node: Any = raw
     for part in dotted.split("."):
         if not isinstance(node, dict) or part not in node:
@@ -234,7 +214,6 @@ def _delete(raw: dict[str, Any], dotted: str) -> None:
     del raw[sect][key]
 
 
-# Existence-checked input paths (pass 3) + the gate-on falsifier path (pass 4a).
 _STAGED_EXISTENCE_PATHS: tuple[str, ...] = (
     "runs/drain_graph_build/drain_graph.gpkg",
     "runs/drain_graph_build/drain_graph_adjacency.json",
@@ -245,19 +224,16 @@ _STAGED_EXISTENCE_PATHS: tuple[str, ...] = (
 
 
 def _stage(tmp_path: Path) -> Path:
-    """Write fixture tree under tmp_path (the repo_root for this resolve)."""
     (tmp_path / "configs").mkdir()
     (tmp_path / "configs" / "solver.yaml").write_text(yaml.safe_dump(SOLVER_YAML))
-    # WF-2 M1: the terminal definition is an existence-checked input path, so
-    # the staged tree carries a copy like solver.yaml (contents never read by
-    # resolve_config — existence is the asserted property here).
+
     (tmp_path / "configs" / "terminal_definition.yaml").write_text(
         (REPO / "configs" / "terminal_definition.yaml").read_text()
     )
     for rel in _STAGED_EXISTENCE_PATHS:
         p = tmp_path / rel
         p.parent.mkdir(parents=True, exist_ok=True)
-        p.touch()  # existence-only: contents never read by resolve_config
+        p.touch()
     coupling_yaml = tmp_path / "coupling_fixture.yaml"
     coupling_yaml.write_text(yaml.safe_dump(_fresh_fixture(), sort_keys=False))
     return coupling_yaml
@@ -276,21 +252,10 @@ def _resolve_err(path: Path, repo_root: Path) -> tuple[ConfigError, float]:
     return ei.value, time.perf_counter() - t0
 
 
-# V6 record (2026-08-26, first run): the four defect fixtures below originally
 # skipped ``_stage`` and reddened with 6-9 SPURIOUS file-not-found problems.
-# Which side was wrong: THE TEST (harness omission), not the code, not the
-# spec — the resolver correctly aggregated the unstaged environment too. Every
-# resolve therefore goes through the same staged tree as the green control.
-
-
-# ---------------------------------------------------------------------------
-# Green control — proves the fixtures are valid, so the red assertions cannot
-# pass vacuously on an accidentally-broken document.
-# ---------------------------------------------------------------------------
 
 
 def test_inv08_green_control_pristine_fixture_resolves_full_schema(tmp_path: Path) -> None:
-    """The inline document IS a complete spec §5 config: resolves clean, fast."""
     raw = _fresh_fixture()
     leaves = _dotted_leaves(raw)
     assert leaves == set(LEAF_KEYS), (
@@ -298,52 +263,39 @@ def test_inv08_green_control_pristine_fixture_resolves_full_schema(tmp_path: Pat
         f"fixture-only={sorted(leaves - set(LEAF_KEYS))} "
         f"schema-only={sorted(set(LEAF_KEYS) - leaves)}"
     )
-    # V6 records: SPEC grew 53 -> 54 (WF-2 M1 graph.terminal_definition), then
-    # 54 -> 56 (2026-08-26, WF-2 M2 ruling D-GT: diagnostics.attribution_mode +
-    # diagnostics.attribution_radius_basis), then 56 -> 57 (round-3 fix C2/D2:
-    # diagnostics.attribution_radius_node_m); the fixture was re-proven against
-    # each new enumeration consciously.
-    # spec grew (+attribution_radius_node_m, audit C2/D2)
+
     assert len(LEAF_KEYS) == 57, "schema count drifted from spec §5 [F]; re-prove §5 then refixture"
 
     coupling_yaml = _stage(tmp_path)
     cfg, elapsed = _resolve_ok(coupling_yaml, tmp_path)
 
-    # V1 spot checks: realized values as parsed from THIS fixture off disk.
     assert isinstance(cfg, CouplingConfig)
     assert cfg.device == "cpu"
     assert cfg.coupling_version == "wf2-coupling-v1.0.0"
     assert cfg.exchange.hf_floor_m == 0.001
     assert cfg.budget.judged_bar_relative == 1.0e-4
     assert cfg.diagnostics.attribution_radius_m == 100.0
-    assert cfg.diagnostics.attribution_radius_node_m == 100.0  # C2/D2 leaf (fixture value)
+    assert cfg.diagnostics.attribution_radius_node_m == 100.0
     assert cfg.outputs.surcharge_events_csv == (
         tmp_path / "runs/wf2_coupled/products/surcharge_events.csv"
     )
     assert cfg.graph.expected_counts.nodes == 1721
     assert cfg.smoke.cpu_budget_wall_clock_min == 30.0
-    # D6 fix (round 3): this print previously said "54/54" while the assertion
-    # above checked a different count — the string now derives from LEAF_KEYS.
+
     print(
         f"\n[inv08-green-control] resolved {len(LEAF_KEYS)}/{len(LEAF_KEYS)} keys in {elapsed * 1e3:.1f} ms"  # noqa: E501
     )
 
 
-# ---------------------------------------------------------------------------
-# HEADLINE — three missing keys, ONE aggregated error, inside the first second.
-# ---------------------------------------------------------------------------
-
-
 def test_inv08_three_missing_keys_all_named_within_first_second(tmp_path: Path) -> None:
-    """Spec §12 row #8 verbatim property on THIS suite's own three keys."""
     raw = _fresh_fixture()
     for dotted in THE_MISSING:
         _delete(raw, dotted)
-    # Independent preconditions (not the resolver's word): all three really gone.
+
     for dotted in THE_MISSING:
         assert not _has(raw, f"{dotted}")
 
-    _stage(tmp_path)  # same staged tree the green control proves valid
+    _stage(tmp_path)
     exc, elapsed = _resolve_err(_write_raw(tmp_path, raw), tmp_path)
 
     msg = str(exc)
@@ -367,21 +319,14 @@ def _write_raw(tmp_path: Path, raw: dict[str, Any]) -> Path:
     return p
 
 
-# ---------------------------------------------------------------------------
-# Typo'd key flagged ALONGSIDE its intended key, in the same error.
-# ---------------------------------------------------------------------------
-
-
 def test_inv08_typo_flagged_alongside_intended_key_within_first_second(tmp_path: Path) -> None:
-    """judged_bar_realtive (typo) must yield BOTH problems in ONE first-second error:
-    unknown-key refusal AND the missing intended key it silently creates."""
     raw = _fresh_fixture()
     del raw["budget"]["judged_bar_relative"]
     raw["budget"]["judged_bar_realtive"] = 1.0e-4
     assert not _has(raw, "budget.judged_bar_relative")
     assert _has(raw, "budget.judged_bar_realtive")
 
-    _stage(tmp_path)  # same staged tree the green control proves valid
+    _stage(tmp_path)
     exc, elapsed = _resolve_err(_write_raw(tmp_path, raw), tmp_path)
 
     msg = str(exc)
@@ -392,17 +337,11 @@ def test_inv08_typo_flagged_alongside_intended_key_within_first_second(tmp_path:
     print(f"[inv08-typo] both halves flagged in {elapsed * 1e3:.1f} ms: {exc.problems}")
 
 
-# ---------------------------------------------------------------------------
-# Cross-keys refuse AT RESOLVE TIME (spec §4.1).
-# ---------------------------------------------------------------------------
-
-
 def test_inv08_hf_floor_mismatch_refuses_at_resolve_time(tmp_path: Path) -> None:
-    """exchange.hf_floor_m=0.002 vs inline solver physics.hf_floor_m=0.001."""
     raw = _fresh_fixture()
     raw["exchange"]["hf_floor_m"] = 0.002
 
-    _stage(tmp_path)  # same staged tree the green control proves valid
+    _stage(tmp_path)
     exc, elapsed = _resolve_err(_write_raw(tmp_path, raw), tmp_path)
 
     msg = str(exc)
@@ -413,7 +352,6 @@ def test_inv08_hf_floor_mismatch_refuses_at_resolve_time(tmp_path: Path) -> None
 
 
 def test_inv08_infiltration_nonzero_df_refusal_at_resolve_time(tmp_path: Path) -> None:
-    """Deviation D-F: coupled mode refuses unless infiltration == 0.0 exactly."""
     solver = yaml.safe_load(yaml.safe_dump(SOLVER_YAML))
     solver["sinks"]["infiltration"]["uniform_rate_mm_per_hr"] = 2.5
     spath = tmp_path / "df_solver.yaml"
@@ -421,7 +359,7 @@ def test_inv08_infiltration_nonzero_df_refusal_at_resolve_time(tmp_path: Path) -
     raw = _fresh_fixture()
     raw["solver_ref"]["config"] = str(spath)
 
-    _stage(tmp_path)  # same staged tree the green control proves valid
+    _stage(tmp_path)
     exc, elapsed = _resolve_err(_write_raw(tmp_path, raw), tmp_path)
 
     msg = str(exc)
@@ -431,20 +369,14 @@ def test_inv08_infiltration_nonzero_df_refusal_at_resolve_time(tmp_path: Path) -
     print(f"[inv08-df] D-F refusal at resolve time in {elapsed * 1e3:.1f} ms: {exc.problems}")
 
 
-# ---------------------------------------------------------------------------
-# Aggregation spans defect CLASSES — missing + typo + cross-key in ONE error.
-# ---------------------------------------------------------------------------
-
-
 def test_inv08_cross_class_aggregation_missing_typo_crosskey_one_error(tmp_path: Path) -> None:
-    """One fixture, four defects from three classes; ALL FOUR in one error <1s."""
     raw = _fresh_fixture()
-    del raw["budget"]["judged_bar_relative"]  # class: missing
-    del raw["diagnostics"]["attribution_radius_m"]  # intended half of the typo
-    raw["diagnostics"]["attribution_radus_m"] = 100.0  # class: unknown/typo
-    raw["exchange"]["hf_floor_m"] = 0.002  # class: cross-key vs inline solver 0.001
+    del raw["budget"]["judged_bar_relative"]
+    del raw["diagnostics"]["attribution_radius_m"]
+    raw["diagnostics"]["attribution_radus_m"] = 100.0
+    raw["exchange"]["hf_floor_m"] = 0.002
 
-    _stage(tmp_path)  # same staged tree the green control proves valid
+    _stage(tmp_path)
     exc, elapsed = _resolve_err(_write_raw(tmp_path, raw), tmp_path)
 
     msg = str(exc)
@@ -452,7 +384,7 @@ def test_inv08_cross_class_aggregation_missing_typo_crosskey_one_error(tmp_path:
         "missing key 'budget.judged_bar_relative'",
         "unknown key 'diagnostics.attribution_radus_m'",
         "missing key 'diagnostics.attribution_radius_m'",
-        "exchange.hf_floor_m",  # cross-key half; paired with physics.hf_floor_m
+        "exchange.hf_floor_m",
     ]
     for fragment in expected:
         assert fragment in msg, f"cross-class aggregation broken: {fragment!r} absent:\n{msg}"
@@ -462,16 +394,13 @@ def test_inv08_cross_class_aggregation_missing_typo_crosskey_one_error(tmp_path:
     print(f"[inv08-cross-class] 4 problems / 3 classes in {elapsed * 1e3:.1f} ms: {exc.problems}")
 
 
-# ---------------------------------------------------------------------------
 # V5 RED DEMO — fail-fast mutant on a /tmp COPY of config.py reddens the claim.
-# ---------------------------------------------------------------------------
 
 FAIL_FAST_NEEDLE = "problems.append(msg)"
 FAIL_FAST_REPLACEMENT = "raise ConfigError([msg], config_path=path)"
 
 
 def _materialise_fail_fast_mutant(root: Path) -> Any:
-    """Copy THE RUNNING config.py bytes to root (/tmp COPY ONLY), patch, import."""
     src = Path(config_mod.__file__).read_text()
     n_hits = src.count(FAIL_FAST_NEEDLE)
     assert n_hits == 1, f"mutation-site pin stale ({n_hits} matches for {FAIL_FAST_NEEDLE!r})"
@@ -482,8 +411,8 @@ def _materialise_fail_fast_mutant(root: Path) -> Any:
     )
     assert spec is not None and spec.loader is not None
     mod = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = mod  # dataclass machinery resolves annotations via sys.modules
-    spec.loader.exec_module(mod)  # stdlib+yaml imports only — resolves clean standalone
+    sys.modules[spec.name] = mod
+    spec.loader.exec_module(mod)
     return mod
 
 
@@ -495,7 +424,7 @@ def test_v5_red_demo_fail_fast_mutant_yields_single_key_error(tmp_path: Path) ->
     AssertionError naming the second key. Outcomes asserted, not narrated.
     """
     coupling_yaml = _stage(tmp_path)
-    _, green_elapsed = _resolve_ok(coupling_yaml, tmp_path)  # green control, pristine code
+    _, green_elapsed = _resolve_ok(coupling_yaml, tmp_path)
 
     mutant = _materialise_fail_fast_mutant(tmp_path)
     raw = _fresh_fixture()
@@ -519,7 +448,7 @@ def test_v5_red_demo_fail_fast_mutant_yields_single_key_error(tmp_path: Path) ->
             assert (
                 dotted in mut_msg
             ), f"aggregation broken: {dotted!r} absent from error:\n{mut_msg}"
-        raise SystemError(  # pragma: no cover — only reachable if the demo goes vacuous
+        raise SystemError(
             "fail-fast mutant did NOT redden the invariant — demo vacuous, fix the harness"
         )
     except AssertionError as e:

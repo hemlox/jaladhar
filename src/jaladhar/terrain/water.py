@@ -1,12 +1,5 @@
-"""Acquire OSM standing-water, quarry, and landfill polygons for terrain evidence.
-
-This is a source-data stage, not a terrain approximation.  The canonical
-``data/raw/osm/osm_water.gpkg`` is consumed by depression classification,
-water tracing, and the Sentinel-1 water-classifier. Quarry and landfill
-polygons prevent real excavations and waste sites from being misclassified as
-flood storage. A failed Overpass query is fatal: an empty or synthetic
-replacement would change the terrain classification without evidence.
-"""
+"""This is a source-data stage, not a terrain approximation.  The canonical
+flood storage. A failed Overpass query is fatal: an empty or synthetic"""
 
 from __future__ import annotations
 
@@ -35,7 +28,6 @@ def fetch_osm_polygons(
     timeout_s: int,
     source_name: str,
 ) -> gpd.GeoDataFrame:
-    """Fetch configured OSM tags and retain clipped polygon geometries."""
     ox.settings.requests_timeout = timeout_s
     ox.settings.log_console = False
     try:
@@ -67,13 +59,10 @@ def fetch_osm_water(
     tags: dict[str, list[str]],
     timeout_s: int,
 ) -> gpd.GeoDataFrame:
-    """Fetch configured OSM standing-water tags and retain clipped polygons."""
     water = fetch_osm_polygons(
         query_polygon_wgs84, clip_polygon_wgs84, tags, timeout_s, source_name="water"
     )
 
-    # Depression classification uses names only to recognize explicitly named
-    # lakes; unnamed OSM water is still real evidence and remains in the file.
     if "name" not in water.columns:
         water["name"] = ""
     else:
@@ -82,7 +71,6 @@ def fetch_osm_water(
 
 
 def build_water(cfg: dict[str, Any], repo_root: Path = REPO) -> dict[str, Any]:
-    """Fetch and write the canonical OSM water GeoPackage for all consumers."""
     grid, grid_diag = build_grid(cfg, repo_root)
     buffered_grid = grid.buffered(float(cfg["dem"]["buffer_m"]))
     water_cfg = cfg["water"]
@@ -133,7 +121,6 @@ def main(
         REPO / "runs" / "terrain_water", help="Directory for the stage manifest"
     ),
 ) -> None:
-    """Fetch real OSM standing-water, quarry, and landfill evidence polygons."""
     cfg = load_config(config)
     try:
         result = run_stage("phase1_terrain_water", build_water, cfg, config, REPO, out)

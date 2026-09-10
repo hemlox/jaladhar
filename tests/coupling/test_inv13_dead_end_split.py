@@ -85,15 +85,13 @@ only as the spec §11.3 [F] fixture constant.
 
 from __future__ import annotations
 
-import importlib.util
 import json
 import math
-import sys
-import tempfile
 from pathlib import Path
 
 import pytest
 import torch
+from conftest import load_mutated_source
 from typer.testing import CliRunner
 
 from jaladhar.coupling.config import resolve_config
@@ -121,23 +119,12 @@ RED_DEMO_ROOT = Path("/tmp/opencode/redtest_inv13")
 
 RUNNER = CliRunner()
 
-# Realized-graph [F] figures carried as spec §11.3 constants (live recomputation is D-G-blocked)
-# V6 record: SPEC grew (WF-2 M1 v2-lake-boundary terminal definition). The
-# declared-only 55/1666 split below is kept for the toy-fixture uses and as
-# history; the LIVE-graph companion now asserts the extended-definition split
-# measured at the router seam (68/1653, lake seeds 1183+1512, boundary +0).
 DIRECTED_SPLIT_F = {"outfall_terminating": 55, "dead_end": 1666}
 DIRECTED_SPLIT_F_V2 = {"outfall_terminating": 68, "dead_end": 1653}
 LENGTH_FRACTION_F = 0.736484
 
 
-# ---------------------------------------------------------------------------
-# Fixtures (patterns reused from test_diagnostics.py, OWN values throughout)
-# ---------------------------------------------------------------------------
-
-
 def _ev(node_id: int, total: float, first: int = 1, last: int = 2, head: float = 2.0):
-    """One surcharge-event row in the EXACT G2 schema."""
     return {
         "node_id": node_id,
         "total_returned_m3": total,
@@ -147,10 +134,6 @@ def _ev(node_id: int, total: float, first: int = 1, last: int = 2, head: float =
     }
 
 
-# Events spanning BOTH classes on the toy graph below — hand sums:
-#   outfall_terminating: nodes 2,3 -> n=2, returned = 2.5 + 7.25 = 9.75
-#   dead_end:            nodes 5,7,9 -> n=3, returned = 4.0 + 0.125 + 11.75 = 15.875
-#   totals: n=5, returned = 25.625
 EVENTS_BOTH_CLASSES = [
     _ev(2, 2.5),
     _ev(4, 7.25),
@@ -164,10 +147,6 @@ HAND_TOTAL_RETURNED = 25.625
 
 
 def _two_component_graph():
-    """9-node toy graph: chain 1->2->3->4 with node 4 the OUTFALL (indices 0..3 =>
-    outfall_terminating), nodes 5..9 isolated (dead_end). Directed split {ot: 4, de: 5},
-    directed outfall fraction 4/9 ~= 0.4444 — deliberately FAR from the manifest-carried
-    length-weighted 0.736484 so arm (b)'s distinctness assertion cannot pass by coincidence."""
     n = 9
     edge_from = torch.tensor([0, 1, 2], dtype=torch.int64)
     edge_to = torch.tensor([1, 2, 3], dtype=torch.int64)
@@ -206,7 +185,6 @@ def _two_component_graph():
 
 
 def _gt_bundle(tmp_path: Path, rows: list[dict]) -> Path:
-    """Synthetic GT manifest+CSV bundle carrying PROJECTED x_m/y_m directly."""
     lines = ["id,location_name,x_m,y_m"] + [
         f"{r['id']},{r.get('name', 'synthetic')},{r['x_m']},{r['y_m']}" for r in rows
     ]
@@ -217,14 +195,12 @@ def _gt_bundle(tmp_path: Path, rows: list[dict]) -> Path:
     return man_path
 
 
-# Sparse geometry for the SUSPICIOUS-boundary arms: two nodes 1000 m apart, one of each
-# class, so a point placed at a node's exact coordinates matches THAT node and no other.
 NODE_DE, NODE_OT = 101, 202
 XY_SPARSE = {NODE_DE: (5000.0, 5000.0), NODE_OT: (6000.0, 5000.0)}
 CLS_SPARSE = {NODE_DE: "dead_end", NODE_OT: "outfall_terminating"}
 BOUNDARY_POINTS = [
-    {"id": "PA", "x_m": 5000.0, "y_m": 5000.0},  # nearest node NODE_DE
-    {"id": "PB", "x_m": 6000.0, "y_m": 5000.0},  # nearest node NODE_OT
+    {"id": "PA", "x_m": 5000.0, "y_m": 5000.0},
+    {"id": "PB", "x_m": 6000.0, "y_m": 5000.0},
 ]
 
 
@@ -252,39 +228,20 @@ def _g2_inputs(steps: int, returned: float, *, split: bool = True) -> dict:
     return d
 
 
-# ---------------------------------------------------------------------------
 # V5 red-demo machinery: mutated COPY under /tmp/opencode, repo source untouched
-# ---------------------------------------------------------------------------
 
 
 def _load_mutated_diagnostics(replacements: list[tuple[str, str]], tag: str):
     """Copy diagnostics.py to /tmp/opencode/redtest_inv13/<tag>/, apply the listed textual
     mutations (each anchor must occur EXACTLY ONCE — drift fails HERE, loudly), import the
     copy standalone. Pattern from tests/coupling/test_inv03_capture_bounded.py."""
-    src = DIAGNOSTICS_SRC.read_text()
-    out = src
-    for old, new in replacements:
-        n = out.count(old)
-        if n != 1:
-            raise AssertionError(
-                f"[inv13 red demo:{tag}] mutation anchor occurs {n}x (need exactly 1) — "
-                f"diagnostics.py drifted past the demo; fix the anchor: {old!r}"
-            )
-        out = out.replace(old, new)
-    if out == src:
-        raise AssertionError(f"[inv13 red demo:{tag}] replacements produced no textual change")
-    RED_DEMO_ROOT.mkdir(parents=True, exist_ok=True)
-    work = Path(tempfile.mkdtemp(prefix=f"inv13_{tag}_", dir=RED_DEMO_ROOT))
-    path = work / "diagnostics_mutated.py"
-    path.write_text(out)
-    spec = importlib.util.spec_from_file_location(f"_inv13_diagnostics_mutated_{tag}", path)
-    if spec is None or spec.loader is None:
-        raise AssertionError(f"[inv13 red demo:{tag}] could not spec-load {path}")
-    mod = importlib.util.module_from_spec(spec)
-    # Register BEFORE exec: dataclass field processing resolves string annotations via
-    # sys.modules[cls.__module__] (see inv03 comment for the failure mode otherwise).
-    sys.modules[spec.name] = mod
-    spec.loader.exec_module(mod)
+    mod, _path = load_mutated_source(
+        DIAGNOSTICS_SRC,
+        replacements,
+        tag=tag,
+        prefix="inv13",
+        directory=RED_DEMO_ROOT,
+    )
     return mod
 
 
@@ -298,14 +255,9 @@ M1_MUTATION = (
 )
 
 M2_ANCHOR = """        cls = classes[idx]"""
-# REPLACE (not prepend): a prepended assignment would be overwritten by the original line,
+
 # making the mutation a silent no-op — exactly the vacuous red demo V5 forbids.
 M2_MUTATION = """        cls = "dead_end"  # INV13-M2: both classes COLLAPSED into one bucket"""
-
-
-# ---------------------------------------------------------------------------
-# GREEN arm (a): split arithmetic on hand-built events spanning both classes
-# ---------------------------------------------------------------------------
 
 
 class TestSplitArithmeticHandComputed:
@@ -317,11 +269,11 @@ class TestSplitArithmeticHandComputed:
             "n_events": 5,
             "returned_m3": HAND_TOTAL_RETURNED,
         }
-        # PARTITION property: per-class counts cover every event, no third bucket exists
+
         n_partitioned = sum(c["n_events"] for c in got["per_class"].values())
         assert n_partitioned == got["totals"]["n_events"] == 5
         assert set(got["per_class"]) <= set(COMPONENT_CLASSES)
-        # basis line names the join source: DIRECTED reachability via DrainGraph.component_class
+
         assert "DIRECTED" in got["basis"] and "component_class" in got["basis"]
 
     def test_zero_events_yield_empty_buckets_not_missing_keys(self):
@@ -330,26 +282,18 @@ class TestSplitArithmeticHandComputed:
         assert got["totals"]["n_events"] == 0
 
 
-# ---------------------------------------------------------------------------
-# GREEN arm (b): BOTH headline fractions present, DISTINCTLY labelled, different numbers
-# ---------------------------------------------------------------------------
-
-
 class TestDualHeadlineFractionsDistinct:
     def test_directed_and_length_weighted_figures_both_present_and_different(self):
         hf = component_split(EVENTS_BOTH_CLASSES, _two_component_graph())["headline_fractions"]
         directed = hf["directed_node_count_split"]
         length_frac = hf["length_weighted_weak_connectivity_outfall_fraction"]
 
-        # directed figure: LIVE node-count split of the loaded toy graph
         assert directed["counts"] == {"outfall_terminating": 4, "dead_end": 5}
         assert sum(directed["counts"].values()) == 9
 
-        # length-weighted figure: read from the graph MANIFEST, never recomputed
         assert length_frac == LENGTH_FRACTION_F
         assert "component_policy" in hf["length_weighted_source"]
 
-        # DIFFERENT numbers measuring different things: 4/9 ~= 0.4444 vs 0.736484
         directed_fraction = directed["counts"]["outfall_terminating"] / sum(
             directed["counts"].values()
         )
@@ -359,7 +303,6 @@ class TestDualHeadlineFractionsDistinct:
             f"{abs(directed_fraction - LENGTH_FRACTION_F):.4f}"
         )
 
-        # DISTINCTLY labelled: each names its own basis and not the other's
         d_txt = directed["measures"].lower()
         l_txt = hf["length_weighted_measures"].lower()
         assert "count of nodes" in d_txt and "directed" in d_txt
@@ -367,12 +310,9 @@ class TestDualHeadlineFractionsDistinct:
         assert "weak" not in d_txt and "count of nodes" not in l_txt
 
     def test_length_weighted_figure_is_anchored_to_the_real_build_manifest(self):
-        """[F] anchor (rule-3 spirit): the 0.736484 constant this suite embeds is the value
-        the REAL WF-1 build manifest declares in its component_policy block — read straight
-        from disk, not from any code path under test."""
         policy = json.loads(REAL_BUILD_MANIFEST.read_text())["component_policy"]
         assert policy["outfall_terminating_observed_length_fraction"] == LENGTH_FRACTION_F
-        assert policy["accepted_by_owner"] is True  # owner-adjudicated 2026-08-25, per manifest
+        assert policy["accepted_by_owner"] is True
 
     def test_manifest_without_component_policy_reports_absent_not_zero(self):
         g = _two_component_graph()
@@ -399,11 +339,6 @@ class TestDualHeadlineFractionsDistinct:
         assert "ABSENT" in hf["length_weighted_source"]
 
 
-# ---------------------------------------------------------------------------
-# GREEN arm (c): G2 REFUSES an unsplit input — the invariant's teeth
-# ---------------------------------------------------------------------------
-
-
 class TestG2UnsplitRefusal:
     def test_twin_input_with_split_passes_refusal_keys_off_the_split(self):
         passing = _g2_inputs(12, 480.5)
@@ -418,7 +353,7 @@ class TestG2UnsplitRefusal:
 
     def test_single_class_split_dict_also_refuses(self):
         single = _g2_inputs(12, 480.5)
-        single["component_class_split"] = {"dead_end": 1666}  # outfall_terminating deleted
+        single["component_class_split"] = {"dead_end": 1666}
         with pytest.raises(DiagnosticsRefusal, match="component-class split"):
             g2_verdict(single)
 
@@ -431,11 +366,6 @@ class TestG2UnsplitRefusal:
         assert "G2 PASS" not in r.output, "an unsplit manifest must never look green"
 
 
-# ---------------------------------------------------------------------------
-# GREEN arm (d): SUSPICIOUS fires STRICTLY above 0.5 — boundary at ULP scale
-# ---------------------------------------------------------------------------
-
-
 class TestSuspiciousStrictThresholdBoundary:
     def test_share_exactly_at_threshold_is_not_suspicious(self, tmp_path):
         got = _boundary_attr([_ev(NODE_DE, 10.0), _ev(NODE_OT, 10.0)], tmp_path)
@@ -445,11 +375,6 @@ class TestSuspiciousStrictThresholdBoundary:
         assert got["suspicious_state"] == "FALSE"
 
     def test_one_ulp_below_threshold_fires_one_ulp_above_does_not(self, tmp_path):
-        """Strictness at ULP scale, exercised on the THRESHOLD side — chosen because it is
-        exact by construction there. The volume side is NOT immovable (adjacent doubles can
-        shift the share via the half-ULP round-half-to-even tie in fl(a+b)); that case is
-        probed deterministically by test_volume_side_adjacent_double_nudge_moves_the_share
-        below."""
         events = [_ev(NODE_DE, 10.0), _ev(NODE_OT, 10.0)]
         lo = _boundary_attr(events, tmp_path, threshold=math.nextafter(0.5, 0.0))
         assert lo["suspicious"] is True, "share 0.5 > nextafter(0.5, 0.0) must fire STRICTLY"
@@ -462,8 +387,8 @@ class TestSuspiciousStrictThresholdBoundary:
     @pytest.mark.parametrize(
         "volumes,suspicious_expected",
         [
-            ((55.0, 45.0), True),  # share 0.55 — clearly above
-            ((45.0, 55.0), False),  # share 0.45 — clearly below
+            ((55.0, 45.0), True),
+            ((45.0, 55.0), False),
         ],
     )
     def test_clearly_either_side_of_default_threshold(self, tmp_path, volumes, suspicious_expected):
@@ -475,18 +400,6 @@ class TestSuspiciousStrictThresholdBoundary:
         assert got["suspicious_state"] == ("TRUE" if suspicious_expected else "FALSE")
 
     def test_volume_side_adjacent_double_nudge_moves_the_share(self, tmp_path):
-        """Deterministic VOLUME-side boundary probe (auditor-corrected arithmetic — the
-        module docstring's earlier 'volume side CANNOT move' claim was wrong). Nudging the
-        DEAD-END volume one ULP above 10.0 moves the share OFF exactly 0.5:
-        nextafter(10.0, inf) / fl(nextafter(10.0, inf) + 10.0) == 0.5000000000000001,
-        because fl(10.0 + nextafter(10.0, inf)) lands a half-ULP tie on 20.0 (round-half-to-
-        EVEN mantissa) and the numerator carries the nudge. The strict threshold therefore
-        fires WITHOUT touching it.
-
-        Control on the SAME fixture values: nudging the OUTFALL (denominator-side) volume
-        instead leaves the share EXACTLY 0.5 and suspicious FALSE — the orientation whose
-        immobility the old claim mis-generalised to the whole volume side. IEEE-754 double
-        division is exactly specified, so both shares are deterministic."""
         v = 10.0
         de_nudged = _boundary_attr(
             [_ev(NODE_DE, math.nextafter(v, math.inf)), _ev(NODE_OT, v)], tmp_path
@@ -508,15 +421,8 @@ class TestSuspiciousStrictThresholdBoundary:
         assert ot_nudged["suspicious"] is False
 
 
-# ---------------------------------------------------------------------------
-# GREEN arm (e): end-to-end — real attribution block embedded into a scored manifest
-# ---------------------------------------------------------------------------
-
-
 class TestEndToEndDeadEndDominantCli:
     def _attribution_block(self, tmp_path: Path) -> dict:
-        """REAL attribute_ground_truth call: the ONLY matched node is dead_end with all the
-        volume => share 1.0 => SUSPICIOUS TRUE — the D-A world by construction."""
         man = _gt_bundle(tmp_path, [{"id": "P_ONLY", "x_m": 5000.0, "y_m": 5000.0}])
         attr = attribute_ground_truth(
             [_ev(NODE_DE, 90.0)],
@@ -555,7 +461,7 @@ class TestEndToEndDeadEndDominantCli:
             json.dumps(
                 {
                     "total_surcharging_steps": 9,
-                    "total_returned_m3": 0.42,  # below the 1.0 m³ contract floor
+                    "total_returned_m3": 0.42,
                     "component_class_split": dict(DIRECTED_SPLIT_F),
                     "gt_attribution": self._attribution_block(tmp_path),
                 }
@@ -568,23 +474,18 @@ class TestEndToEndDeadEndDominantCli:
         assert "SUSPICIOUS=TRUE" in first
 
 
-# ---------------------------------------------------------------------------
 # RED DEMOS (V5) — mutations on /tmp copies; repo source untouched
-# ---------------------------------------------------------------------------
 
 
 class TestRedDemoV5MutationsOnTmpCopies:
     def test_m1_unsplit_refusal_removed_scores_the_unsplit_input(self):
-        """Mutation M1: _normalized_class_counts returns zeroed counts instead of raising.
-        PRISTINE: DiagnosticsRefusal. MUTANT: returns ('pass', ...) scored from totals alone
-        — the observable moved from raise to pass-tuple, verbatim."""
         unsplit = _g2_inputs(12, 480.5, split=False)
         with pytest.raises(DiagnosticsRefusal) as ei:
             g2_verdict(unsplit)
         pristine_observable = f"DiagnosticsRefusal: {str(ei.value)[:80]}..."
 
         mod = _load_mutated_diagnostics([(M1_ANCHOR, M1_MUTATION)], "m1")
-        mutant_result = mod.g2_verdict(unsplit)  # does NOT raise — this is the red movement
+        mutant_result = mod.g2_verdict(unsplit)
         verdict, reason = mutant_result
         # The same assertion that is GREEN against pristine code is RED against the mutant:
         assert isinstance(
@@ -601,8 +502,6 @@ class TestRedDemoV5MutationsOnTmpCopies:
         assert s_verdict == "pass", "M1 also scores a single-class (collapsed) input"
 
     def test_m2_class_collapse_moves_per_class_arithmetic_off_hand_values(self):
-        """Mutation M2: component_split buckets EVERY event as dead_end. PRISTINE per-class
-        blocks equal the hand values; MUTANT moves BOTH observables to the collapsed ones."""
         pristine = component_split(EVENTS_BOTH_CLASSES, _two_component_graph())
         assert pristine["per_class"]["outfall_terminating"] == HAND_OT
         assert pristine["per_class"]["dead_end"] == HAND_DE
@@ -623,22 +522,11 @@ class TestRedDemoV5MutationsOnTmpCopies:
         )
 
 
-# ---------------------------------------------------------------------------
 # BLOCKED companion (V7, house convention — cf. inv01/05/10/11): the REAL event
-# population over the real 1,721-node graph
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.slow
 def test_real_graph_companion_real_event_population_or_blocked() -> None:
-    """The SAME split machinery on a REAL event population: component_split joined from
-    DrainGraph.component_class over the surcharge-event ledger of a bounded coupled smoke
-    run on the real buffered domain, with the directed node-count split recomputed LIVE
-    from the loaded graph and asserted against the [F] constants above. Closes exactly
-    when BOTH hold: (1) the WF-1 artefact seam D-G closes (the frozen reader accepts the
-    realized artefact), and (2) the first coupled smoke run over the 1,721-node graph
-    supplies a real event population. Until then this xfails LOUDLY naming those
-    conditions rather than implying city-scale coverage."""
     cfg = resolve_config(REPO / "configs" / "coupling.yaml", REPO)
     try:
         g = load_drain_graph(cfg, REPO)
@@ -668,8 +556,7 @@ def test_real_graph_companion_real_event_population_or_blocked() -> None:
     events = res.ledger.flush_open_events()
     split = component_split(events, g)
     counts = split["headline_fractions"]["directed_node_count_split"]["counts"]
-    # live recomputation of the directed split must reproduce the [F] constants
-    # verbatim — under the terminal definition now in effect (V6: spec grew,
+
     # see DIRECTED_SPLIT_F_V2 record above; the loaded graph carries the echo).
     assert (
         counts == DIRECTED_SPLIT_F_V2

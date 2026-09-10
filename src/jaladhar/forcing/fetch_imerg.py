@@ -1,18 +1,5 @@
-"""Fetch GPM IMERG half-hourly granules for a date window over Bengaluru.
-
-OPEN-ITEMS.md item 8 / the gate's event-forcing fallback. IMERG is what forces
-the September 2022 replay because KSNDMC historical gauge data is unavailable
-(item 1b). Raw granules are kept whole for provenance; the Bengaluru window is
-extracted alongside as the actual forcing input.
-
-SCALE CAVEAT, to be repeated wherever this data is used: the full BBMP extent
-(717 km^2) falls inside a 3x3 block of 0.1-degree IMERG cells. Nine values cover
-198 wards. Per-ward rainfall attribution is not defensible from this source.
-
-Requires EARTHDATA_TOKEN in .env AND one-time acceptance of the GES DISC EULA at
-https://urs.earthdata.nasa.gov/approve_app?client_id=e2WVk8Pw6weeLUKZYOxvTQ
-(a 403 "EULA Acceptance Failure" means the click was not done, not a bad token).
-"""
+"""(item 1b). Raw granules are kept whole for provenance; the Bengaluru window is
+198 wards. Per-ward rainfall attribution is not defensible from this source."""
 
 from __future__ import annotations
 
@@ -32,7 +19,6 @@ REPO = Path(__file__).resolve().parents[3]
 CMR = "https://cmr.earthdata.nasa.gov/search/granules.json"
 COLLECTION = "C2723754847-GES_DISC"  # GPM_3IMERGHH v07 (Final run)
 
-# BBMP extent, from the 2023 ward boundaries (OPEN-ITEMS.md question A).
 BBOX = (77.4601, 12.8336, 77.7844, 13.1427)
 
 
@@ -63,9 +49,6 @@ def granule_urls(start: date, end: date, tok: str) -> list[str]:
             if h.endswith(".HDF5") and h.startswith("http"):
                 urls.append(h)
                 break
-    # CMR can expose the same data link through duplicate metadata entries.
-    # Deduplicate before parallel dispatch: two workers sharing one ``.part``
-    # path can otherwise race at the atomic rename and report FileNotFoundError.
     return list(dict.fromkeys(urls))
 
 
@@ -81,10 +64,10 @@ def fetch_one(url: str, dest_dir: Path, tok: str) -> tuple[str, str]:
         ) as r:
             if r.status_code != 200:
                 return name, f"HTTP{r.status_code}"
-            with open(tmp, "wb") as fh:  # stream: never buffer a granule in RAM
+            with open(tmp, "wb") as fh:
                 for chunk in r.iter_content(1 << 20):
                     fh.write(chunk)
-        tmp.rename(target)  # atomic
+        tmp.rename(target)
         return name, "ok"
     except Exception as e:
         tmp.unlink(missing_ok=True)
@@ -92,7 +75,6 @@ def fetch_one(url: str, dest_dir: Path, tok: str) -> tuple[str, str]:
 
 
 def extract_window(files: list[Path], out_csv: Path) -> int:
-    """Pull the 3x3 Bengaluru block from each granule into one tidy CSV."""
     import h5py
     import numpy as np
 
@@ -105,8 +87,7 @@ def extract_window(files: list[Path], out_csv: Path) -> int:
                 ilon = np.where((lon >= BBOX[0]) & (lon <= BBOX[2]))[0]
                 ilat = np.where((lat >= BBOX[1]) & (lat <= BBOX[3]))[0]
                 pr = g["precipitation"][0][np.ix_(ilon, ilat)]
-                pr = np.where(pr < 0, np.nan, pr)  # IMERG fill value is negative
-                # granule name carries ...3IMERG.YYYYMMDD-SHHMMSS-E...
+                pr = np.where(pr < 0, np.nan, pr)
                 stamp = p.name.split(".3IMERG.")[1].split("-")[0:2]
                 ts = datetime.strptime(stamp[0] + stamp[1][1:], "%Y%m%d%H%M%S")
                 rows.append(
@@ -117,7 +98,7 @@ def extract_window(files: list[Path], out_csv: Path) -> int:
                         "n_cells": int(pr.size),
                     }
                 )
-        except Exception as e:  # a corrupt granule must not kill the run
+        except Exception as e:
             typer.echo(f"  skip {p.name}: {type(e).__name__} {e}")
     rows.sort(key=lambda r: r["time_utc"])
     out_csv.parent.mkdir(parents=True, exist_ok=True)
@@ -135,7 +116,6 @@ def main(
     workers: int = typer.Option(4, help="Parallel downloads (keep modest — host RAM)"),
     out: Path = typer.Option(REPO / "data/raw/imerg", help="Output directory"),
 ) -> None:
-    """Download IMERG granules and extract the Bengaluru window."""
     tok = token()
     s = date.fromisoformat(start)
     e = date.fromisoformat(end)

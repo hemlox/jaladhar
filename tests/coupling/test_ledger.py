@@ -51,10 +51,7 @@ from jaladhar.solver.mass import MassBudget
 
 AREA = 100.0
 
-
-# ---------------------------------------------------------------------------
 # Fixtures (hand-built; V2: no shared code path with the module under test)
-# ---------------------------------------------------------------------------
 
 
 def _node_state(heads: list[float], vin: list[float], vout: list[float]) -> NodeState:
@@ -76,7 +73,6 @@ def _cr(
     surcharging: int = 0,
     cap_binding: int = 0,
 ) -> CoupleResult:
-    """Hand-built CoupleResult. ``vin``/``vout`` are the CUMULATIVE f64 books."""
     shape = (len(returned_field), len(returned_field[0])) if returned_field else (1, 1)
     h_new = torch.zeros(shape, dtype=torch.float32)
     return CoupleResult(
@@ -102,7 +98,7 @@ def _host(**kw) -> MassBudget:
     b.v_initial = kw.get("v_initial", 1000.0)
     b.v_current = kw.get("v_current", 1100.0)
     b.rain_in = kw.get("rain_in", 200.0)
-    b.drain_out = kw.get("drain_out", 0.0)  # guard c: 0.0 EXACTLY when coupled
+    b.drain_out = kw.get("drain_out", 0.0)
     b.infil_out = kw.get("infil_out", 30.0)
     b.boundary_out = kw.get("boundary_out", 15.0)
     b.created_by_clamping = kw.get("created_by_clamping", 0.0)
@@ -110,7 +106,6 @@ def _host(**kw) -> MassBudget:
 
 
 def _toy_graph():
-    """2 nodes / 1 capacity-bearing edge; node 1 owns one mapped cell."""
     return build_drain_graph(
         edge_from=torch.zeros(1, dtype=torch.int64),
         edge_to=torch.ones(1, dtype=torch.int64),
@@ -126,11 +121,6 @@ def _toy_graph():
         node_id_map=torch.tensor([[1, -1]], dtype=torch.int32),
         node_cell_count=torch.tensor([1, 0], dtype=torch.int64),
     )
-
-
-# ---------------------------------------------------------------------------
-# Accumulation identities (deliverable 2, item 1)
-# ---------------------------------------------------------------------------
 
 
 class TestAccumulationIdentities:
@@ -188,14 +178,9 @@ class TestAccumulationIdentities:
         led.accumulate(_cr(capture_m3=5.0, return_m3=0.0, vin=[5.0], vout=[0.0]), 0.48)
         assert led.legacy_drain_out_m3 == 0.0
 
-        host.drain_out = 5.0  # a live legacy sink leaked through some unzeroed path
+        host.drain_out = 5.0
         with pytest.raises(AntiDoubleCountError, match="guard \\(c\\)"):
             led.accumulate(_cr(capture_m3=5.0, return_m3=0.0, vin=[10.0], vout=[0.0]), 0.48)
-
-
-# ---------------------------------------------------------------------------
-# Residual formulas vs hand-computed values (deliverable 2; V10 derivation check)
-# ---------------------------------------------------------------------------
 
 
 class TestResidualFormulasHandComputed:
@@ -261,7 +246,7 @@ class TestMassCheckBreaches:
         def balanced_host() -> MassBudget:
             b = MassBudget(cell_area_m2=AREA, relative_tolerance=1.0e-3)
             b.v_initial = 1000.0
-            b.v_current = 1000.0 + 200.0 - 110.0  # surface lost net 110 m3 into the graph
+            b.v_current = 1000.0 + 200.0 - 110.0
             b.rain_in = 200.0
             b.infil_out = 0.0
             b.boundary_out = 0.0
@@ -270,7 +255,7 @@ class TestMassCheckBreaches:
         ok = CouplingMassLedger(AREA, balanced_host())
         ok.accumulate(_cr(capture_m3=160.0, return_m3=50.0, vin=[160.0], vout=[50.0]), 0.48)
         assert ok.total_water_relative_residual() <= 1e-4
-        ok.mass_check(1)  # control: no raise
+        ok.mass_check(1)
 
         mutant = CouplingMassLedger(AREA, balanced_host())
         mutant.accumulate(_cr(capture_m3=160.0, return_m3=50.0, vin=[160.0], vout=[0.0]), 0.48)
@@ -278,11 +263,6 @@ class TestMassCheckBreaches:
         assert mutant._identity_worst_rel == pytest.approx(expected_rel)
         with pytest.raises(CouplingMassBreach, match="reconciliation identity"):
             mutant.mass_check(1)
-
-
-# ---------------------------------------------------------------------------
-# Surcharge event list interface (spec §11.1 schema + §10.4 components)
-# ---------------------------------------------------------------------------
 
 
 class TestSurchargeEvents:
@@ -344,13 +324,7 @@ class TestSurchargeEvents:
 
 
 def np32(x: float) -> float:
-    """The f32 quantization the ledger actually sees (heads ride an f32 tensor)."""
     return float(torch.tensor(x, dtype=torch.float32))
-
-
-# ---------------------------------------------------------------------------
-# IndirectCflMonitor (§10.5) — hand-computed sqrt factors
-# ---------------------------------------------------------------------------
 
 
 class TestIndirectCflMonitor:
@@ -370,8 +344,8 @@ class TestIndirectCflMonitor:
         got2 = mon.observe(1.0, 0.23)
         assert got2 == pytest.approx(math.sqrt(1.0 / 1.23), rel=1e-12)
         assert got2 < 0.902
-        mon.observe(2.0, 0.0)  # dry perturbation -> 1.0
-        mon.observe(0.0, 5.0)  # dry domain -> 1.0
+        mon.observe(2.0, 0.0)
+        mon.observe(0.0, 5.0)
         assert mon.steps_observed == 5
         assert mon.alarm_steps == 1
         assert mon.min_factor == pytest.approx(math.sqrt(1.0 / 1.23), rel=1e-12)
@@ -387,11 +361,6 @@ class TestIndirectCflMonitor:
             mon.observe(float("nan"), 0.1)
         with pytest.raises(ValueError, match="non-finite"):
             mon.observe(1.0, float("inf"))
-
-
-# ---------------------------------------------------------------------------
-# Guard-c negative-dust allowance (BugHunt round-1 item A) — measured-trajectory replay
-# ---------------------------------------------------------------------------
 
 
 class TestGuardCNegativeDustAllowance:
@@ -417,15 +386,15 @@ class TestGuardCNegativeDustAllowance:
     tests/coupling/test_solver_hook.py::TestStormThenDryGuardC."""
 
     STEPS = 13_000
-    DUST_PER_STEP = 1.8e-6  # m3/step, measured production slope
-    RAIN_IN_FROZEN = 45_093.0  # m3, the frozen scale realized at the measured halt
-    GENUINE_M3 = 0.819  # m3 real double-count signal by ~12k steps
+    DUST_PER_STEP = 1.8e-6
+    RAIN_IN_FROZEN = 45_093.0
+    GENUINE_M3 = 0.819
 
     def _storm_then_dry_host(self) -> MassBudget:
         b = MassBudget(cell_area_m2=100.0, relative_tolerance=1.0e-3)
         b.v_initial = 500.0
-        b.rain_in = self.RAIN_IN_FROZEN  # fixed post-storm: the freeze that killed the old bound
-        b.v_current = 12.5  # post-storm recession surface water (below rain_in => frozen scale)
+        b.rain_in = self.RAIN_IN_FROZEN
+        b.v_current = 12.5
         b.infil_out = b.boundary_out = 0.0
         return b
 
@@ -433,9 +402,6 @@ class TestGuardCNegativeDustAllowance:
         return _cr(capture_m3=0.0, return_m3=0.0, vin=[0.0], vout=[0.0])
 
     def test_green_thirteen_k_step_dust_replay_completes(self):
-        """GREEN (constraint b): 13k steps of the measured dust slope NEVER trip — the
-        allowance tracks 2x the exhibited dust, so the negative bound always leads it.
-        Mirror stays VERBATIM (constraint c): exactly -STEPS x DUST_PER_STEP."""
         host = self._storm_then_dry_host()
         led = CouplingMassLedger(100.0, host)
         zero = self._zero_cr()
@@ -451,7 +417,7 @@ class TestGuardCNegativeDustAllowance:
             f"dust_observed={led.dust_observed_m3!r} allowance={led.dust_allowance_m3!r} "
             f"neg_bound={neg_bound_now:.4e}"
         )
-        assert led.steps == self.STEPS  # completed: nothing raised
+        assert led.steps == self.STEPS
         assert mirror == pytest.approx(-self.DUST_PER_STEP * self.STEPS, rel=1e-9)
         assert led.dust_allowance_m3 == pytest.approx(
             DUST_ALLOWANCE_SAFETY_FACTOR * self.DUST_PER_STEP * self.STEPS, rel=1e-9
@@ -487,14 +453,10 @@ class TestGuardCNegativeDustAllowance:
         assert "negative-dust allowance" in msg
 
     def test_red_positive_double_count_still_trips_immediately(self):
-        """RED (constraint a, positive side unchanged): a leak paced to reach the
-        measured +0.819 m3 by ~12k steps (+6.8e-5 m3/step) trips LONG before that, the
-        moment it crosses the strict static bound. Positive drift is sign-definite
-        evidence of a live sink; the allowance never shields it."""
         host = self._storm_then_dry_host()
         led = CouplingMassLedger(100.0, host)
         zero = self._zero_cr()
-        per_step = self.GENUINE_M3 / 12_044  # reaches 0.819 m3 at the 12k-step scale
+        per_step = self.GENUINE_M3 / 12_044
         with pytest.raises(AntiDoubleCountError, match="double-counted against capture"):
             for k in range(1, self.STEPS + 1):
                 host.drain_out = per_step * k
@@ -506,11 +468,6 @@ class TestGuardCNegativeDustAllowance:
         assert led.steps < 1_000, "a real sink leaked ~3 orders too long before tripping"
 
     def test_margin_constraints_asserted_numerically_at_measured_scale(self):
-        """Constraints (a)+(b) as ARITHMETIC at the refuter's measured operating point
-        (step 12,471, scale 45,093 m3, slopes above): negative bound <= 10x below the
-        genuine signal, and >=2x above the realized 13k-step dust. If either margin
-        fails, the chosen DUST_ALLOWANCE_SAFETY_FACTOR is wrong and items (a)/(b) are
-        not both satisfied — this check cannot silently rot."""
         static_bound = LEGACY_ZERO_BOUND_RELATIVE * self.RAIN_IN_FROZEN
         dust_12471 = self.DUST_PER_STEP * 12_471
         neg_bound_12471 = static_bound + DUST_ALLOWANCE_SAFETY_FACTOR * dust_12471
@@ -530,16 +487,8 @@ class TestGuardCNegativeDustAllowance:
         ), "constraint (b) violated: 13k-step dust does not clear the bound with 2x headroom"
 
 
-# ---------------------------------------------------------------------------
-# Non-finite residuals breach loudly (BugHunt round-1 item F-minor)
-# ---------------------------------------------------------------------------
-
-
 class TestNonFiniteResidualsBreach:
     def test_nan_budget_total_water_breaches_not_silently_passes(self):
-        """A NaN v_current makes total_water_relative_residual NaN; NaN compares False
-        against the bar, so the OLD check silently 'passed'. GREEN: mass_check treats
-        non-finite as a breach naming the metric."""
         host = _host(v_current=float("nan"))
         led = CouplingMassLedger(AREA, host)
         led.accumulate(_cr(capture_m3=0.0, return_m3=0.0, vin=[0.0], vout=[0.0]), 0.48)
@@ -548,10 +497,6 @@ class TestNonFiniteResidualsBreach:
             led.mass_check(3)
 
     def test_nan_books_identity_worst_stored_as_inf_and_breaches(self):
-        """NaN vol_in books poison the reconciliation identity; the worst-rel now lands
-        at inf (never NaN, so downstream comparisons stay decisive) and mass_check HALTS.
-        The history row and as_dict carry loud STRINGS instead of literal NaN/Infinity
-        tokens — invalid strict JSON was the silent-NaN-manifest defect."""
         host = _host()
         led = CouplingMassLedger(AREA, host)
         led.accumulate(_cr(capture_m3=0.0, return_m3=0.0, vin=[float("nan")], vout=[0.0]), 0.48)
@@ -560,13 +505,11 @@ class TestNonFiniteResidualsBreach:
             led.mass_check(3)
         row = led.history[-1]
         assert isinstance(row["reconciliation_identity_rel"], str)
-        assert json.dumps(row)  # valid strict JSON: no NaN/Infinity literals
+        assert json.dumps(row)
         dumped = json.dumps(led.as_dict())
         assert "non-finite(" in dumped
 
     def test_finite_control_mass_check_still_passes(self):
-        """Control: the finite BALANCED-books case still passes both gates (host stub
-        balanced: v_current = v_initial + rain - net so total_water closes to ~0)."""
         host = _host(v_current=1000.0 + 200.0 - 25.0, infil_out=0.0, boundary_out=0.0)
         led = CouplingMassLedger(AREA, host)
         led.accumulate(_cr(capture_m3=45.0, return_m3=20.0, vin=[70.0], vout=[45.0]), 0.48)
@@ -574,20 +517,7 @@ class TestNonFiniteResidualsBreach:
         assert isinstance(row["total_water_relative_residual"], float)
 
 
-# ---------------------------------------------------------------------------
-# Guard-c negative arm — round-2 regression fix (r2-mass-1): PRE-UPDATE check
-# + absolute absorb cap
-# ---------------------------------------------------------------------------
-
-
 class TestGuardCNegativeJumpTripsOnFirstOccurrence:
-    """r2-mass-1 REGRESSION: the asymmetric-allowance change updated dust_observed /
-    allowance BEFORE the negative check, making that arm algebraically unable to fire
-    (-mirror_t <= D_t <= 2*D_t <= static + 2*D_t on every step) while the module docstring
-    still promised a first-occurrence trip. V6 verdict: the CODE was wrong, not the promise;
-    the implemented order is now: BOTH negative-side guards read the STANDING allowance
-    (value as of the previous accepted step) BEFORE the current step's dust is absorbed.
-    """
 
     def test_red_single_negative_jump_larger_than_static_trips_first_occurrence(self):
         """A -5.0 m3 SINGLE-step jump against a ~5.2e-4 m3 static bound must trip
@@ -598,8 +528,8 @@ class TestGuardCNegativeJumpTripsOnFirstOccurrence:
         host = _host()
         led = CouplingMassLedger(AREA, host)
         zero = _cr(capture_m3=0.0, return_m3=0.0, vin=[0.0], vout=[0.0])
-        led.accumulate(zero, 0.48)  # baseline: mirror at 0.0
-        host.drain_out = -5.0  # ONE-step negative jump >> any f32-dust scale
+        led.accumulate(zero, 0.48)
+        host.drain_out = -5.0
         with pytest.raises(AntiDoubleCountError, match="guard \\(c\\)"):
             led.accumulate(zero, 0.48)
 
@@ -616,12 +546,11 @@ class TestGuardCNegativeJumpTripsOnFirstOccurrence:
         host = _host()
         led = CouplingMassLedger(AREA, host)
         zero = _cr(capture_m3=0.0, return_m3=0.0, vin=[0.0], vout=[0.0])
-        rate = 1.0e-4  # m3/step
+        rate = 1.0e-4
         cap = ledger_mod.DUST_ABSORB_CAP_M3
-        static_bound = ledger_mod.LEGACY_ZERO_BOUND_RELATIVE * 1100.0  # host stub scale
+        static_bound = ledger_mod.LEGACY_ZERO_BOUND_RELATIVE * 1100.0
         absorb_cap = max(static_bound, cap)
 
-        # documented capped-visibility boundary: 3000 steps x 1e-4 = 0.3 m3 rides below
         for k in range(1, 3001):
             host.drain_out = -rate * k
             led.accumulate(zero, 0.48)
@@ -652,8 +581,8 @@ class TestGuardCNegativeJumpTripsOnFirstOccurrence:
 
         V7 scope: module-constant arithmetic only."""
         cap = ledger_mod.DUST_ABSORB_CAP_M3
-        measured_toy_dust_13k = 0.0234  # m3, realized toy-window replay (docstring)
-        prod_window_extrapolation = 1.8e-6 * 43_000  # m3, measured slope x full window
+        measured_toy_dust_13k = 0.0234
+        prod_window_extrapolation = 1.8e-6 * 43_000
         assert cap >= 10.0 * measured_toy_dust_13k
         assert cap >= 10.0 * prod_window_extrapolation
         visible_rate_per_window = cap / 43_000
@@ -666,17 +595,7 @@ class TestGuardCNegativeJumpTripsOnFirstOccurrence:
         assert visible_rate_per_window >= 10.0 * 1.8e-6
 
 
-# ---------------------------------------------------------------------------
-# Non-finite legacy mirror (round-2 r2-numerics-1): breach signal + strict JSON
-# ---------------------------------------------------------------------------
-
-
 class TestNonFiniteMirrorBreachAndJsonSafety:
-    """r2-numerics-1: accumulate() recorded a non-finite legacy mirror SILENTLY (NaN
-    compares False against every guard-c comparison) and as_dict() emitted a literal NaN
-    token — invalid strict JSON — on the early-halt terminal path. Fix: non-finite mirror
-    is a breach signal at the next mass_check AND every as_dict metric surface renders via
-    _metric_jsonable."""
 
     def test_nan_mirror_verbatim_mass_check_breaches_and_json_clean(self):
         """NaN mirror stays VERBATIM (never clamped, V1), mass_check HALTS naming the
@@ -689,9 +608,9 @@ class TestNonFiniteMirrorBreachAndJsonSafety:
         zero = _cr(capture_m3=0.0, return_m3=0.0, vin=[0.0], vout=[0.0])
         led.accumulate(zero, 0.48)
         host.drain_out = float("nan")
-        led.accumulate(zero, 0.48)  # OLD: recorded silently, both guard arms compared False
+        led.accumulate(zero, 0.48)
         assert math.isnan(led.legacy_drain_out_m3), "mirror must be stored verbatim"
-        dumped = json.dumps(led.as_dict(), allow_nan=False)  # raises ValueError if not clean
+        dumped = json.dumps(led.as_dict(), allow_nan=False)
         assert "NaN" not in dumped and "Infinity" not in dumped
         assert "non-finite(" in dumped
         with pytest.raises(CouplingMassBreach, match="drain_out mirror is NON-FINITE"):

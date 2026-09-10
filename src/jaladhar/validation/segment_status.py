@@ -1,46 +1,10 @@
-"""Produce the frozen per-road-segment depth product.
-
-This module is deliberately a small, CPU-only boundary between a realized depth
-raster and the products consumed by the dashboard, routing API, and G1 scorer.
-It does not create a depth field.  A missing, misaligned, or non-finite solver
-field is an error and the run fails closed.
-
+"""This module is deliberately a small, CPU-only boundary between a realized depth
 The product follows ``configs/contracts/depth_product.json``:
-
 * status is evaluated from float metres with the realized primary segment rule;
-* depth bands are the floor-rounded minimum and maximum over canonical cells;
-* every lookup segment is emitted, including explicit ``unknown/no_data`` rows;
 * a manifest is written with ``status=running`` before output work and updated
-  in place when the run completes or fails.
-
-The module imports the existing segment-rule machinery rather than duplicating
-the flood-rule constants.  It never imports torch and never selects a device.
-
-Storage-water exclusion (WF-6 U0a, gated): cells whose ``basin_class`` is in an
-explicit excluded set are dropped from per-segment min/max/count aggregation AND
-from flood-status determination, because the solver itself excludes storage
-water bodies (basin_class 1), quarries (2), and landfills (3) from its scoring
-while its initialized-at-spill depth field still reaches road cells.  Two
 exclusion modes exist and both are manifest-recorded:
-
-* ``segment_touch`` (DEFAULT, audit-reproducing): a segment with ANY
-  excluded-class canonical cell has all its cells dropped.  This is what the
-  audit wave measured ("basin_class==1 touch test") and it reproduces every
-  audited quantity exactly -- flooded 40519->33311, max 1128->369 cm, flooded
-  band p50/p90/mean 47/151/68.9 -> 44/134/61.7 -- and leaves exactly the 61
-  unexplained >3 m segments the audit reported.  Cell-level dropping does NOT
-  reproduce those numbers (37195/389), because shore-jitter cells of bridges
-  and lakeside ways remain initialized-wet.
-* ``cell`` (literal cell-level dropping): only the excluded-class cells
-  themselves are dropped.
-
-The default class set {1, 2, 3} is exactly the ``results.exclusions``
-definition the calibration loss already uses -- the same definition, not a
-second one.  A segment left with zero contributing cells synthesizes as
-``no_data``/``unknown``/[0, 0] like any other segment with zero usable
-canonical cells; the manifest records the measured delta against the frozen
-raster-absence totals rather than laundering it.
-"""
+audit wave measured ("basin_class==1 touch test") and it reproduces every
+canonical cells; the manifest records the measured delta against the frozen"""
 
 from __future__ import annotations
 
@@ -75,7 +39,7 @@ from jaladhar.validation.depth_product_contract import (  # noqa: E402
     load_requirements,
     validate_product_manifest,
     validate_uncoupled_baseline_admission,
-)
+)  # noqa: E402
 from jaladhar.validation.segment_validation import (  # noqa: E402
     PRIMARY_RULE,
     evaluate_segments_from_mask,
@@ -118,7 +82,6 @@ class RasterInputs:
 
 @dataclass(frozen=True)
 class RoadIndex:
-    """Road-cell index and D8 adjacency used by the frozen rule machinery."""
 
     road_mask: np.ndarray
     rows: np.ndarray
@@ -154,30 +117,21 @@ def _repo_path(path: Path | str) -> Path:
 
 
 def inputs_grid_cells_estimate(raster_path: Path) -> int | None:
-    """Cell count of a raster read from metadata only, for budget estimates.
-
-    Deliberately non-fatal: an unreadable input must still let the lifecycle
-    manifest reach ``running`` so the guarded phase records the failure.
-    """
+    """manifest reach ``running`` so the guarded phase records the failure."""
     try:
         with rasterio.open(raster_path) as source:
             return int(source.height * source.width)
-    except Exception:  # noqa: BLE001 - estimate only; real errors raise inside the run
+    except Exception:
         return None
 
 
 def relative_repo_path(path: Path) -> str:
-    """Return a path usable by a consumer resolving paths from the repository root."""
     return os.path.relpath(path.resolve(), REPO.resolve())
 
 
 def manifest_config_value(value: Any) -> Any:
     """Serialize config values without baking the producing checkout into provenance.
-
-    Production inputs and outputs live below ``REPO`` and are recorded relative to
-    it.  Test-only paths outside the repository remain absolute so their realized
-    location is not misrepresented.
-    """
+    it.  Test-only paths outside the repository remain absolute so their realized"""
     if isinstance(value, Path):
         resolved = value.resolve()
         try:
@@ -192,7 +146,6 @@ def manifest_config_value(value: Any) -> Any:
 
 
 def normalise_utc(value: str) -> str:
-    """Validate an aware timestamp and serialize it as aware UTC ISO-8601."""
     text = str(value).strip()
     if not text:
         raise ValueError("timestamp must be non-empty")
@@ -232,7 +185,6 @@ def _validate_source_manifest(path: Path) -> dict[str, Any]:
 
 
 def _declared_coupling_enabled(payload: dict[str, Any]) -> bool | None:
-    """Find an explicit coupling declaration without treating absence as false."""
     values: list[bool] = []
 
     def visit(value: Any) -> None:
@@ -365,7 +317,6 @@ def load_aligned_rasters(depth_path: Path, road_path: Path) -> RasterInputs:
 
 
 def build_road_index(road_ids: np.ndarray) -> RoadIndex:
-    """Build the D8 same-segment adjacency expected by the existing rule code."""
     road_mask = np.asarray(road_ids) > 0
     rows, cols = np.where(road_mask)
     segment_ids = np.asarray(road_ids[rows, cols], dtype=np.int64)
@@ -420,18 +371,7 @@ def build_segment_status_dataframe(
     excluded_mask: np.ndarray | None = None,
 ) -> pd.DataFrame:
     """Evaluate realized segment status and bands, including lookup-only no-data IDs.
-
-    Independent observable: if the segment rule or no-data synthesis were
-    broken, a deliberately changed road-cell depth or lookup ID would change
-    the realized row status/counts, not merely a copied declaration.
-
-    ``excluded_mask`` marks cells (e.g. storage-water basin classes) dropped
-    from band aggregation and flood-status determination; they are treated as
-    absent canonical cells, so a segment whose cells are all excluded
-    synthesizes as no_data exactly like a raster-absent segment.  Pass
-    ``road_index=None`` when excluding -- the index must be built from the
-    masked road IDs, not supplied prebuilt over unmasked ones.
-    """
+    the realized row status/counts, not merely a copied declaration."""
     depth = np.asarray(depth_m, dtype=np.float64)
     road = np.asarray(road_ids)
     if depth.shape != road.shape:
@@ -521,11 +461,8 @@ def build_segment_status_dataframe(
 
 def load_aligned_class_raster(class_path: Path, reference: RasterInputs) -> tuple[np.ndarray, dict]:
     """Load a class raster and assert grid identity against the depth/road seam.
-
     V8 boundary rule: the exclusion producer and the terrain producer share this
-    raster, so alignment is asserted here against realized metadata (shape, CRS,
-    transform) rather than assumed from prose.
-    """
+    raster, so alignment is asserted here against realized metadata (shape, CRS,"""
     if not class_path.exists():
         raise FileNotFoundError(f"class raster is absent: {class_path}")
     with rasterio.open(class_path) as source:
@@ -551,7 +488,6 @@ def load_aligned_class_raster(class_path: Path, reference: RasterInputs) -> tupl
 
 
 def build_exclusion_mask(class_array: np.ndarray, excluded_classes: Iterable[int]) -> np.ndarray:
-    """Boolean mask of cells whose class is in the explicit excluded set."""
     classes = sorted({int(value) for value in excluded_classes})
     if not classes:
         raise SegmentStatusError("excluded class set is empty")
@@ -568,12 +504,6 @@ EXCLUSION_MODES = ("cell", "segment_touch")
 def build_segment_touch_exclusion_mask(
     road_ids: np.ndarray, class_array: np.ndarray, excluded_classes: Iterable[int]
 ) -> tuple[np.ndarray, int]:
-    """All cells of every segment holding >=1 excluded-class cell (audit semantics).
-
-    The audit wave's "basin_class==1 touch test" removed whole segments touching
-    storage water; only this mode reproduces its published numbers (flooded
-    33311, max 369 cm, 61 residual >3 m segments).
-    """
     on_road = build_exclusion_mask(class_array, excluded_classes) & (road_ids > 0)
     touched_ids = np.unique(road_ids[on_road])
     return np.isin(road_ids, touched_ids) & (road_ids > 0), int(len(touched_ids))
@@ -604,12 +534,8 @@ def resolve_exclusion_mask(
 
 
 def summarize_variant(rows_frame: pd.DataFrame) -> dict[str, Any]:
-    """Flooded-row band statistics in the exact quantities the audit reported.
-
-    Population: flood_status=='flooded' rows; statistic source: band_high_cm.
-    Anchored against the v5 product bytes: flooded-only p50/p90/mean/max
-    reproduce 47/151/68.90/1128 there, while modeled-population cuts do not.
-    """
+    """Population: flood_status=='flooded' rows; statistic source: band_high_cm.
+    Anchored against the v5 product bytes: flooded-only p50/p90/mean/max"""
     flooded = rows_frame[rows_frame["flood_status"] == "flooded"]
     band_high = flooded["band_high_cm"].to_numpy(dtype=np.int64)
     modeled_gt300 = rows_frame[
@@ -639,7 +565,6 @@ _DELTA_KEYS = (
 
 
 def _summary_delta(before: dict[str, Any], after: dict[str, Any]) -> dict[str, float | int]:
-    """Signed after-minus-before differences between two variant summaries."""
     return {key: round(after[key] - before[key], 2) for key in _DELTA_KEYS}
 
 
@@ -654,11 +579,7 @@ def _git_output(repo_root: Path, *args: str) -> str:
 
 def _admitted_dirty_git_provenance(repo_root: Path, reason: str) -> dict[str, Any]:
     """Realized Git state recorded without laundering a dirty source tree.
-
-    Used only when the caller passes an explicit admission reason.  The manifest
-    carries ``git_tree_clean=false`` plus every porcelain path so no consumer can
-    mistake the run for reproducible-from-HEAD; adoption remains owner-gated.
-    """
+    Used only when the caller passes an explicit admission reason.  The manifest"""
     git_sha = _git_output(repo_root, "rev-parse", "--verify", "HEAD^{commit}")
     porcelain = _git_output(repo_root, "status", "--porcelain", "--untracked-files=all")
     paths = [line[3:] for line in porcelain.splitlines() if line.strip()]
@@ -684,14 +605,9 @@ def _admitted_dirty_git_provenance(repo_root: Path, reason: str) -> dict[str, An
 def measure_osm_water_cells(
     osm_water_gpkg: Path, reference: RasterInputs
 ) -> tuple[np.ndarray, dict[str, Any]]:
-    """Rasterize mapped OSM water polygons onto the canonical grid (N9 observable).
-
-    This is a diagnostic sidecar only -- the audit refuted OSM-water overlap as
-    the deep-segment mechanism, so these booleans never enter product rows.
-    """
     if not osm_water_gpkg.exists():
         raise FileNotFoundError(f"OSM water polygons are absent: {osm_water_gpkg}")
-    import geopandas as gpd  # lazy heavy import; CPU-only diagnostic path
+    import geopandas as gpd
     from rasterio.features import rasterize
 
     polygons = gpd.read_file(osm_water_gpkg)
@@ -762,7 +678,6 @@ def _write_csv_atomic(path: Path, rows: Iterable[dict[str, Any]]) -> None:
 
 
 def _write_mapping_csv_atomic(path: Path, rows: list[dict[str, Any]]) -> None:
-    """Write a diagnostic sidecar mapping (never a product-row schema change)."""
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(f".{path.name}.tmp")
     with temporary.open("w", encoding="utf-8", newline="") as handle:
@@ -1161,7 +1076,6 @@ def build_segment_status_product(
             assert basin_class_raster is not None
             class_array, class_info = load_aligned_class_raster(basin_class_raster, inputs)
             road_flat = inputs.road_ids.reshape(-1)
-            # Direct per-segment accounting of dropped cells, used to cross-check
             # the synthesized no-data delta below (V2: two independent observables).
             n_ids = int(inputs.road_ids.max()) + 1
             total_cells_by_id = np.bincount(road_flat[road_flat > 0], minlength=n_ids)

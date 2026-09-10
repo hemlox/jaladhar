@@ -1,10 +1,4 @@
-"""Capacity component tests - reconstructed 2026-08-25 after accidental file
-corruption during the M11 unblock round. Restores the prior suite's coverage
-(accumulation hand-check, contrib identities, bisection, corner brackets, basis
-text legality, synthetic NULLs, blocked mode, IDF-table lookup, pairing/
-ordering reds) and adds this round's zero-slope skip + surcharge-by-definition
-flag tests.
-
+"""text legality, synthetic NULLs, blocked mode, IDF-table lookup, pairing/
 Red demos mutate in-memory records only (V5); scope statements sit beside
 assertions (V7)."""
 
@@ -35,8 +29,6 @@ W = H = 50
 
 
 def _toy_pointer():
-    """Row 25: east stem cols 0..48 into pit col 49; row 24 cols 5..15 feed it.
-    Hand-computed upstream counts: (25,10)=17, (25,20)=32, (25,49)=61."""
     p = np.full((H, W), 255, dtype=np.uint8)
     for c in range(W - 1):
         p[25, c] = 1
@@ -152,17 +144,13 @@ def _cap_cfg(**over):
     }
 
 
-# ------------------------------------------------------------------ accumulation
-
-
 def test_accumulation_matches_hand_count():
     acc, diag = accumulate_d8(_toy_pointer())
     assert acc[25, 10] == 17 and acc[25, 20] == 32 and acc[25, 49] == 61
-    # valid = 49 stem + 1 pit + 11 tributary = 61; single pit terminal.
     assert diag["terminal_cells"] == 1
     assert diag["pit_cells"] == 1
     assert diag["valid_cells"] == 61
-    assert acc[25, 15] == 27  # stem 0..15 + full tributary confluence
+    assert acc[25, 15] == 27
 
 
 def test_contrib_identities_exact_on_nodes(tmp_path):
@@ -178,9 +166,6 @@ def test_contrib_identities_exact_on_nodes(tmp_path):
         assert abs(n.contrib_area_ha - n.contrib_area_cells * 0.01) <= 1e-6
 
 
-# ------------------------------------------------------------------ depth solver
-
-
 def test_bisection_residual_near_zero_and_monotone():
     q = 2.5
     d, exceeds = _solve_depth_bounded(q, 6.71, 0.015, 0.005, 3.0)
@@ -191,9 +176,6 @@ def test_bisection_residual_near_zero_and_monotone():
 
 
 def test_corner_box_brackets_nominal_on_random_draws():
-    """Structural claim under the shared-depth corner convention (D12): corner
-    ratio r_c = q_full(n_c,w_c)/Q_design(C_c,u_c) spans the nominal ratio on
-    every random draw inside the pinned bands."""
     rng = np.random.default_rng(42)
     i = 62.5
     for _ in range(50):
@@ -249,15 +231,12 @@ def test_zero_slope_edge_skipped_with_routing_only_basis(tmp_path):
 
 
 def test_surcharge_by_definition_flagged_when_demand_exceeds_envelope(tmp_path, monkeypatch):
-    """Collapse the D22 depth envelope via monkeypatch so the toy edge's design
-    demand exceeds conveyance -> surcharge flag + basis note. With the real
-    envelope the same edge solves unflagged (asserted in the second half)."""
+    """envelope the same edge solves unflagged (asserted in the second half)."""
     import jaladhar.drainage.capacity as C
 
     ptr_path, elev_path = _toy_world(tmp_path)
     nodes, edges = _recs()
 
-    # real envelope: no edge flagged
     _, e_real, met_real = assign_capacity(nodes, edges[:2], ptr_path, elev_path, dict(_cap_cfg()))
     assert met_real["n_edges_demand_exceeds_capacity"] == 0
 
@@ -309,9 +288,6 @@ def test_synthetic_connectors_keep_null_hydraulics_exact_disclaimer(tmp_path):
     assert syn.capacity_basis == (
         "synthetic connector: no surveyed cross-section; routing conduit only, no capacity claim"
     )
-
-
-# ------------------------------------------------------------------ modes/reds
 
 
 def test_blocked_mode_writes_nothing_but_contrib_areas(tmp_path):
@@ -368,7 +344,7 @@ def test_red_pairing_refusal_for_unknown_n():
         "sources": ["CPHEEO Manual 2019 Ch5 sewerage design"],
     }
     good.capacity_basis = json.dumps(basis)
-    validate_capacity_records([], [good])  # green baseline
+    validate_capacity_records([], [good])
     good.n_manning = 0.020
     with pytest.raises(ValueError, match="not in allowed pairs"):
         validate_capacity_records([], [good])

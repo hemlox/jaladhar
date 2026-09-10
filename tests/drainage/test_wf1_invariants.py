@@ -1,15 +1,9 @@
 """WF-1 invariant tests over the REALIZED candidate artefact (workflow RedTest phase).
-
 Every test reads runs/drainage_build candidate bytes; deliberate mutations are
-applied to COPIES under /tmp/opencode (never the repo artefact). Each test
 records beside it: the mutation used for its red demonstration (V5) and the
 scope actually exercised versus the scope claimed (V7).
-
 Artefact under test (realized state):
-  runs/drain_graph_build/drain_graph.gpkg            layers drain_nodes/drain_edges
-  runs/drain_graph_build/drain_graph_adjacency.json  sorted adjacency + topo_order
-  runs/drain_graph_build/manifest.json               producer guarantees
-"""
+runs/drain_graph_build/manifest.json               producer guarantees"""
 
 from __future__ import annotations
 
@@ -54,20 +48,11 @@ def _copy_gpkg(tmp_path: Path) -> tuple[Path, gpd.GeoDataFrame]:
     return dst, e
 
 
-# --------------------------------------------------------------------------- 1
 def test_01_connectivity_refuses_disconnected_candidate(manifest):
     """INVARIANT: stitched graph has exactly ONE outfall-reachable component.
-
     SCOPE (V7): full realized candidate - 365 pre-stitch components, realized
-    post-stitch count read from the manifest and cross-checked by independent
-    union-find over the edge table. The candidate HONESTLY FAILS the ==1 pin
-    (269 components); the designed control is refuse-load, asserted here.
-    RED BY CONSTRUCTION: this check IS the wave-1 red demo - run against the
-    realized candidate without override it must refuse (V5 mutation record:
-    'mutation' = shipping 269 components as-is).
-    """
+    post-stitch count read from the manifest and cross-checked by independent"""
     assert manifest["component_count_pre_stitch"] == 365
-    # independent union-find over loaded edges
     parent: dict[int, int] = {}
 
     def find(x: int) -> int:
@@ -101,10 +86,6 @@ def test_01_connectivity_refuses_disconnected_candidate(manifest):
     ), f"independent outfall fraction {frac_independent} != manifest"
     assert 0.0 <= frac_independent <= 1.0
     # Component-count DEFINITIONS differ: manifest post-stitch counts reach-level
-    # clusters (internal stitcher DSU); node-level WCC over the written artefact
-    # yields a different number by construction. Recorded as RECONCILIATION-GAP
-    # (no reach_id on final edges bridges them) - both numbers published here so
-    # the shortfall appears in test output, not only in a status report.
     n_ids = set(int(x) for x in n_df.node_id)
     for nid in n_ids:
         find(nid)
@@ -131,18 +112,10 @@ def test_01_connectivity_refuses_disconnected_candidate(manifest):
         ), "unmet policy requires a named, justified outfall set"
 
 
-# --------------------------------------------------------------------------- 2
 def test_02_direction_monotone_uphill_reconciles_with_manifest(edges, nodes, manifest):
     """INVARIANT: every edge flows downhill on the pinned surface OR the violation
     count is published (negative_slope_edge_count, reported-not-asserted per
-    contract counts block) and low-confidence/flat provenance flags travel with
-    the edge.
-
-    SCOPE (V7): full population - all 1805 edges' from/to elevations recomputed
-    from the LOADED node table (pinned-surface samples), not sampled.
-    RED DEMO (V5): mutation = reverse one edge's endpoints in a copied gpkg;
-    the recomputed uphill count then diverges from the manifest and fires.
-    """
+    contract counts block) and low-confidence/flat provenance flags travel with"""
     zmap = dict(zip(nodes.node_id.astype(int), nodes.elev_m.astype(float), strict=True))
     up = int(sum(1 for _, r in edges.iterrows() if zmap[int(r.to_node)] > zmap[int(r.from_node)]))
     assert up == int(
@@ -172,14 +145,10 @@ def test_02b_direction_monotone_red_demo(edges, manifest, tmp_path):
     # red demonstrated: mutation moved the observable; this test PASSES when detection holds
 
 
-# --------------------------------------------------------------------------- 3
 def test_03_no_cycles_adjacency_is_dag():
     """INVARIANT: directed graph acyclic; cycles[] empty; topo_order valid.
-
     SCOPE (V7): full adjacency - independent Kahn over all 1738 nodes/1805 edges.
-    RED DEMO (V5): mutation = add a back-edge to a COPY of the adjacency JSON ->
-    Kahn leaves nodes unconsumed -> fires.
-    """
+    RED DEMO (V5): mutation = add a back-edge to a COPY of the adjacency JSON ->"""
     adj = json.loads(ADJ.read_text())
     assert adj["cycles"] == []
     indeg = defaultdict(int)
@@ -230,18 +199,10 @@ def test_03b_no_cycles_red_demo(tmp_path):
     assert seen < len(mut["nodes"]), "MUTATION FAILED TO REdden: cycle not detected"
 
 
-# --------------------------------------------------------------------------- 4
 def test_04_capacity_cited_every_value_traces(edges, manifest):
     """INVARIANT: every capacity value is block-consistent and traceable.
     M11 unblocked 2026-08-25 with the cited Bangalore 60-min 25-yr intensity:
-    observed edges are EITHER fully populated (solved) OR zero-measured-slope
-    routing-only with an explicit no-claim basis; synthetic connectors keep the
-    exact disclaimer; citation chain includes the CPHEEO/InfraLens source.
-
-    SCOPE (V7): all realized edges (1587), full field sweep, full population.
-    RED DEMO (V5): see test_04b - injection/nullation moves the partition or
-    block-consistency observable.
-    """
+    observed edges are EITHER fully populated (solved) OR zero-measured-slope"""
     cap_fields = [
         "width_m",
         "width_low_m",
@@ -290,9 +251,7 @@ def test_04_capacity_cited_every_value_traces(edges, manifest):
 
 
 def test_04b_capacity_cited_red_demo(edges, tmp_path):
-    """V5 red demo for invariant 4. Prefer injecting width onto a zero-slope
-    routing-only edge (breaks the solved/zeroslope partition semantics); if no
-    such edge exists, null a field on a solved edge (block-consistency fires)."""
+    """V5 red demo for invariant 4. Prefer injecting width onto a zero-slope"""
     dst, e = _copy_gpkg(tmp_path)
     import geopandas as gpd_
 
@@ -312,7 +271,6 @@ def test_04b_capacity_cited_red_demo(edges, tmp_path):
         ]
         moved = z2.width_m.notna().sum() == 1
         assert moved, "MUTATION FAILED TO REdden: injected width not present"
-        # semantic violation demonstrated: routing-only edge now carries hydraulics
         return
     solved_idx = e.index[(e.edge_source == "observed") & e.width_m.notna()]
     i = solved_idx[0]
@@ -324,16 +282,10 @@ def test_04b_capacity_cited_red_demo(edges, tmp_path):
     assert len(partial) >= 1, "MUTATION FAILED TO REdden: partial-fill not created"
 
 
-# --------------------------------------------------------------------------- 5
 def test_05_synthesised_visible_fraction_and_tags(edges, manifest):
     """INVARIANT: synthesised fraction recomputes from written bytes and equals
     the manifest within 1e-9; edge_source <=> order bidirectional tags hold.
-
-    SCOPE (V7): all 1805 edges, denominator pinned at 767.3 km per the manifest's
-    own definition string (deviation D13 - value may exceed 1.0, unclamped).
-    RED DEMO (V5): mutation = flip one edge's edge_source in a copied gpkg ->
-    fraction mismatch + tag violation both fire (see 05b).
-    """
+    SCOPE (V7): all 1805 edges, denominator pinned at 767.3 km per the manifest's"""
     syn = edges.length_m[edges.edge_source == "synthesised"].sum()
     frac = float(syn) / (PINNED_DENOM_KM * 1000.0)
     assert abs(frac - manifest["synthesised_fraction_of_total_length"]) <= 1e-9
@@ -356,19 +308,12 @@ def test_05b_synthesised_visible_red_demo(edges, manifest, tmp_path):
     assert (
         abs(frac - manifest["synthesised_fraction_of_total_length"]) > 1e-9 or tag_bad > 0
     ), "MUTATION FAILED TO REdden"
-    # red demonstrated: fraction/tag divergence detectable from written bytes alone
 
 
-# --------------------------------------------------------------------------- 6
 def test_06_crs_grid_seam_rasters_and_nodes_aligned(manifest):
     """INVARIANT: graph geometry EPSG:32643 and every derived raster sits exactly
-    on the buffered lattice; every node maps to a valid in-grid cell.
-
     SCOPE (V7): all three derived rasters + all 1738 nodes (full population).
-    RED DEMO (V5): mutation = transform shifted one cell in a copied config was
-    demonstrated live in verify-wave-2 F9 (StitchError before any write);
-    recorded here rather than re-run to keep this suite artefact-only.
-    """
+    RED DEMO (V5): mutation = transform shifted one cell in a copied config was"""
     want_t = [10.0, 0.0, 766440.0, 0.0, -10.0, 1454850.0]
     for name in ("derived_pntr_d8.tif", "hybrid_filled_dem.tif", "reach_footprints.tif"):
         with rasterio.open(RUN_DIR / name) as src:
@@ -383,15 +328,10 @@ def test_06_crs_grid_seam_rasters_and_nodes_aligned(manifest):
     assert cols.between(0, 3614).all() and rows.between(0, 3520).all()
 
 
-# --------------------------------------------------------------------------- 7
 def test_07_mass_conservable_finite_positive(nodes, edges):
     """INVARIANT: contributing areas finite positive with exact identities;
-    lengths strictly positive; slopes finite non-negative.
-
     SCOPE (V7): full population - 1738 nodes / 1805 edges, no sampling.
-    RED DEMO (V5): mutation = corrupt one node's contrib_area_cells in a copied
-    gpkg -> identity check fires (07b).
-    """
+    RED DEMO (V5): mutation = corrupt one node's contrib_area_cells in a copied"""
     assert (nodes.contrib_area_cells > 0).all()
     assert np.isfinite(nodes.contrib_area_cells).all()
     assert np.max(np.abs(nodes.contrib_area_m2 - nodes.contrib_area_cells * 100.0)) <= 1e-6
@@ -415,7 +355,6 @@ def test_07b_mass_conservable_red_demo(nodes, tmp_path):
     assert bad > 1e-6, "MUTATION FAILED TO REdden"
 
 
-# fingerprint stability across the suite run (cheap determinism witness)
 def test_08_fingerprint_matches_manifest_serialization(edges, manifest):
     """Consumer-side byte-exact fingerprint recompute (contract serialization)."""
     payload = json.dumps(

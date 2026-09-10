@@ -1,11 +1,6 @@
-"""Tests for the fail-closed WF-3 nowcast adapter.
-
-Scope: adapter construction and source-availability/provenance boundary only.
+"""Scope: adapter construction and source-availability/provenance boundary only.
 N-3 is BLOCKED and no captured IMD WFS response exists in ``data/``; therefore
-these tests do not invent a rainfall payload merely to make a success path
-green.  The source-backed conversion path remains executable when a verified
-GeoJSON response is injected by an integration caller.
-"""
+green.  The source-backed conversion path remains executable when a verified"""
 
 from __future__ import annotations
 
@@ -146,14 +141,8 @@ def test_nowcast_adapter_implements_interface_and_reports_n3_blocked() -> None:
 
 def test_unavailable_source_red_under_mutation(tmp_path) -> None:
     """Mutation record: source callback is changed to raise; fallback must stay impossible.
-
     The deliberately unavailable callback is the red-under-mutation input.  A
-    mutant that returned climatology, the last observation, zeros, or another
-    forcing mode here would make this assertion fail by returning a
-    ``RainfallEvent`` instead of the observed ``NowcastFetchError``.  The
-    config carries every deterministic downstream key so the aggregated startup
-    gate passes and the source outage itself is the observable.
-    """
+    forcing mode here would make this assertion fail by returning a"""
 
     def unavailable_source() -> dict[str, object]:
         raise OSError("simulated source outage")
@@ -183,10 +172,8 @@ def test_missing_district_is_refused_without_a_zero_event(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """If the source has no target district, the independent observable is no event.
-
     Scope: one byte-bound captured envelope whose FeatureCollection holds zero
-    features; the refusal must precede any interval construction.
-    """
+    features; the refusal must precede any interval construction."""
 
     config, envelope, grid = _captured_source_fixture(tmp_path, monkeypatch, district_present=False)
     adapter = ImdNowcastAdapter(config, source_envelope=envelope, grid=grid)
@@ -197,12 +184,8 @@ def test_missing_district_is_refused_without_a_zero_event(
 
 def test_bare_in_memory_response_is_refused_as_unprovenanced(tmp_path) -> None:
     """V5 invariant: an arbitrary in-memory mapping is not provenance-bearing source data.
-
     If this were broken, a caller could fabricate rainfall by passing any dict
-    as ``raw_response`` with no captured bytes, path, hash, or fetch evidence.
-    Scope: adapter construction and the pre-fetch startup gate only; no
-    rainfall payload exists in this fixture.
-    """
+    Scope: adapter construction and the pre-fetch startup gate only; no"""
 
     config = tmp_path / "forcing.yaml"
     config.write_text(
@@ -232,10 +215,8 @@ def test_bare_in_memory_response_is_refused_as_unprovenanced(tmp_path) -> None:
 
 def test_cli_request_side_violation_exits_2_before_source() -> None:
     """V5 invariant: naive-timestamp requests exit with the sanctioned code 2.
-
     Observable if broken: the CLI tracebacks with exit code 1 instead of mapping the
-    deterministic pre-source refusal onto exit 2 like every other refusal path.
-    """
+    deterministic pre-source refusal onto exit 2 like every other refusal path."""
 
     from typer.testing import CliRunner
 
@@ -341,11 +322,7 @@ def test_source_backed_district_cells_do_not_alias_dry_outside_cells(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """V5 invariant: one valid district ID may coexist with uncovered sentinel cells.
-
-    If this were broken, the consumer would sample a dry outside cell for native ID 0
-    and reintegrate zero instead of the realized district rainfall depth. Scope: one
-    captured fixture, one 15-minute interval, full 3421x3515 canonical lattice.
-    """
+    and reintegrate zero instead of the realized district rainfall depth. Scope: one"""
 
     config, envelope, grid = _captured_source_fixture(tmp_path, monkeypatch)
     adapter = ImdNowcastAdapter(

@@ -46,7 +46,6 @@ V7 scope statements live in each docstring.
 
 from __future__ import annotations
 
-import copy
 import csv
 import json
 import re
@@ -57,10 +56,17 @@ from pathlib import Path
 
 import pytest
 import torch
+from conftest import (
+    chain_graph,
+    closed_solver_config,
+    coupling_config,
+    hermetic_config,
+    static_fields,
+)
 from typer.testing import CliRunner
 
 from jaladhar.coupling.config import resolve_config
-from jaladhar.coupling.router import RefuseLoadError, build_drain_graph
+from jaladhar.coupling.router import RefuseLoadError
 from jaladhar.coupling.solver_hook import (
     COMPUTE_PROBE_STEP,
     ComputeBudgetExceeded,
@@ -70,121 +76,22 @@ from jaladhar.coupling.solver_hook import (
     simulate_coupled,
 )
 from jaladhar.solver.run import uniform_storm
-from jaladhar.solver.state import StaticFields, load_solver_config
 
 REPO = Path(__file__).resolve().parents[2]
 
-
-# ---------------------------------------------------------------------------
-# Synthetic fixtures (declared-synthetic; NOT Bengaluru data)
-# ---------------------------------------------------------------------------
-
-
-def _static(shape: tuple[int, int], *, drain_cap_m_s: float = 3.2e-6) -> StaticFields:
-    """Flat closed domain with a LIVE legacy drain prior (zeroing must matter)."""
-    hh, ww = shape
-    z = lambda *s: torch.zeros(*s, dtype=torch.float32)  # noqa: E731
-    f = lambda *s, v=0.0: torch.full((*s,), v, dtype=torch.float32)  # noqa: E731
-    return StaticFields(
-        dz_x=z(hh, ww - 1),
-        dz_y=z(hh - 1, ww),
-        n_x=f(hh, ww - 1, v=0.03),
-        n_y=f(hh - 1, ww, v=0.03),
-        c_x=torch.ones(hh, ww - 1, dtype=torch.float32),
-        c_y=torch.ones(hh - 1, ww, dtype=torch.float32),
-        drain_cap_m_s=f(hh, ww, v=drain_cap_m_s),
-        infil_rate_m_s=z(hh, ww),
-        edge_w_n=f(hh, v=0.03),
-        edge_e_n=f(hh, v=0.03),
-        edge_n_n=f(ww, v=0.03),
-        edge_s_n=f(ww, v=0.03),
-        edge_w_s=f(hh, v=1e-4),
-        edge_e_s=f(hh, v=1e-4),
-        edge_n_s=f(ww, v=1e-4),
-        edge_s_s=f(ww, v=1e-4),
-        edge_open=(0.0, 0.0, 0.0, 0.0),  # CLOSED micro-domain: boundary_out == 0 exactly
-        shape=shape,
-    )
-
-
-def _chain_graph(
-    rows: int,
-    cols: int,
-    n_nodes: int = 8,
-    cap: float = 0.05,
-    widths: list[float] | None = None,
-    *,
-    outfall: bool = True,
-    manifest: dict | None = None,
-):
-    """n-node capacity-bearing chain across distinct cells; terminal node is an outfall.
-    Cells sit in-board so even a 4x4 fixture keeps every node inside the grid.
-
-    ``outfall=False`` marks NO node as an outfall => every component class is 'dead_end'
-    (the fill-and-surcharge-by-construction D-A world) for the gt-attribution tests.
-    ``manifest`` rides through to build_drain_graph (e.g. config_snapshot.grid.transform
-    so diagnostics can reconstruct node positions)."""
-    base_r, base_c = max(1, rows // 8), max(1, cols // 8)
-    cells = [(base_r + i, base_c) for i in range(n_nodes)]
-    assert cells[-1][0] < rows and cells[-1][1] < cols
-    nmap = torch.full((rows, cols), -1, dtype=torch.int32)
-    for i, (r, c) in enumerate(cells):
-        nmap[r, c] = i + 1
-    edges = [(i, i + 1, cap) for i in range(1, n_nodes)]
-    edge_from = torch.tensor([e[0] - 1 for e in edges], dtype=torch.int64)
-    edge_to = torch.tensor([e[1] - 1 for e in edges], dtype=torch.int64)
-    cb = torch.ones(len(edges), dtype=torch.bool)
-    q_cap = torch.tensor([float(e[2]) for e in edges], dtype=torch.float64)
-    outfall_mask = torch.zeros(n_nodes, dtype=torch.bool)
-    if outfall:
-        outfall_mask[n_nodes - 1] = True
-    return build_drain_graph(
-        edge_from=edge_from,
-        edge_to=edge_to,
-        capacity_bearing=cb,
-        q_cap_nom_m3s=q_cap,
-        width_mean_m=torch.tensor(widths or [6.71] * n_nodes, dtype=torch.float64),
-        shaft_length_proxy_m=1.0,
-        node_elev_m=torch.linspace(10.0, 0.0, n_nodes, dtype=torch.float64),
-        contrib_area_m2=torch.zeros(n_nodes, dtype=torch.float64),
-        outfall_node=outfall_mask,
-        node_cell_row=torch.tensor([c[0] for c in cells], dtype=torch.int32),
-        node_cell_col=torch.tensor([c[1] for c in cells], dtype=torch.int32),
-        node_id_map=nmap,
-        node_cell_count=torch.ones(n_nodes, dtype=torch.int64),
-        manifest=manifest,
-    )
+_static = static_fields
+_chain_graph = chain_graph
 
 
 def _coupling_cfg(tmp_path: Path):
-    base = resolve_config(REPO / "configs" / "coupling.yaml", REPO)
-    outs = dc_replace(
-        base.outputs,
-        run_dir=tmp_path / "run",
-        manifest=tmp_path / "run" / "manifest.json",
-        surcharge_events_csv=tmp_path / "run" / "products" / "surcharge_events.csv",
-        event_continuity_csv=tmp_path / "run" / "products" / "event_continuity.csv",
-        depth_series_dir=tmp_path / "run" / "depth",
-    )
-    return dc_replace(base, outputs=outs)
+    return coupling_config(REPO, tmp_path)
 
 
 def _solver_cfg() -> dict:
-    cfg = load_solver_config(REPO / "configs" / "solver.yaml", REPO)
-    cfg = copy.deepcopy(cfg)
-    cfg["boundaries"]["mode"] = "closed"  # closed synthetic micro-domain
-    return cfg
-
-
-# ---------------------------------------------------------------------------
-# Deliverable 3: end-to-end synthetic micro-run + manifest lifecycle (rule 6)
-# ---------------------------------------------------------------------------
+    return closed_solver_config(REPO)
 
 
 def _terminal_echo_manifest() -> dict:
-    """M1 echo riding through build_drain_graph; shape mirrors
-    ``jaladhar.drainage.terminal.as_manifest_block()`` so the F2 persistence
-    assertion exercises the exact block shape production loads carry."""
     return {
         "terminal_seed_resolution": {
             "definition_version": "v2-lake-boundary-fixture",
@@ -245,7 +152,6 @@ class TestMicroRun:
             smoke=True,
         )
 
-        # --- realized run ------------------------------------------------------
         assert 100 <= res.steps <= 200
         assert res.sim_time_s > 500.0
         led = res.ledger
@@ -266,24 +172,22 @@ class TestMicroRun:
             f"events={len(led.events)}"
         )
 
-        # guard c realized: legacy sink EXACTLY zero, capture strictly positive
         assert res.budget.as_dict()["drain_out_m3"] == 0.0
         assert led.legacy_drain_out_m3 == 0.0
         assert led.captured_to_drains_m3 > 0.0
-        # judged closure on the synthetic closed micro-run
+
         assert tw <= 1e-4, f"total-water residual {tw:.3e} exceeded the hard bar"
-        # net may be negative (physical); whatever its sign it equals captured - returned
+
         assert led.drain_out_net_m3 == led.captured_to_drains_m3 - led.surcharge_returned_m3
-        # terminal node accumulates upstream captures with no export law (D-A) -> surge
+
         assert led.total_surcharging_steps > 0, (
             "terminal chain node was expected to cross freeboard; a silent window here "
             "would make the G2 anti-vacuity story untestable at toy scale"
         )
         assert len(led.events) >= 1
-        # original StaticFields untouched bitwise (guard a, realized)
+
         assert torch.equal(static_before.drain_cap_m_s, drain_before)
 
-        # --- manifest lifecycle: start -> in-place completion -------------------
         man = json.loads(cfg.outputs.manifest.read_text())
         assert man["status"] == "completed"
         assert man["stage"] == "wf2_coupled_run"
@@ -295,7 +199,7 @@ class TestMicroRun:
         assert set(start["config_snapshot"]) == {"coupling_resolved", "solver_yaml"}
         assert start["coupled_mode_transformation"]["legacy_drain_disabled"] is True
         assert "compute_budget_estimate" in start
-        # §9.3 producer-writes fields (realized file, not declarations)
+
         for key in (
             "coupling_enabled",
             "coupling_version",
@@ -335,22 +239,18 @@ class TestMicroRun:
         dv = man["deviations_notice"]
         for k in ("D_A", "D_C", "D_E", "D_F"):
             assert k in dv and dv[k]
-        # products landed
+
         assert Path(man["surcharge_events_csv"]).exists()
         header = Path(man["surcharge_events_csv"]).read_text().splitlines()[0]
         assert header == "node_id,total_returned_m3,first_step,last_step,max_head_m"
 
-        # D3 (round-3): an ASSESSED edge-mode gt_attribution must come through the
-        # DRIVER seam on this run — real gpkg edge polylines + the real GT bundle,
-        # dispatched by the driver at terminal time. Zero matches is honest
-        # NOT_ASSESSED WITH its recorded rule labels; a missing or degraded block
         # (no attribution_mode) reddens.
         gta = man["gt_attribution"]
         assert gta.get("attribution_mode") == "edge", (
             f"expected an assessed edge-mode block through the driver seam; got keys "
             f"{sorted(gta)} (a degrade block here means the seam broke, not a quiet GT)"
         )
-        assert gta["radius_m_declared_assumption"] == 40.0  # edge mode uses ITS OWN leaf
+        assert gta["radius_m_declared_assumption"] == 40.0
         if gta["n_gt_matched"] > 0:
             assert gta["suspicious_state"] in ("TRUE", "FALSE")
         else:
@@ -359,8 +259,6 @@ class TestMicroRun:
                 "measure_labels"
             ), "zero-match edge block must record WHY it is unassessed (rule labels)"
 
-        # F2 (round-3): the M1 terminal_seed_resolution echo PERSISTS into the final
-        # manifest bytes instead of living only on the in-memory graph.manifest.
         tsr = man.get("terminal_seed_resolution")
         assert isinstance(tsr, dict) and tsr, "terminal_seed_resolution not persisted"
         assert tsr["definition_version"] == "v2-lake-boundary-fixture"
@@ -369,11 +267,6 @@ class TestMicroRun:
         out = capsys.readouterr().out
         assert "total_water_relative_residual(JUDGED)" in out
         assert "[micro-run]" in out
-
-
-# ---------------------------------------------------------------------------
-# Guards d and a (spec §9.1)
-# ---------------------------------------------------------------------------
 
 
 class TestGuards:
@@ -389,7 +282,7 @@ class TestGuards:
         assert set(view) == set(full) - {"drain_cap_m_s"}
         for k, v in view.items():
             assert v is full[k], "parameter view must share storage, not copy"
-        assert "drain_cap_m_s" in full  # the SOURCE method still exposes it untouched
+        assert "drain_cap_m_s" in full
 
     def test_guard_a_v5_red_identity_passthrough_fires_entry_assert(self, tmp_path):
         """V5 RED DEMO (guard-c plumbing, task-named mutation recorded here): monkeypatch
@@ -421,11 +314,10 @@ class TestGuards:
         import jaladhar.coupling.solver_hook as hook
 
         original = hook.zero_drain_cap_out_of_place
-        # Neutralize the DRIVER's own pre-loop layer only; the exchange entry assert must
-        # then be what fires — proving each guard layer is independently armed.
+
         monkey = pytest.MonkeyPatch()
         monkey.setattr(hook, "_assert_zeroed", lambda s: None)
-        hook.zero_drain_cap_out_of_place = lambda s: s  # THE MUTATION: identity passthrough
+        hook.zero_drain_cap_out_of_place = lambda s: s
         try:
             with pytest.raises(ValueError, match="guard \\(a\\)"):
                 simulate_coupled(
@@ -468,11 +360,6 @@ class TestGuards:
         assert "timestep.cfl_alpha" in msg and "mass.check_every_steps" in msg
 
 
-# ---------------------------------------------------------------------------
-# K1 kill threshold (§10.6) — measured uncoupled-equivalent schedule
-# ---------------------------------------------------------------------------
-
-
 class TestK1Halt:
     def test_k1_halt_fires_when_coupled_dt_collapses(self, tmp_path):
         """Return-driven collapse: a huge-shaft node (plan area 5000 m2) preset above
@@ -488,10 +375,7 @@ class TestK1Halt:
         claimed: the K1 detector + halt path, not exchange physics (covered elsewhere)."""
         cfg = _coupling_cfg(tmp_path)
         scfg = _solver_cfg()
-        # width 5000 m => plan area 5000 m2: the excess-above-freeboard volume is ~22,500
-        # m3 and the per-step return onto ONE cell keeps h_max (and thus dt) pinned near
-        # the floor for the whole window — a SUSTAINED collapse, which is what K1 exists
-        # to catch (a 3-step blip recovers and must NOT fire the halt).
+
         graph = _chain_graph(4, 4, n_nodes=2, widths=[5000.0, 2.285])
         live = _static((4, 4))
 
@@ -524,11 +408,6 @@ class TestK1Halt:
         assert k1["uncoupled_equivalent_steps_at_final_tau"] >= 1
         assert k1["uncoupled_twin"]["steps"] >= 1
         assert "HALT, report, do not tune" in k1["halt_reason"]
-
-
-# ---------------------------------------------------------------------------
-# D-G seam reality (task mandate: propagate cleanly, never fabricate a load)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.slow
@@ -585,26 +464,21 @@ def test_real_artefact_loads_production_path_past_former_d_g_seam(tmp_path):
             max_steps=COMPUTE_PROBE_STEP,
             mass_check_every=10_000_000,
         )
-    # (a) the halt is the §14 budget gate, not any load refusal
+
     assert not isinstance(excinfo.value, RefuseLoadError)
     assert "smoke.cpu_budget_wall_clock_min" in str(excinfo.value)
     assert excinfo.value.manifest_status == "refused_compute_budget"
 
     man = json.loads(cfg.outputs.manifest.read_text())
-    # (b) the K1-family halt status, never D-G's
+
     assert man["status"] == "refused_compute_budget"
     assert man["status"] != "refused_with_D_G"
-    # (c) the D-G refusal trappings are gone from the realized bytes
+
     assert "refusal_verbatim" not in man, man.get("refusal_verbatim")
     assert "d_g_notice" not in man
-    # realized input assembly past the former refusal site: FULL domain
+
     rr, cc = man["grid_shape"]
     assert min(rr, cc) > 1000 and man["cells"] == rr * cc
-
-
-# ---------------------------------------------------------------------------
-# Judged-bar enforcement through the DRIVER (CouplingMassBreach surfaces, rule 6 holds)
-# ---------------------------------------------------------------------------
 
 
 def test_mass_breach_marks_manifest_failed(tmp_path, monkeypatch):
@@ -621,7 +495,7 @@ def test_mass_breach_marks_manifest_failed(tmp_path, monkeypatch):
     class ImpossibleBarLedger(ledger_mod.CouplingMassLedger):
         def __init__(self, *a, **kw):
             super().__init__(*a, **kw)
-            self.judged_bar_relative = -1.0  # every check "breaches"
+            self.judged_bar_relative = -1.0
 
     monkeypatch.setattr("jaladhar.coupling.solver_hook.CouplingMassLedger", ImpossibleBarLedger)
     with pytest.raises(CouplingMassBreach, match="total-water"):
@@ -640,38 +514,11 @@ def test_mass_breach_marks_manifest_failed(tmp_path, monkeypatch):
     assert man["status"] == "failed"
 
 
-# ---------------------------------------------------------------------------
 # Refusal-source labels (V5 red->green, verifier demo): the falsifier gate and
-# the D-G graph-reader seam are DIFFERENT RefuseLoadError sources and must not
-# share a terminal status.
-# ---------------------------------------------------------------------------
 
 
 def _hermetic_cfg(tmp_path: Path):
-    """Coupling cfg with tmp outputs AND a valid falsifier set written under tmp_path,
-    so these tests never depend on the repo's realized preregistration artefact."""
-    fset = tmp_path / "prediction_set.json"
-    fset.write_text(
-        json.dumps(
-            {
-                "n_predicted_edges": 1,
-                "predicted_node_ids": [1],
-                "source_gpkg_sha256": "0" * 64,
-            }
-        )
-    )
-    base = resolve_config(REPO / "configs" / "coupling.yaml", REPO)
-    outs = dc_replace(
-        base.outputs,
-        run_dir=tmp_path / "run",
-        manifest=tmp_path / "run" / "manifest.json",
-        surcharge_events_csv=tmp_path / "run" / "products" / "surcharge_events.csv",
-        event_continuity_csv=tmp_path / "run" / "products" / "event_continuity.csv",
-        depth_series_dir=tmp_path / "run" / "depth",
-    )
-    return dc_replace(
-        base, outputs=outs, diagnostics=dc_replace(base.diagnostics, falsifier_set=fset)
-    )
+    return hermetic_config(REPO, tmp_path)
 
 
 class TestRefusalSourceLabels:
@@ -714,7 +561,7 @@ class TestRefusalSourceLabels:
         V7 scope: input assembly only; no simulation work executes."""
         cfg = _hermetic_cfg(tmp_path)
         corrupt = tmp_path / "corrupt_prediction_set.json"
-        corrupt.write_text('{"n_predicted_edges": ')  # truncated JSON
+        corrupt.write_text('{"n_predicted_edges": ')
         cfg = dc_replace(cfg, diagnostics=dc_replace(cfg.diagnostics, falsifier_set=corrupt))
 
         with pytest.raises(RefuseLoadError, match="unreadable/lacking counts"):
@@ -735,9 +582,6 @@ class TestRefusalSourceLabels:
 
     @staticmethod
     def _run_with_gate_refusal(monkeypatch, tmp_path, refusal_msg: str):
-        """simulate_coupled with hook.load_drain_graph raising a ROUTER-SIDE gate
-        refusal (the [window]/[consumer]/... family — read_artefact did not refuse).
-        Returns (cfg, raised exception)."""
         import jaladhar.coupling.solver_hook as hook
 
         cfg = _hermetic_cfg(tmp_path)
@@ -804,7 +648,6 @@ class TestRefusalSourceLabels:
         V7 scope: CLI refusal path only; no simulation runs."""
         import jaladhar.coupling.solver_hook as hook
 
-        # arm 1: a router-side gate refusal -> plain REFUSED, no seam label
         gate = RefuseLoadError("[window] only 3/116 predicted target nodes active")
         monkeypatch.setattr(hook, "resolve_config", lambda p, r: _hermetic_cfg(tmp_path))
         monkeypatch.setattr(
@@ -815,7 +658,6 @@ class TestRefusalSourceLabels:
         assert "REFUSED:" in result.output
         assert "(D-G seam)" not in result.output
 
-        # arm 2: exactly what _tag_frozen_reader_refusals produces -> seam label kept
         frozen = RefuseLoadError("[consumer_assertion_3] zero_length_dropped_count=42 != 0")
         frozen.source = "frozen_reader"
         monkeypatch.setattr(
@@ -845,22 +687,16 @@ class TestRefusalSourceLabels:
             assert getattr(ei.value, "source", None) == "frozen_reader"
             other = RefuseLoadError("[consumer] partition mismatch")
             assert getattr(other, "source", None) is None
-        # the wrapper restored the patched reader after the window (no leak)
+
         assert router_mod.read_artefact is refusing_reader
 
 
-# ---------------------------------------------------------------------------
 # G2 anti-vacuity verdict + CLI non-zero exit (§11.1; V5 red->green, verifier
-# demo: dry injected-graph run completed with surcharging_steps==0, returned
-# 0.0, condition True — and exited 0).
-# ---------------------------------------------------------------------------
 
 
 class TestG2VacuousExit:
     @staticmethod
     def _install_cli_fixtures(monkeypatch, tmp_path, *, duration_s, max_steps, n_nodes, shape):
-        """Point the CLI's config/graph/domain lookups at hermetic toy fixtures so the
-        command runs end-to-end without touching repo run paths."""
         import jaladhar.coupling.solver_hook as hook
 
         cfg = _hermetic_cfg(tmp_path)
@@ -918,7 +754,7 @@ class TestG2VacuousExit:
         assert result.output.splitlines()[0].startswith("G2 FAIL")
         man = json.loads(cfg.outputs.manifest.read_text())
         assert man["status"] == "completed"
-        # realized vacuity inputs (the exit is grounded in recorded state, not echoes)
+
         assert man["total_surcharging_steps"] == 0
         assert man["total_returned_m3"] < cfg.diagnostics.g2_min_returned_m3
         assert man["g2"]["anti_vacuity_fail"] is True
@@ -941,18 +777,9 @@ class TestG2VacuousExit:
         assert man["g2"]["anti_vacuity_fail"] is False
 
 
-# ---------------------------------------------------------------------------
-# Driver emits gt_attribution + computed g2 verdict (BugHunt round-1 item E-i):
-# owner directive wf2-coupling.js:145-152 — G2 MUST split outfall vs dead-end and
-# dead-end-dominated GT reproduction is flagged SUSPICIOUS IN THE HEADLINE.
-# ---------------------------------------------------------------------------
-
-
 class TestDriverEmitsGtAttribution:
     @staticmethod
     def _gt_bundle_at(tmp_path: Path, x_m: float, y_m: float) -> Path:
-        """Synthetic GT bundle (declared-synthetic point, x_m/y_m columns so no
-        reprojection is needed) placed exactly on a node's reconstructed position."""
         csv_path = tmp_path / "points.csv"
         csv_path.write_text(f"id,lat,lon,x_m,y_m\nSYN1,12.9,77.6,{x_m!r},{y_m!r}\n")
         man_path = tmp_path / "gt_manifest.json"
@@ -975,16 +802,9 @@ class TestDriverEmitsGtAttribution:
         from jaladhar.coupling.diagnostics import app as diag_app
 
         cfg = _hermetic_cfg(tmp_path)
-        # terminal node id 8 sits at cell (row 8+7, col 8); with res=10, x0=500000,
-        # ytop=4500000 its reconstructed centre is (500085, 4499845).
+
         gt_manifest = self._gt_bundle_at(tmp_path, 500085.0, 4499845.0)
-        # V6 record (2026-08-26, WF-2 M2 ruling D-GT): configs/coupling.yaml now
-        # defaults diagnostics.attribution_mode to "edge". THIS fixture pins
-        # "node": its synthetic GT point sits on a RECONSTRUCTED TOY-node position,
-        # a geometry no real gpkg polyline can carry, so the seam it verifies
-        # (driver emits gt_attribution + computed g2 at terminal time) is exercised
-        # through the RETAINED node mode (SUPERSEDED-BY-RULING, regression/A-B
-        # evidence role) rather than weakened or deleted.
+
         cfg = dc_replace(
             cfg,
             diagnostics=dc_replace(
@@ -1029,16 +849,14 @@ class TestDriverEmitsGtAttribution:
         assert attr["suspicious_state"] == "TRUE", f"expected dead-end-dominated TRUE, got {attr!r}"
         assert attr["suspicious"] is True
         assert attr["n_gt_matched"] >= 1
-        # every chain component here is dead_end by construction -> share 1.0
+
         assert attr["dead_end_share_of_gt_matched_returned_volume"] == pytest.approx(1.0)
-        # g2 verdict computed via the diagnostics library, never 'not_computed_here'
+
         g2_block = man["g2"]
         assert g2_block["verdict"] == "pass"
         assert g2_block["verdict"] != "not_computed_here"
         assert "SUSPICIOUS=TRUE" in g2_block["reason"]
 
-        # the SCORER consumes the realized bytes: headline carries the flag, exit per
-        # anti-vacuity rules only (flagging, not failing)
         scored = _CliRunner().invoke(diag_app, ["score-g2", str(cfg.outputs.manifest)])
         assert scored.exit_code == 0, scored.output
         assert "SUSPICIOUS=TRUE" in scored.output.splitlines()[0]
@@ -1048,18 +866,6 @@ class TestDriverEmitsGtAttribution:
         ), "an assessed block must not trigger the UNASSESSED warning"
 
     def test_unavailable_gt_bundle_recorded_not_assessed_honestly(self, tmp_path):
-        """A MISSING ground-truth manifest must degrade to an honest top-level
-        NOT_ASSESSED block carrying the verbatim error — never fabricate
-        attribution, never crash the completed run, never drop the field.
-
-        D7 rewording (round 3; ASSERTION UNCHANGED): the historical note here
-        cited the superseded NODE-mode refusal reason ("surfacing as the
-        geometry-source refusal, since the 2-node toy graph carries no grid
-        transform"). Under the DEFAULT edge mode (ruling D-GT) the refusal
-        surfaces earlier and plainer: attribute_ground_truth_edges refuses inside
-        _load_gt_points with 'ground-truth manifest not found' BEFORE any node or
-        edge geometry is consulted — the toy graph's missing grid transform is
-        irrelevant on this path."""
         cfg = _hermetic_cfg(tmp_path)
         absent_gt = tmp_path / "absent" / "gt_manifest.json"
         cfg = dc_replace(
@@ -1084,12 +890,6 @@ class TestDriverEmitsGtAttribution:
         assert man["g2"]["verdict"] in ("pass", "fail")
 
 
-# ---------------------------------------------------------------------------
-# Guard-c storm-then-dry completability (BugHunt round-1 item A, constraint b,
-# driver-loop realization; ledger-level algebra lives in test_ledger.py)
-# ---------------------------------------------------------------------------
-
-
 class TestStormThenDryGuardC:
     @pytest.mark.slow
     def test_conserving_storm_then_dry_run_completes_past_13k_steps(self, tmp_path):
@@ -1108,7 +908,7 @@ class TestStormThenDryGuardC:
         scfg = _solver_cfg()
         scfg["timestep"]["max_dt_s"] = 0.05
         scfg["timestep"]["min_dt_s"] = 0.005
-        rain = uniform_storm(110.0, 300.0)  # storm-then-dry: zero rate from t=300 s
+        rain = uniform_storm(110.0, 300.0)
 
         t0 = _time.perf_counter()
         res = simulate_coupled(
@@ -1135,27 +935,13 @@ class TestStormThenDryGuardC:
             f"only {res.steps} steps realized — the accelerated envelope failed to reach "
             "the 13k-step scale constraint (b)"
         )
-        # mirror stays verbatim and inside the asymmetric envelope (no trip happened)
+
         assert abs(res.ledger.legacy_drain_out_m3) <= (
             res.ledger._legacy_zero_bound_m3() + res.ledger.dust_allowance_m3
         )
 
 
-# ---------------------------------------------------------------------------
-# GT-attribution honest degrade must cover csv.Error (round-2 r2-mass-2/item 2):
-# the round-1 tuple (DiagnosticsRefusal, OSError, ValueError) let csv.Error escape
-# _gt_attribution_block, so _terminal_fields raised DURING the completion/K1-halt
-# handlers => manifest stranded at status 'running' forever and KillThresholdHalt
-# swallowed into __context__.
-# ---------------------------------------------------------------------------
-
-
 def _corrupt_gt_bundle(tmp_path: Path) -> Path:
-    """GT bundle whose CSV carries one oversized field (> csv.field_size_limit(),
-    131072): parsing raises csv.Error — which is NEITHER DiagnosticsRefusal nor
-    OSError nor ValueError, exactly the class the round-1 tuple missed. The manifest
-    itself is valid JSON at an existing path (the rule-7 resolver requires existence),
-    so refusal happens INSIDE attribute_ground_truth's CSV parse."""
     csv_path = tmp_path / "points_oversized.csv"
     huge = "9" * (csv.field_size_limit() + 1024)
     csv_path.write_text(f"id,lat,lon\nBROKEN,{huge},77.6\n")
@@ -1165,9 +951,6 @@ def _corrupt_gt_bundle(tmp_path: Path) -> Path:
 
 
 def _grid_manifest(rows: int, cols: int) -> dict:
-    """Producer-declared grid so diagnostics can reconstruct node positions from the toy
-    chain graph (without it _resolve_node_geometry refuses BEFORE the GT CSV is ever
-    parsed, and the test would exercise the wrong refusal)."""
     return {
         "config_snapshot": {
             "grid": {
@@ -1257,26 +1040,6 @@ class TestGtDegradeCoversCsvError:
         assert attr["error_type"] == csv.Error.__name__
 
 
-# ---------------------------------------------------------------------------
-# Smoke CLI GT degrade (round-2 item 4): smoke_real_window.py called
-# attribute_ground_truth BARE after simulate had already written a completed
-# manifest — a refused/unreadable GT bundle crashed the CLI with a traceback
-# AFTER completion. The driver now reuses solver_hook's honest-degrade wrapper
-# and prints a warning; the exit code comes from the typed gates only.
-#
-# RE-SMOKE UPDATE (V6 flip recorded; driver rewrite landed together with this):
-# contract v1.2.0 closed D-G, so the driver's retired declared-deviation
-# assembly is gone — it now runs the FULL-DOMAIN production path via
-# simulate_coupled(graph=None). The xfails marker is REMOVED accordingly. The
-# DEGRADE INTENT IS UNCHANGED VERBATIM: rename the ground-truth bundle away =>
-# completed + gt_attribution NOT_ASSESSED + warning line, exit 0. Only the
-# mechanics moved: the production path costs ~1.1 s/step on the full grid, so
-# this subprocess gets an explicit small envelope (duration_s patched in its
-# generated config, --max-steps on the driver) — a plumbing test must not pay
-# for a full storm window.
-# ---------------------------------------------------------------------------
-
-
 class TestSmokeCliGtDegrade:
     def test_smoke_completes_with_renamed_groundtruth_manifest(self, tmp_path):
         """Full smoke_real_window subprocess against the REAL graph/domain with the
@@ -1293,7 +1056,7 @@ class TestSmokeCliGtDegrade:
         scope claimed: stage-14 degrade + typed exit, on real terrain bytes."""
         script = REPO / "tests" / "coupling" / "smoke_real_window.py"
         base_cfg_text = (REPO / "configs" / "coupling.yaml").read_text()
-        # the bundle's CSV is renamed away; the manifest that POINTS at it stays in place
+
         gt_manifest = tmp_path / "gt_manifest.json"
         gt_manifest.write_text(
             json.dumps(
@@ -1310,9 +1073,7 @@ class TestSmokeCliGtDegrade:
             flags=re.M,
         )
         assert n_sub == 1, "ground_truth_manifest line not found in configs/coupling.yaml"
-        # bound the envelope: production full-domain path (~1.1 s/step measured);
-        # 900 simulated s proxies ~196 steps on the previous realized schedule,
-        # comfortably inside the subprocess timeout while crossing surcharge onset.
+
         patched, n_dur = re.subn(
             r"^  duration_s: .*$",
             "  duration_s: 900.0                 # bounded envelope for the GT-degrade subprocess",
@@ -1349,7 +1110,7 @@ class TestSmokeCliGtDegrade:
         assert "WARNING" in proc.stdout and "NOT_ASSESSED" in proc.stdout
         man = json.loads((out_dir / "manifest.json").read_text())
         assert man["status"] == "completed"
-        # TOP-LEVEL degrade block (driver-emitted at terminal time by solver_hook)
+
         gt = man["gt_attribution"]
         assert gt["suspicious_state"] == "NOT_ASSESSED"
         assert gt["error_type"] == "DiagnosticsRefusal"
